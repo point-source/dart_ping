@@ -32,4 +32,4 @@ Please file feature requests and bugs at the [issue tracker][tracker].
 
 ## Credit
 
-This package contains borrowed code with permission from [flutter_icmp_ping](https://pub.dev/packages/flutter_icmp_ping) by [zuvola](zuvola.com).
+This package contains code from [flutter_icmp_ping](https://pub.dev/packages/flutter_icmp_ping) by [zuvola](zuvola.com), used with permission.

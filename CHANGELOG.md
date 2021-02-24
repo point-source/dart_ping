@@ -1,3 +1,7 @@
+## 2.0.1
+
+- Improve docs
+
 ## 2.0.0
 
 - Drop iOS support to release flutter dependency until an alternative is found
