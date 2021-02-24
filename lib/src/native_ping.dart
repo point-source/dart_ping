@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:dart_ping/src/dart_ping_base.dart';
-import 'package:dart_ping/src/linux_ping.dart';
-import 'package:dart_ping/src/windows_ping.dart';
+import 'package:dart_ping/src/ping/linux_ping.dart';
+import 'package:dart_ping/src/ping/windows_ping.dart';
 
 Ping getPing(
     String host, int count, double interval, double timeout, bool ipv6) {

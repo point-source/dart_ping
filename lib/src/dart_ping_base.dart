@@ -1,8 +1,7 @@
 import 'package:dart_ping/dart_ping.dart';
 
 import 'ping_stub.dart'
-    if (dart.library.io) 'package:dart_ping/src/native_ping.dart'
-    if (flutter.foundation) 'package:dart_ping/src/flutter_ping.dart';
+    if (dart.library.io) 'package:dart_ping/src/native_ping.dart';
 
 abstract class Ping {
   factory Ping(String host,

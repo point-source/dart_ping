@@ -4,7 +4,7 @@ import 'dart:io';
 
 import 'package:async/async.dart';
 import 'package:dart_ping/dart_ping.dart';
-import 'package:dart_ping/src/base_ping.dart';
+import 'package:dart_ping/src/ping/base_ping.dart';
 import 'package:dart_ping/src/dart_ping_base.dart';
 
 class PingWindows extends BasePing implements Ping {
