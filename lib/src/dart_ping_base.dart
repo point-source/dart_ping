@@ -1,7 +1,5 @@
 import 'package:dart_ping/dart_ping.dart';
-
-import 'ping_stub.dart'
-    if (dart.library.io) 'package:dart_ping/src/native_ping.dart';
+import 'package:dart_ping/src/native_ping.dart';
 
 /// Ping class used to instantiate a ping instance.
 /// Spawns an OS ping process when the stream property is listened to

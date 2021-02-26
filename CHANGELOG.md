@@ -1,3 +1,7 @@
+## 2.0.2
+
+- Remove unused cross-platform code stub so pub.dev correctly reports supported platforms
+
 ## 2.0.1
 
 - Improve docs

@@ -15,6 +15,6 @@ Ping getPing(
     case 'windows':
       return PingWindows(host, count, interval, timeout, ipv6);
     default:
-      throw UnimplementedError('Could not determine target platform');
+      throw UnimplementedError('Ping not supported on this platform');
   }
 }
