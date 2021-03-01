@@ -13,5 +13,5 @@ class PingSummary {
 
   @override
   String toString() =>
-      'PingSummary(transmitted:$transmitted, received:$received, time:${time.inMilliseconds} ms)';
+      'PingSummary(transmitted:$transmitted, received:$received, time:${time?.inMilliseconds} ms)';
 }

@@ -1,3 +1,7 @@
+## 2.0.3
+
+- Fix issue #2 (broken ping command args on windows)
+
 ## 2.0.2
 
 - Remove unused cross-platform code stub so pub.dev correctly reports supported platforms

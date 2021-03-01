@@ -28,9 +28,16 @@ class PingWindows extends BasePing implements Ping {
     }
     if (ipv6) throw UnimplementedError('IPv6 not implemented for windows');
     var params = [];
-    count == null ? params.add('-t') : params.add('-n $count');
-    if (timeout != null) params.add('-w $timeout');
-    if (interval != null) params.add('-i $interval');
+    if (count == null) {
+      params.add('-t');
+    } else {
+      params.add('-n');
+      params.add(count.toString());
+    }
+    if (timeout != null) {
+      params.add('-w');
+      params.add(timeout.toString());
+    }
     _process = await Process.start('ping', [...params, host]);
     // ignore: unawaited_futures
     _process.exitCode.then((value) {
