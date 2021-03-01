@@ -10,7 +10,7 @@ A simple usage example:
 ```dart
 import 'package:dart_ping/dart_ping.dart';
 
-void main() {
+void main() async {
   final ping = Ping(
     'google.com',
     count: 3,
