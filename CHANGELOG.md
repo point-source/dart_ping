@@ -1,3 +1,7 @@
+## 2.0.4
+
+- Fix parsing bug when linux ping process times out
+
 ## 2.0.3
 
 - Fix issue #2 (broken ping command args on windows)
