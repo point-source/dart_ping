@@ -4,11 +4,8 @@ import 'package:dart_ping/src/models/ping_data.dart';
 
 abstract class BasePing {
   BasePing(this.host, this.count, this.interval, this.timeout, this.ipv6) {
-    controller = StreamController<PingData>(
-        onListen: onListen,
-        onCancel: _onCancel,
-        onPause: () => subscription.pause,
-        onResume: () => subscription.resume);
+    controller =
+        StreamController<PingData>(onListen: onListen, onCancel: onCancel);
   }
 
   String host;
@@ -17,16 +14,12 @@ abstract class BasePing {
   double timeout;
   bool ipv6;
   StreamController<PingData> controller;
-  StreamSubscription<PingData> subscription;
 
   Stream<PingData> get stream => controller.stream;
 
-  void onListen();
+  Future<void> onListen();
 
-  void _onCancel() {
-    subscription.cancel();
-    subscription = null;
-  }
+  Future<void> onCancel() async => await stop();
 
-  void stop() => controller.close();
+  Future<void> stop() async => await controller.close();
 }

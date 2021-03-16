@@ -39,21 +39,26 @@ class PingWindows extends BasePing implements Ping {
       params.add(timeout.toString());
     }
     _process = await Process.start('ping', [...params, host]);
-    // ignore: unawaited_futures
-    _process.exitCode.then((value) {
-      controller.close();
+    await controller.addStream(
+        StreamGroup.merge([_process.stderr, _process.stdout])
+            .transform(utf8.decoder)
+            .transform(LineSplitter())
+            .transform<PingData>(_windowsTransformer));
+    await _process.exitCode.then((value) async {
+      switch (value) {
+        case 0:
+          await controller.done;
+          break;
+        default:
+          throw Exception('Ping process exited with code: $value');
+      }
+      _process = null;
     });
-    subscription = StreamGroup.merge([_process.stderr, _process.stdout])
-        .transform(utf8.decoder)
-        .transform(LineSplitter())
-        .transform<PingData>(_windowsTransformer)
-        .listen(controller.add);
   }
 
   @override
-  void stop() {
+  Future<void> stop() async {
     _process?.kill(ProcessSignal.sigint);
-    _process = null;
   }
 
   /// StreamTransformer for Android response from process stdout/stderr.

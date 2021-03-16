@@ -33,21 +33,26 @@ class PingLinux extends BasePing implements Ping {
     if (interval != null) params.add('-i $interval');
     _process = await Process.start(
         (ipv6 ?? false) ? 'ping6' : 'ping', [...params, host]);
-    // ignore: unawaited_futures
-    _process.exitCode.then((value) {
-      controller.close();
+    await controller.addStream(
+        StreamGroup.merge([_process.stderr, _process.stdout])
+            .transform(utf8.decoder)
+            .transform(LineSplitter())
+            .transform<PingData>(_linuxTransformer));
+    await _process.exitCode.then((value) async {
+      switch (value) {
+        case 0:
+          await controller.done;
+          break;
+        default:
+          throw Exception('Ping process exited with code: $value');
+      }
+      _process = null;
     });
-    subscription = StreamGroup.merge([_process.stderr, _process.stdout])
-        .transform(utf8.decoder)
-        .transform(LineSplitter())
-        .transform<PingData>(_linuxTransformer)
-        .listen(controller.add);
   }
 
   @override
-  void stop() {
+  Future<void> stop() async {
     _process?.kill(ProcessSignal.sigint);
-    _process = null;
   }
 
   /// StreamTransformer for Android response from process stdout/stderr.

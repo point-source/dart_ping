@@ -14,5 +14,5 @@ abstract class Ping {
   Stream<PingData> get stream;
 
   /// Kills ping process and closes stream.
-  void stop();
+  Future<void> stop();
 }

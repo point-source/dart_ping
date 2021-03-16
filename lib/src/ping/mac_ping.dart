@@ -13,7 +13,7 @@ class PingMac extends BasePing implements Ping {
 
   static final _resRegex =
       RegExp(r'from (.*): icmp_seq=(\d+) ttl=(\d+) time=((\d+).?(\d+))');
-  static final _seqRegex = RegExp(r'icmp_seq=(\d+)');
+  static final _seqRegex = RegExp(r'icmp_seq (\d+)');
   static final _summaryRegexes = [
     RegExp(r'(\d+) packets transmitted'),
     RegExp(r'(\d+) packets received'),
@@ -33,28 +33,35 @@ class PingMac extends BasePing implements Ping {
     if (interval != null) params.add('-i $interval');
     _process = await Process.start(
         (ipv6 ?? false) ? 'ping6' : 'ping', [...params, host]);
-    // ignore: unawaited_futures
-    _process.exitCode.then((value) {
-      controller.close();
+    await controller.addStream(
+        StreamGroup.merge([_process.stderr, _process.stdout])
+            .transform(utf8.decoder)
+            .transform(LineSplitter())
+            .transform<PingData>(_linuxTransformer));
+    await _process.exitCode.then((value) async {
+      switch (value) {
+        case 0:
+          await controller.done;
+          break;
+        case 68: //Unknown host
+          break;
+        default:
+          throw Exception('Ping process exited with code: $value');
+      }
+      _process = null;
     });
-    subscription = StreamGroup.merge([_process.stderr, _process.stdout])
-        .transform(utf8.decoder)
-        .transform(LineSplitter())
-        .transform<PingData>(_linuxTransformer)
-        .listen(controller.add);
   }
 
   @override
-  void stop() {
+  Future<void> stop() async {
     _process?.kill(ProcessSignal.sigint);
-    _process = null;
   }
 
   /// StreamTransformer for Android response from process stdout/stderr.
   static final StreamTransformer<String, PingData> _linuxTransformer =
       StreamTransformer.fromHandlers(
     handleData: (data, sink) {
-      if (data.contains('unknown host')) {
+      if (data.contains('Unknown host')) {
         sink.add(
           PingData(
             error: PingError.UnknownHost,
@@ -79,7 +86,7 @@ class PingMac extends BasePing implements Ping {
           ),
         );
       }
-      if (data.contains('no answer yet')) {
+      if (data.contains('Request timeout')) {
         final match = _seqRegex.firstMatch(data);
         if (match == null) {
           return;
@@ -87,7 +94,7 @@ class PingMac extends BasePing implements Ping {
         sink.add(
           PingData(
             response: PingResponse(
-              seq: int.parse(match.group(1)) - 1,
+              seq: int.parse(match.group(1)),
             ),
             error: PingError.RequestTimedOut,
           ),
