@@ -11,13 +11,7 @@ A simple usage example:
 import 'package:dart_ping/dart_ping.dart';
 
 void main() async {
-  final ping = Ping(
-    'google.com',
-    count: 3,
-    timeout: 1,
-    interval: 1,
-    ipv6: false,
-  );
+  final ping = Ping('google.com', count: 3, interval: 1);
   ping.stream.listen((event) {
     print(event);
   });

@@ -1,3 +1,8 @@
+## 2.0.5
+
+- Fix ping on macOS
+- Simplify example
+
 ## 2.0.4
 
 - Fix parsing bug when linux ping process times out
