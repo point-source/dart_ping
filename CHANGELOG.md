@@ -1,3 +1,10 @@
+## 3.0.0
+
+- Improve stream management
+- stop() is now async
+- Throw error if stop() is called before process starts
+- Fix macOS UnknownHost error condition output
+
 ## 2.0.5
 
 - Fix ping on macOS

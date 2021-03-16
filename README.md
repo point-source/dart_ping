@@ -9,13 +9,20 @@ A simple usage example:
 
 ```dart
 import 'package:dart_ping/dart_ping.dart';
+  // Create ping object with desired args
+  final ping = Ping('google.com', count: 5);
 
-void main() async {
-  final ping = Ping('google.com', count: 3, interval: 1);
+  // Begin ping process and listen for output
   ping.stream.listen((event) {
     print(event);
   });
-}
+
+  // Waiting for ping to output first two results
+  // Not needed in actual use. For example only
+  await Future.delayed(Duration(seconds: 2));
+
+  // Stop the ping prematurely and output a summary
+  await ping.stop();
 ```
 
 ## Features and bugs

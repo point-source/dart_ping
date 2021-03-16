@@ -54,7 +54,10 @@ class PingMac extends BasePing implements Ping {
 
   @override
   Future<void> stop() async {
-    _process?.kill(ProcessSignal.sigint);
+    if (_process == null) {
+      throw Exception('Cannot kill a process that has not yet been started');
+    }
+    _process.kill(ProcessSignal.sigint);
   }
 
   /// StreamTransformer for Android response from process stdout/stderr.
