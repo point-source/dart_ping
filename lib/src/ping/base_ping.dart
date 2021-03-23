@@ -9,11 +9,11 @@ abstract class BasePing {
   }
 
   String host;
-  int count;
+  int? count;
   double interval;
   double timeout;
   bool ipv6;
-  StreamController<PingData> controller;
+  late StreamController<PingData> controller;
 
   Stream<PingData> get stream => controller.stream;
 

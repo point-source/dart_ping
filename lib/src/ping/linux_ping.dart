@@ -4,44 +4,52 @@ import 'dart:io';
 
 import 'package:async/async.dart';
 import 'package:dart_ping/dart_ping.dart';
+import 'package:dart_ping/src/response_parser.dart';
 import 'package:dart_ping/src/ping/base_ping.dart';
 import 'package:dart_ping/src/dart_ping_base.dart';
 
 class PingLinux extends BasePing implements Ping {
-  PingLinux(String host, int count, double interval, double timeout, bool ipv6)
+  PingLinux(String host, int? count, double interval, double timeout, bool ipv6)
       : super(host, count, interval, timeout, ipv6);
 
-  static final _resRegex =
+  static final _responseRgx =
       RegExp(r'from (.*): icmp_seq=(\d+) ttl=(\d+) time=((\d+).?(\d+))');
-  static final _seqRegex = RegExp(r'icmp_seq=(\d+)');
-  static final _summaryRegexes = [
-    RegExp(r'(\d+) packets transmitted'),
-    RegExp(r'(\d+) received'),
-    RegExp(r'time (\d+)ms'),
-  ];
+  static final _sequenceRgx = RegExp(r'icmp_seq=(\d+)');
+  static final _summaryRgx =
+      RegExp(r'(\d+) packets transmitted, (\d+) received,.*time (\d+)ms');
+  static final _responseStr = RegExp(r'bytes from');
+  static final _timeoutStr = RegExp(r'no answer yet');
+  static final _unknownHostStr = RegExp(r'unknown host');
+  static final _summaryStr = RegExp(r'packet loss');
+  static final _errorStr = RegExp(r'service not known');
 
-  Process _process;
+  Process? _process;
 
   @override
   Future<void> onListen() async {
     if (_process != null) {
       throw Exception('ping is already running');
     }
-    var params = ['-O', '-n'];
+    var params = ['-O', '-n', '-W $timeout', '-i $interval'];
     if (count != null) params.add('-c $count');
-    if (timeout != null) params.add('-W $timeout');
-    if (interval != null) params.add('-i $interval');
-    _process = await Process.start(
-        (ipv6 ?? false) ? 'ping6' : 'ping', [...params, host]);
+    _process = await Process.start(ipv6 ? 'ping6' : 'ping', [...params, host]);
     await controller.addStream(
-        StreamGroup.merge([_process.stderr, _process.stdout])
+        StreamGroup.merge([_process!.stderr, _process!.stdout])
             .transform(utf8.decoder)
             .transform(LineSplitter())
-            .transform<PingData>(_linuxTransformer));
-    await _process.exitCode.then((value) async {
+            .transform<PingData>(responseParser(
+                responseRgx: _responseRgx,
+                sequenceRgx: _sequenceRgx,
+                summaryRgx: _summaryRgx,
+                responseStr: _responseStr,
+                timeoutStr: _timeoutStr,
+                unknownHostStr: _unknownHostStr,
+                summaryStr: _summaryStr,
+                errorStr: _errorStr)));
+    await _process!.exitCode.then((value) async {
+      await controller.done;
       switch (value) {
         case 0:
-          await controller.done;
           break;
         default:
           throw Exception('Ping process exited with code: $value');
@@ -55,69 +63,6 @@ class PingLinux extends BasePing implements Ping {
     if (_process == null) {
       throw Exception('Cannot kill a process that has not yet been started');
     }
-    _process.kill(ProcessSignal.sigint);
+    _process!.kill(ProcessSignal.sigint);
   }
-
-  /// StreamTransformer for Android response from process stdout/stderr.
-  static final StreamTransformer<String, PingData> _linuxTransformer =
-      StreamTransformer.fromHandlers(
-    handleData: (data, sink) {
-      if (data.contains('unknown host')) {
-        sink.add(
-          PingData(
-            error: PingError.UnknownHost,
-          ),
-        );
-      }
-      if (data.contains('bytes from')) {
-        final match = _resRegex.firstMatch(data);
-        if (match == null) {
-          return;
-        }
-        sink.add(
-          PingData(
-            response: PingResponse(
-              ip: match.group(1),
-              seq: int.parse(match.group(2)) - 1,
-              ttl: int.parse(match.group(3)),
-              time: Duration(
-                  microseconds:
-                      ((double.parse(match.group(4))) * 1000).floor()),
-            ),
-          ),
-        );
-      }
-      if (data.contains('no answer yet')) {
-        final match = _seqRegex.firstMatch(data);
-        if (match == null) {
-          return;
-        }
-        sink.add(
-          PingData(
-            response: PingResponse(
-              seq: int.parse(match.group(1)) - 1,
-            ),
-            error: PingError.RequestTimedOut,
-          ),
-        );
-      }
-      if (data.contains('packet loss')) {
-        final transmitted = _summaryRegexes[0].firstMatch(data);
-        final received = _summaryRegexes[1].firstMatch(data);
-        final time = _summaryRegexes[2].firstMatch(data);
-        if (transmitted == null || received == null || time == null) {
-          return;
-        }
-        sink.add(
-          PingData(
-            summary: PingSummary(
-              transmitted: int.parse(transmitted.group(1)),
-              received: int.parse(received.group(1)),
-              time: Duration(milliseconds: int.parse(time.group(1))),
-            ),
-          ),
-        );
-      }
-    },
-  );
 }

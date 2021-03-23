@@ -7,13 +7,13 @@ class PingData {
   PingData({this.response, this.summary, this.error});
 
   /// A singly ping response from the target
-  final PingResponse response;
+  final PingResponse? response;
 
   /// A summary of results from previous ping responses
-  final PingSummary summary;
+  final PingSummary? summary;
 
   /// An error reported by the ping process
-  final PingError error;
+  final PingError? error;
 
   @override
   String toString() =>

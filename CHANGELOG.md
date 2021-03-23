@@ -1,3 +1,9 @@
+## 4.0.0
+
+- Nullsafety
+- Consolidate response parser
+- Improve error output verbosity
+
 ## 3.0.0
 
 - Improve stream management

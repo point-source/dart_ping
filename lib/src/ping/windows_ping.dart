@@ -4,22 +4,26 @@ import 'dart:io';
 
 import 'package:async/async.dart';
 import 'package:dart_ping/dart_ping.dart';
+import 'package:dart_ping/src/response_parser.dart';
 import 'package:dart_ping/src/ping/base_ping.dart';
 import 'package:dart_ping/src/dart_ping_base.dart';
 
 class PingWindows extends BasePing implements Ping {
   PingWindows(
-      String host, int count, double interval, double timeout, bool ipv6)
+      String host, int? count, double interval, double timeout, bool ipv6)
       : super(host, count, interval, timeout, ipv6);
 
-  static final _resRegex =
+  static final _responseRgx =
       RegExp(r'from (.*): bytes=(\d+) time=(\d+.?\d+)ms TTL=(\d+)');
-  static final _summaryRegexes = [
-    RegExp(r'Sent = (\d+), Received = (\d+), Lost = (\d+)'),
-    RegExp(r'Minimum = (\d+)ms, Maximum = (\d+)ms, Average = (\d+)ms'),
-  ];
+  static final _summaryRgx =
+      RegExp(r'Sent = (\d+), Received = (\d+), Lost = (\d+)');
+  static final _responseStr = RegExp(r'Reply from');
+  static final _summaryStr = RegExp(r'Lost');
+  static final _timeoutStr = RegExp(r'host unreachable|timed out');
+  static final _unknownHostStr = RegExp(r'could not find host');
+  static final _errorStr = RegExp(r'transmit failed');
 
-  Process _process;
+  Process? _process;
 
   @override
   Future<void> onListen() async {
@@ -27,27 +31,30 @@ class PingWindows extends BasePing implements Ping {
       throw Exception('ping is already running');
     }
     if (ipv6) throw UnimplementedError('IPv6 not implemented for windows');
-    var params = [];
+    var params = ['-w', timeout.toString()];
     if (count == null) {
       params.add('-t');
     } else {
       params.add('-n');
       params.add(count.toString());
     }
-    if (timeout != null) {
-      params.add('-w');
-      params.add(timeout.toString());
-    }
     _process = await Process.start('ping', [...params, host]);
     await controller.addStream(
-        StreamGroup.merge([_process.stderr, _process.stdout])
+        StreamGroup.merge([_process!.stderr, _process!.stdout])
             .transform(utf8.decoder)
             .transform(LineSplitter())
-            .transform<PingData>(_windowsTransformer));
-    await _process.exitCode.then((value) async {
+            .transform<PingData>(responseParser(
+                responseRgx: _responseRgx,
+                summaryRgx: _summaryRgx,
+                responseStr: _responseStr,
+                summaryStr: _summaryStr,
+                timeoutStr: _timeoutStr,
+                unknownHostStr: _unknownHostStr,
+                errorStr: _errorStr)));
+    await _process!.exitCode.then((value) async {
+      await controller.done;
       switch (value) {
         case 0:
-          await controller.done;
           break;
         default:
           throw Exception('Ping process exited with code: $value');
@@ -61,74 +68,6 @@ class PingWindows extends BasePing implements Ping {
     if (_process == null) {
       throw Exception('Cannot kill a process that has not yet been started');
     }
-    _process.kill(ProcessSignal.sigint);
+    _process!.kill(ProcessSignal.sigint);
   }
-
-  /// StreamTransformer for Android response from process stdout/stderr.
-  static final StreamTransformer<String, PingData> _windowsTransformer =
-      StreamTransformer.fromHandlers(
-    handleData: (data, sink) {
-      if (data.contains('Reply from')) {
-        if (data.contains('host unreachable')) {
-          sink.add(
-            PingData(
-              error: PingError.RequestTimedOut,
-            ),
-          );
-        }
-        final match = _resRegex.firstMatch(data);
-        if (match == null) {
-          return;
-        }
-        sink.add(
-          PingData(
-            response: PingResponse(
-              ip: match.group(1),
-              ttl: int.parse(match.group(4)),
-              time: Duration(
-                  microseconds:
-                      ((double.parse(match.group(3))) * 1000).floor()),
-            ),
-          ),
-        );
-      }
-      if (data.contains('could not find host')) {
-        sink.add(
-          PingData(
-            error: PingError.UnknownHost,
-          ),
-        );
-      }
-      if (data.contains('transmit failed')) {
-        sink.add(
-          PingData(
-            error: PingError.Unknown,
-          ),
-        );
-      }
-      if (data.contains('timed out')) {
-        sink.add(
-          PingData(
-            error: PingError.RequestTimedOut,
-          ),
-        );
-      }
-      if (data.contains('Lost')) {
-        final match = _summaryRegexes[0].firstMatch(data);
-        final transmitted = match.group(1);
-        final received = match.group(2);
-        if (transmitted == null || received == null) {
-          return;
-        }
-        sink.add(
-          PingData(
-            summary: PingSummary(
-              transmitted: int.parse(transmitted),
-              received: int.parse(received),
-            ),
-          ),
-        );
-      }
-    },
-  );
 }

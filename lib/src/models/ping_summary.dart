@@ -1,6 +1,7 @@
 /// Summary of the results
 class PingSummary {
-  PingSummary({this.transmitted, this.received, this.time});
+  PingSummary(
+      {required this.transmitted, required this.received, required this.time});
 
   /// Number of icmp packets sent to the target
   final int transmitted;
@@ -13,5 +14,5 @@ class PingSummary {
 
   @override
   String toString() =>
-      'PingSummary(transmitted:$transmitted, received:$received, time:${time?.inMilliseconds} ms)';
+      'PingSummary(transmitted:$transmitted, received:$received, time:${time.inMilliseconds} ms)';
 }
