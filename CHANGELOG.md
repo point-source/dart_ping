@@ -1,3 +1,9 @@
+## 4.0.1
+
+- Fix timeout on macOS
+- Leave sequence number intact (don't decrement)
+- Add tests
+
 ## 4.0.0
 
 - Nullsafety
