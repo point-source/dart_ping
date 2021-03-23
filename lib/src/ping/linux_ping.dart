@@ -19,9 +19,8 @@ class PingLinux extends BasePing implements Ping {
       RegExp(r'(\d+) packets transmitted, (\d+) received,.*time (\d+)ms');
   static final _responseStr = RegExp(r'bytes from');
   static final _timeoutStr = RegExp(r'no answer yet');
-  static final _unknownHostStr = RegExp(r'unknown host');
+  static final _unknownHostStr = RegExp(r'unknown host|service not known');
   static final _summaryStr = RegExp(r'packet loss');
-  static final _errorStr = RegExp(r'service not known');
 
   Process? _process;
 
@@ -44,8 +43,7 @@ class PingLinux extends BasePing implements Ping {
                 responseStr: _responseStr,
                 timeoutStr: _timeoutStr,
                 unknownHostStr: _unknownHostStr,
-                summaryStr: _summaryStr,
-                errorStr: _errorStr)));
+                summaryStr: _summaryStr)));
     await _process!.exitCode.then((value) async {
       await controller.done;
       switch (value) {
