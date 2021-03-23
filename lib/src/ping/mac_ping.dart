@@ -29,7 +29,7 @@ class PingMac extends BasePing implements Ping {
     if (_process != null) {
       throw Exception('ping is already running');
     }
-    var params = ['-n', '-W $timeout', '-i $interval'];
+    var params = ['-n', '-W ${timeout * 1000}', '-i $interval'];
     if (count != null) params.add('-c $count');
     _process = await Process.start(ipv6 ? 'ping6' : 'ping', [...params, host]);
     await controller.addStream(
