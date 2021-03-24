@@ -14,7 +14,7 @@ class PingWindows extends BasePing implements Ping {
       : super(host, count, interval, timeout, ipv6);
 
   static final _responseRgx =
-      RegExp(r'from (.*): bytes=(\d+) time=(\d+.?\d+)ms TTL=(\d+)');
+      RegExp(r'from (.*): bytes=\d+() time=(\d+)ms TTL=(\d+)');
   static final _summaryRgx =
       RegExp(r'Sent = (\d+), Received = (\d+), Lost = (\d+)');
   static final _responseStr = RegExp(r'Reply from');
@@ -68,6 +68,6 @@ class PingWindows extends BasePing implements Ping {
     if (_process == null) {
       throw Exception('Cannot kill a process that has not yet been started');
     }
-    _process!.kill(ProcessSignal.sigint);
+    _process!.kill();
   }
 }

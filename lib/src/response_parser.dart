@@ -46,7 +46,7 @@ StreamTransformer<String, PingData> responseParser(
             PingData(
               response: PingResponse(
                 ip: match.group(1),
-                seq: seq == null ? null : int.parse(seq),
+                seq: seq?.isEmpty ?? true ? null : int.parse(seq!),
                 ttl: ttl == null ? null : int.parse(ttl),
                 time: time == null
                     ? null

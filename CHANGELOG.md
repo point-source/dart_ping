@@ -1,3 +1,7 @@
+## 4.0.2
+
+- Fix response parsing on Windows 10
+
 ## 4.0.1
 
 - Fix timeout on macOS
