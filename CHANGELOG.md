@@ -1,3 +1,7 @@
+## 5.3.1
+
+- Fix ttl flag on Windows
+
 ## 5.3.0
 
 - Implement custom ping parser override to support other languages
