@@ -39,25 +39,22 @@ class PingWindows extends BasePing implements Ping {
       params.add(count.toString());
     }
     _process = await Process.start('ping', [...params, host]);
-    await controller.addStream(
-        StreamGroup.merge([_process!.stderr, _process!.stdout])
-            .transform(utf8.decoder)
-            .transform(LineSplitter())
-            .transform<PingData>(responseParser(
-                responseRgx: _responseRgx,
-                summaryRgx: _summaryRgx,
-                responseStr: _responseStr,
-                summaryStr: _summaryStr,
-                timeoutStr: _timeoutStr,
-                unknownHostStr: _unknownHostStr,
-                errorStr: _errorStr)));
+    final sub = StreamGroup.merge([_process!.stderr, _process!.stdout])
+        .transform(utf8.decoder)
+        .transform(LineSplitter())
+        .transform<PingData>(responseParser(
+            responseRgx: _responseRgx,
+            summaryRgx: _summaryRgx,
+            responseStr: _responseStr,
+            summaryStr: _summaryStr,
+            timeoutStr: _timeoutStr,
+            unknownHostStr: _unknownHostStr,
+            errorStr: _errorStr))
+        .listen(controller.add);
+    await sub.asFuture();
     await _process!.exitCode.then((value) async {
-      await controller.done;
-      switch (value) {
-        case 0:
-          break;
-        default:
-          throw Exception('Ping process exited with code: $value');
+      if (value > 0) {
+        controller.addError(Exception('Ping process exited with code: $value'));
       }
       _process = null;
     });

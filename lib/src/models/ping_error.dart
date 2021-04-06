@@ -13,8 +13,4 @@ class PingError {
       message == null ? _errorStr.toString() : '$_errorStr: $message';
 }
 
-enum ErrorType {
-  RequestTimedOut,
-  UnknownHost,
-  Unknown,
-}
+enum ErrorType { RequestTimedOut, UnknownHost, Unknown, NoReply }

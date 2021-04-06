@@ -23,6 +23,7 @@ class PingMac extends BasePing implements Ping {
   static final _summaryStr = RegExp(r'packet loss');
 
   Process? _process;
+  PingData? _summary;
 
   @override
   Future<void> onListen() async {
@@ -32,27 +33,36 @@ class PingMac extends BasePing implements Ping {
     var params = ['-n', '-W ${timeout * 1000}', '-i $interval'];
     if (count != null) params.add('-c $count');
     _process = await Process.start(ipv6 ? 'ping6' : 'ping', [...params, host]);
-    await controller.addStream(
-        StreamGroup.merge([_process!.stderr, _process!.stdout])
-            .transform(utf8.decoder)
-            .transform(LineSplitter())
-            .transform<PingData>(responseParser(
-                responseRgx: _responseRgx,
-                sequenceRgx: _sequenceRgx,
-                summaryRgx: _summaryRgx,
-                responseStr: _responseStr,
-                timeoutStr: _timeoutStr,
-                unknownHostStr: _unknownHostStr,
-                summaryStr: _summaryStr)));
+    final sub = StreamGroup.merge([_process!.stderr, _process!.stdout])
+        .transform(utf8.decoder)
+        .transform(LineSplitter())
+        .transform<PingData>(responseParser(
+            responseRgx: _responseRgx,
+            sequenceRgx: _sequenceRgx,
+            summaryRgx: _summaryRgx,
+            responseStr: _responseStr,
+            timeoutStr: _timeoutStr,
+            unknownHostStr: _unknownHostStr,
+            summaryStr: _summaryStr))
+        .listen((event) {
+      if (event.summary != null) {
+        _summary = event;
+      } else {
+        controller.add(event);
+      }
+    });
+    await sub.asFuture();
     await _process!.exitCode.then((value) async {
-      await controller.done;
-      switch (value) {
-        case 0:
-          break;
-        case 68: //Unknown host
-          break;
-        default:
-          throw Exception('Ping process exited with code: $value');
+      if (_summary != null) {
+        if (value == 1) {
+          _summary!.error = PingError(ErrorType.NoReply);
+        } else if (value == 68) {
+          _summary!.error = PingError(ErrorType.UnknownHost);
+        }
+        controller.add(_summary!);
+      }
+      if (value > 1 && value != 68) {
+        controller.addError(Exception('Ping process exited with code: $value'));
       }
       _process = null;
     });

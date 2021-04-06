@@ -13,7 +13,7 @@ class PingData {
   final PingSummary? summary;
 
   /// An error reported by the ping process
-  final PingError? error;
+  PingError? error;
 
   @override
   String toString() =>
