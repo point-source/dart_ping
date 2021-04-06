@@ -1,8 +1,6 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
-import 'package:async/async.dart';
 import 'package:dart_ping/dart_ping.dart';
 import 'package:dart_ping/src/response_parser.dart';
 import 'package:dart_ping/src/ping/base_ping.dart';
@@ -23,13 +21,18 @@ class PingWindows extends BasePing implements Ping {
   static final _unknownHostStr = RegExp(r'could not find host');
   static final _errorStr = RegExp(r'transmit failed');
 
-  Process? _process;
+  @override
+  StreamTransformer<String, PingData> get parser => responseParser(
+      responseRgx: _responseRgx,
+      summaryRgx: _summaryRgx,
+      responseStr: _responseStr,
+      summaryStr: _summaryStr,
+      timeoutStr: _timeoutStr,
+      unknownHostStr: _unknownHostStr,
+      errorStr: _errorStr);
 
   @override
-  Future<void> onListen() async {
-    if (_process != null) {
-      throw Exception('ping is already running');
-    }
+  Future<Process> get platformProcess async {
     if (ipv6) throw UnimplementedError('IPv6 not implemented for windows');
     var params = ['-w', timeout.toString(), '-I', ttl.toString()];
     if (count == null) {
@@ -38,33 +41,16 @@ class PingWindows extends BasePing implements Ping {
       params.add('-n');
       params.add(count.toString());
     }
-    _process = await Process.start('ping', [...params, host]);
-    final sub = StreamGroup.merge([_process!.stderr, _process!.stdout])
-        .transform(utf8.decoder)
-        .transform(LineSplitter())
-        .transform<PingData>(responseParser(
-            responseRgx: _responseRgx,
-            summaryRgx: _summaryRgx,
-            responseStr: _responseStr,
-            summaryStr: _summaryStr,
-            timeoutStr: _timeoutStr,
-            unknownHostStr: _unknownHostStr,
-            errorStr: _errorStr))
-        .listen(controller.add);
-    await sub.asFuture();
-    await _process!.exitCode.then((value) async {
-      if (value > 0) {
-        controller.addError(Exception('Ping process exited with code: $value'));
-      }
-      _process = null;
-    });
+    return await Process.start('ping', [...params, host]);
   }
 
   @override
-  Future<void> stop() async {
-    if (_process == null) {
-      throw Exception('Cannot kill a process that has not yet been started');
+  PingData processSummary(int exitCode, PingData summary) => summary;
+
+  @override
+  Exception? processErrors(int exitCode) {
+    if (exitCode > 0) {
+      return Exception('Ping process exited with code: $exitCode');
     }
-    _process!.kill();
   }
 }

@@ -1,12 +1,18 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
+import 'package:async/async.dart';
 import 'package:dart_ping/src/models/ping_data.dart';
 
 abstract class BasePing {
   BasePing(
       this.host, this.count, this.interval, this.timeout, this.ttl, this.ipv6) {
-    controller =
-        StreamController<PingData>(onListen: onListen, onCancel: onCancel);
+    _controller = StreamController<PingData>(
+        onListen: _onListen,
+        onCancel: _onCancel,
+        onPause: () => _sub.pause,
+        onResume: () => _sub.resume);
   }
 
   String host;
@@ -15,13 +21,83 @@ abstract class BasePing {
   double timeout;
   int ttl;
   bool ipv6;
-  late StreamController<PingData> controller;
 
-  Stream<PingData> get stream => controller.stream;
+  late final StreamController<PingData> _controller;
+  Process? _process;
+  late final StreamSubscription<PingData> _sub;
+  PingData? _summary;
 
-  Future<void> onListen();
+  /// Starts a ping process on the host OS
+  Future<Process> get platformProcess;
 
-  Future<void> onCancel() async => await stop();
+  /// Parses ping process strings into PingData objects
+  StreamTransformer<String, PingData> get parser;
 
-  Future<void> stop() async => await controller.close();
+  /// Transforms the ping process output into PingData objects
+  Stream<PingData> get _parsedOutput =>
+      StreamGroup.merge([_process!.stderr, _process!.stdout])
+          .transform(utf8.decoder)
+          .transform(LineSplitter())
+          .transform<PingData>(parser);
+
+  Future<void> _onListen() async {
+    // Start new ping process on host OS
+    _process = await platformProcess;
+    // Get platform-specific parsed PingData
+    _parsedOutput.listen((event) {
+      if (event.summary != null) {
+        _summary = event;
+      } else {
+        _controller.add(event);
+      }
+    }, onDone: _cleanup);
+  }
+
+  /// Processes output summary and closes stream after ping process is done
+  Future<void> _cleanup() async {
+    final code = await _process!.exitCode;
+    // Is there a ping summary that we should add exit code info to?
+    if (_summary != null) {
+      if (code == 0) {
+        _controller.add(_summary!);
+      } else {
+        _controller.add(processSummary(code, _summary!));
+      }
+    }
+    // Does the exit code reveal an error? Should we add it to the stream?
+    if (code != 0) {
+      final error = processErrors(code);
+      if (error != null) {
+        _controller.addError(error);
+      }
+    }
+    // All done! Make sure nothing else gets added
+    if (!_controller.isClosed) {
+      await _controller.close();
+    }
+  }
+
+  /// Interprets exit code into an ErrorType (if any) and adds to PingSummary
+  PingData processSummary(int exitCode, PingData summary);
+
+  /// Converts error exit codes into Exceptions
+  Exception? processErrors(int exitCode);
+
+  Stream<PingData> get stream => _controller.stream;
+
+  Future<void> _onCancel() async {
+    _process?.kill(ProcessSignal.sigint);
+  }
+
+  Future<bool> stop() async {
+    // ignore: unnecessary_null_comparison
+    if (_process == null) {
+      throw Exception('Cannot kill a process that has not yet been started');
+    }
+    if (_process?.kill(ProcessSignal.sigint) ?? false) {
+      await _controller.done;
+      return true;
+    }
+    return false;
+  }
 }
