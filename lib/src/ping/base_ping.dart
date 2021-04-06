@@ -3,7 +3,8 @@ import 'dart:async';
 import 'package:dart_ping/src/models/ping_data.dart';
 
 abstract class BasePing {
-  BasePing(this.host, this.count, this.interval, this.timeout, this.ipv6) {
+  BasePing(
+      this.host, this.count, this.interval, this.timeout, this.ttl, this.ipv6) {
     controller =
         StreamController<PingData>(onListen: onListen, onCancel: onCancel);
   }
@@ -12,6 +13,7 @@ abstract class BasePing {
   int? count;
   double interval;
   double timeout;
+  int ttl;
   bool ipv6;
   late StreamController<PingData> controller;
 

@@ -9,8 +9,9 @@ abstract class Ping {
           {int? count,
           double interval = 1.0,
           double timeout = 2.0,
+          int ttl = 255,
           bool ipv6 = false}) =>
-      getPing(host, count, interval, timeout, ipv6);
+      getPing(host, count, interval, timeout, ttl, ipv6);
 
   /// Stream of [PingData] which spawns a ping process on listen and
   /// kills it on cancellation. The stream closes when the process ends.

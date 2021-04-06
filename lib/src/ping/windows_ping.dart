@@ -9,9 +9,9 @@ import 'package:dart_ping/src/ping/base_ping.dart';
 import 'package:dart_ping/src/dart_ping_base.dart';
 
 class PingWindows extends BasePing implements Ping {
-  PingWindows(
-      String host, int? count, double interval, double timeout, bool ipv6)
-      : super(host, count, interval, timeout, ipv6);
+  PingWindows(String host, int? count, double interval, double timeout, int ttl,
+      bool ipv6)
+      : super(host, count, interval, timeout, ttl, ipv6);
 
   static final _responseRgx =
       RegExp(r'from (.*): bytes=\d+() time=(\d+)ms TTL=(\d+)');
@@ -31,7 +31,7 @@ class PingWindows extends BasePing implements Ping {
       throw Exception('ping is already running');
     }
     if (ipv6) throw UnimplementedError('IPv6 not implemented for windows');
-    var params = ['-w', timeout.toString()];
+    var params = ['-w', timeout.toString(), '-I', ttl.toString()];
     if (count == null) {
       params.add('-t');
     } else {

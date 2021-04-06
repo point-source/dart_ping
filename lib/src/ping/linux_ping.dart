@@ -9,8 +9,9 @@ import 'package:dart_ping/src/ping/base_ping.dart';
 import 'package:dart_ping/src/dart_ping_base.dart';
 
 class PingLinux extends BasePing implements Ping {
-  PingLinux(String host, int? count, double interval, double timeout, bool ipv6)
-      : super(host, count, interval, timeout, ipv6);
+  PingLinux(String host, int? count, double interval, double timeout, int ttl,
+      bool ipv6)
+      : super(host, count, interval, timeout, ttl, ipv6);
 
   static final _responseRgx =
       RegExp(r'from (.*): icmp_seq=(\d+) ttl=(\d+) time=((\d+).?(\d+))');
@@ -31,7 +32,7 @@ class PingLinux extends BasePing implements Ping {
     if (_process != null) {
       throw Exception('ping is already running');
     }
-    var params = ['-O', '-n', '-W $timeout', '-i $interval'];
+    var params = ['-O', '-n', '-W $timeout', '-i $interval', '-t $ttl'];
     if (count != null) params.add('-c $count');
     _process = await Process.start(ipv6 ? 'ping6' : 'ping', [...params, host]);
     final sub = StreamGroup.merge([_process!.stderr, _process!.stdout])
