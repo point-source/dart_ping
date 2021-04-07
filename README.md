@@ -9,21 +9,22 @@ A simple usage example:
 
 ```dart
 import 'package:dart_ping/dart_ping.dart';
-  // Create ping object with desired args
-  final ping = Ping('google.com', count: 5);
 
-  // Begin ping process and listen for output
-  ping.stream.listen((event) {
-    print(event);
-  });
+// Create ping object with desired args
+final ping = Ping('google.com', count: 5);
 
-  // Waiting for ping to output first two results
-  // Not needed in actual use. For example only
-  await Future.delayed(Duration(seconds: 2));
+// Begin ping process and listen for output
+ping.stream.listen((event) {
+  print(event);
+});
 
-  // Stop the ping prematurely and output a summary
-  // Make sure you do not call this before listening to the stream!
-  await ping.stop();
+// Waiting for ping to output first two results
+// Not needed in actual use. For example only
+await Future.delayed(Duration(seconds: 2));
+
+// Stop the ping prematurely and output a summary
+// Make sure you do not call this before listening to the stream!
+await ping.stop();
 ```
 
 ## Features and bugs
