@@ -15,8 +15,16 @@ abstract class Ping {
 
   /// Stream of [PingData] which spawns a ping process on listen and
   /// kills it on cancellation. The stream closes when the process ends.
+  ///
+  /// Note that if you cancel the subscription, you will not receive
+  /// the ping summary data. If you want to prematurely halt the process
+  /// and still receive summary output, use the [stop] method.
   Stream<PingData> get stream;
 
   /// Kills ping process and closes stream.
+  ///
+  /// Using [stop] instead of subscription.cancel() allows the ping
+  /// summary to output before the stream is closed. If you cancel
+  /// your stream subscription, you will not receive summary output.
   Future<bool> stop();
 }

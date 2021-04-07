@@ -14,5 +14,6 @@ void main() async {
   await Future.delayed(Duration(seconds: 2));
 
   // Stop the ping prematurely and output a summary
+  // Make sure you do not call this before listening to the stream!
   await ping.stop();
 }

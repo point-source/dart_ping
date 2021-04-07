@@ -1,3 +1,12 @@
+## 5.0.0
+
+- Implement ttl flag (default 255)
+- Identify exit code 1 and update PingSummary when it occurs
+- Add errors to stream rather than throwing them
+- Fix bug where stream fails to close
+- Fix tests on platforms that are not macOS
+- Fix multiple race conditions related to early halt / cancel
+
 ## 4.0.2
 
 - Fix response parsing on Windows 10
