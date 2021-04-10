@@ -33,7 +33,7 @@ class PingMac extends BasePing implements Ping {
 
   @override
   Future<Process> get platformProcess async {
-    var params = ['-n', '-W ${timeout * 1000}', '-i $interval', '-T $ttl'];
+    var params = ['-n', '-W ${timeout * 1000}', '-i $interval', '-m $ttl'];
     if (count != null) params.add('-c $count');
     return await Process.start(ipv6 ? 'ping6' : 'ping', [...params, host]);
   }
