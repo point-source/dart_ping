@@ -16,6 +16,7 @@ class PingData {
   PingError? error;
 
   @override
-  String toString() =>
-      'PingData(response:$response, summary:$summary, error:$error)';
+  String toString() => summary == null
+      ? 'PingResponse(response:$response, error:$error)'
+      : summary.toString();
 }
