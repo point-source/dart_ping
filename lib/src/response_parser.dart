@@ -62,8 +62,11 @@ StreamTransformer<String, PingData> responseParser(
           final match = summaryRgx.firstMatch(data);
           var tx = match?.group(1);
           var rx = match?.group(2);
-          var time = match?.group(3);
-          if (tx == null || rx == null || time == null) {
+          var time;
+          if ((match?.groupCount ?? 0) > 2) {
+            time = match?.group(3);
+          }
+          if (tx == null || rx == null) {
             return;
           }
           sink.add(
@@ -71,7 +74,9 @@ StreamTransformer<String, PingData> responseParser(
               summary: PingSummary(
                 transmitted: int.parse(tx),
                 received: int.parse(rx),
-                time: Duration(milliseconds: int.parse(time)),
+                time: time == null
+                    ? null
+                    : Duration(milliseconds: int.parse(time)),
               ),
             ),
           );

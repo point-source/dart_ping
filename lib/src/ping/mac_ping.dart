@@ -14,8 +14,8 @@ class PingMac extends BasePing implements Ping {
   static final _responseRgx =
       RegExp(r'from (.*): icmp_seq=(\d+) ttl=(\d+) time=((\d+).?(\d+))');
   static final _sequenceRgx = RegExp(r'icmp_seq (\d+)');
-  static final _summaryRgx = RegExp(
-      r'(\d+) packets transmitted, (\d+) packets received, (\d+.\d+)% packet loss');
+  static final _summaryRgx =
+      RegExp(r'(\d+) packets transmitted, (\d+) packets received');
   static final _responseStr = RegExp(r'bytes from');
   static final _timeoutStr = RegExp(r'Request timeout');
   static final _unknownHostStr = RegExp(r'Unknown host');
