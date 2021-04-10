@@ -4,6 +4,8 @@ import 'dart:io';
 
 import 'package:async/async.dart';
 import 'package:dart_ping/src/models/ping_data.dart';
+import 'package:dart_ping/src/models/ping_error.dart';
+import 'package:dart_ping/src/models/ping_summary.dart';
 
 abstract class BasePing {
   BasePing(
@@ -25,7 +27,8 @@ abstract class BasePing {
   late final StreamController<PingData> _controller;
   Process? _process;
   late final StreamSubscription<PingData> _sub;
-  PingData? _summary;
+  PingData? _summaryData;
+  final List<PingError> _errors = [];
 
   /// Starts a ping process on the host OS
   Future<Process> get platformProcess;
@@ -45,43 +48,58 @@ abstract class BasePing {
     _process = await platformProcess;
     // Get platform-specific parsed PingData
     _parsedOutput.listen((event) {
-      if (event.summary != null) {
-        _summary = event;
-      } else {
+      if (event.response != null || event.error != null) {
+        // Accumulate error if one exists
+        if (event.error != null) {
+          _errors.add(event.error!);
+        }
         _controller.add(event);
+      } else if (event.summary != null) {
+        event.summary!.errors.addAll(_errors);
+        _summaryData = event;
       }
     }, onDone: _cleanup);
   }
 
   /// Processes output summary and closes stream after ping process is done
   Future<void> _cleanup() async {
-    final code = await _process!.exitCode;
-    // Is there a ping summary that we should add exit code info to?
-    if (_summary != null) {
-      if (code == 0) {
-        _controller.add(_summary!);
-      } else {
-        _controller.add(processSummary(code, _summary!));
-      }
-    }
-    // Does the exit code reveal an error? Should we add it to the stream?
-    if (code != 0) {
-      final error = processErrors(code);
+    final exitCode = await _process!.exitCode;
+
+    if (exitCode != 0) {
+      // Does the exit code reveal an error?
+      final error = interpretExitCode(exitCode);
       if (error != null) {
-        _controller.addError(error);
+        // Is there a ping summary that we should add exit code info to?
+        if (_summaryData != null) {
+          _summaryData!.summary!.errors.add(error);
+        } else {
+          _summaryData = PingData(
+              summary: PingSummary(
+                  transmitted: 0,
+                  received: 0,
+                  time: Duration(),
+                  errors: [error]));
+        }
+      } else {
+        throwExit(exitCode);
       }
     }
+
+    if (_summaryData != null) {
+      _controller.add(_summaryData!);
+    }
+
     // All done! Make sure nothing else gets added
     if (!_controller.isClosed) {
       await _controller.close();
     }
   }
 
-  /// Interprets exit code into an ErrorType (if any) and adds to PingSummary
-  PingData processSummary(int exitCode, PingData summary);
+  /// Interprets exit code into a PingError
+  PingError? interpretExitCode(int exitCode);
 
   /// Converts error exit codes into Exceptions
-  Exception? processErrors(int exitCode);
+  Exception? throwExit(int exitCode);
 
   Stream<PingData> get stream => _controller.stream;
 

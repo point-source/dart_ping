@@ -39,17 +39,16 @@ class PingMac extends BasePing implements Ping {
   }
 
   @override
-  PingData processSummary(int exitCode, PingData summary) {
+  PingError? interpretExitCode(int exitCode) {
     if (exitCode == 1) {
-      summary.error = PingError(ErrorType.NoReply);
+      return PingError(ErrorType.NoReply);
     } else if (exitCode == 68) {
-      summary.error = PingError(ErrorType.UnknownHost);
+      return PingError(ErrorType.UnknownHost);
     }
-    return summary;
   }
 
   @override
-  Exception? processErrors(int exitCode) {
+  Exception? throwExit(int exitCode) {
     if (exitCode > 1 && exitCode != 68) {
       return Exception('Ping process exited with code: $exitCode');
     }

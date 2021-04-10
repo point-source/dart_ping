@@ -45,12 +45,10 @@ class PingWindows extends BasePing implements Ping {
   }
 
   @override
-  PingData processSummary(int exitCode, PingData summary) => summary;
+  PingError? interpretExitCode(int exitCode) => PingError(ErrorType.Unknown,
+      message: 'Ping process exited with code: $exitCode');
 
   @override
-  Exception? processErrors(int exitCode) {
-    if (exitCode > 0) {
-      return Exception('Ping process exited with code: $exitCode');
-    }
-  }
+  Exception throwExit(int exitCode) =>
+      Exception('Ping process exited with code: $exitCode');
 }
