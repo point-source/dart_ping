@@ -13,6 +13,9 @@ abstract class Ping {
           bool ipv6 = false}) =>
       getPing(host, count, interval, timeout, ttl, ipv6);
 
+  /// The command that will be run on the host OS
+  String get command;
+
   /// Stream of [PingData] which spawns a ping process on listen and
   /// kills it on cancellation. The stream closes when the process ends.
   ///

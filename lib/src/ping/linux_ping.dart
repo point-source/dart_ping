@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:dart_ping/dart_ping.dart';
 import 'package:dart_ping/src/response_parser.dart';
@@ -33,10 +32,10 @@ class PingLinux extends BasePing implements Ping {
       summaryStr: _summaryStr);
 
   @override
-  Future<Process> get platformProcess async {
+  List<String> get params {
     var params = ['-O', '-n', '-W $timeout', '-i $interval', '-t $ttl'];
     if (count != null) params.add('-c $count');
-    return await Process.start(ipv6 ? 'ping6' : 'ping', [...params, host]);
+    return params;
   }
 
   @override

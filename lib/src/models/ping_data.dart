@@ -17,6 +17,8 @@ class PingData {
 
   @override
   String toString() => summary == null
-      ? 'PingResponse(response:$response, error:$error)'
+      ? error == null
+          ? response.toString()
+          : 'PingError(response:$response, error:$error)'
       : summary.toString();
 }

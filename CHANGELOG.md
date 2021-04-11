@@ -1,8 +1,14 @@
+## 5.2.0
+
+- Add command getter to output the string command that will be run on the host OS
+- Add command preview to example
+- Improve PingData.toString() output
+
 ## 5.1.0
 
 - Accumulate errors into PingSummary
 - Improve PingData.toString() output
-- Don't parse non-existent time values on macOS
+- Don't try to parse non-existent time values on macOS
 - Fix macOS summary regex
 - Don't throw errors on Windows (just add them to PingSummary stream data)
 

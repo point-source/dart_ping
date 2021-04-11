@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:dart_ping/dart_ping.dart';
 import 'package:dart_ping/src/response_parser.dart';
@@ -32,7 +31,7 @@ class PingWindows extends BasePing implements Ping {
       errorStr: _errorStr);
 
   @override
-  Future<Process> get platformProcess async {
+  List<String> get params {
     if (ipv6) throw UnimplementedError('IPv6 not implemented for windows');
     var params = ['-w', timeout.toString(), '-I', ttl.toString()];
     if (count == null) {
@@ -41,7 +40,7 @@ class PingWindows extends BasePing implements Ping {
       params.add('-n');
       params.add(count.toString());
     }
-    return await Process.start('ping', [...params, host]);
+    return params;
   }
 
   @override

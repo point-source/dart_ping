@@ -30,8 +30,15 @@ abstract class BasePing {
   PingData? _summaryData;
   final List<PingError> _errors = [];
 
+  /// Params and flags that should be applied to the ping command
+  List<String> get params;
+
+  /// The command that will be run on the host OS
+  String get command => 'ping ' + params.join(' ') + ' $host';
+
   /// Starts a ping process on the host OS
-  Future<Process> get platformProcess;
+  Future<Process> get platformProcess async =>
+      await Process.start(ipv6 ? 'ping6' : 'ping', [...params, host]);
 
   /// Parses ping process strings into PingData objects
   StreamTransformer<String, PingData> get parser;
