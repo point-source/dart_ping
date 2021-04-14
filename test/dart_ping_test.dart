@@ -34,7 +34,7 @@ void main() {
       var ping = Ping('201.202.203.204', count: 2, ttl: 1);
       var data = await ping.stream.last;
       expect(data, isA<PingData>());
-      expect(data.summary?.errors, contains(ErrorType.NoReply));
+      expect(data.summary?.errors.toString(), contains('NoReply'));
     });
   });
 
