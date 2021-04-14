@@ -1,6 +1,7 @@
 ## 5.3.0
 
 - Implement custom ping parser override to support other languages
+- Force IPv4 ping on Windows
 - Improve docs
 
 ## 5.2.0
