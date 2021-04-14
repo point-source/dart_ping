@@ -1,3 +1,8 @@
+## 5.3.0
+
+- Implement custom ping parser override to support other languages
+- Improve docs
+
 ## 5.2.0
 
 - Add command getter to output the string command that will be run on the host OS
