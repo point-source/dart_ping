@@ -6,10 +6,10 @@ import 'package:dart_ping/src/dart_ping_base.dart';
 class PingWindows extends BasePing implements Ping {
   PingWindows(String host, int? count, double interval, double timeout, int ttl,
       bool ipv6,
-      {RegexParser? parser})
+      {PingParser? parser})
       : super(host, count, interval, timeout, ttl, ipv6, parser ?? _parser);
 
-  static RegexParser get _parser => RegexParser(
+  static PingParser get _parser => PingParser(
       responseStr: RegExp(r'Reply from'),
       responseRgx: RegExp(r'from (.*): bytes=\d+() time=(\d+)ms TTL=(\d+)'),
       summaryStr: RegExp(r'Lost'),

@@ -5,8 +5,8 @@ import 'package:dart_ping/src/models/ping_error.dart';
 import 'package:dart_ping/src/models/ping_response.dart';
 import 'package:dart_ping/src/models/ping_summary.dart';
 
-class RegexParser {
-  RegexParser(
+class PingParser {
+  PingParser(
       {required this.responseStr,
       required this.responseRgx,
       this.sequenceRgx,

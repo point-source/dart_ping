@@ -6,10 +6,10 @@ import 'package:dart_ping/src/dart_ping_base.dart';
 class PingLinux extends BasePing implements Ping {
   PingLinux(String host, int? count, double interval, double timeout, int ttl,
       bool ipv6,
-      {RegexParser? parser})
+      {PingParser? parser})
       : super(host, count, interval, timeout, ttl, ipv6, parser ?? _parser);
 
-  static RegexParser get _parser => RegexParser(
+  static PingParser get _parser => PingParser(
       responseStr: RegExp(r'bytes from'),
       responseRgx:
           RegExp(r'from (.*): icmp_seq=(\d+) ttl=(\d+) time=((\d+).?(\d+))'),

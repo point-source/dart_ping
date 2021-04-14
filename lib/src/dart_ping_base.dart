@@ -29,11 +29,11 @@ abstract class Ping {
 
           /// Custom parser to interpret ping process output
           /// Useful for non-english based platforms
-          RegexParser? parser}) =>
+          PingParser? parser}) =>
       getPing(host, count, interval, timeout, ttl, ipv6, parser);
 
   /// Parser used to interpret ping process output
-  late RegexParser parser;
+  late PingParser parser;
 
   /// The command that will be run on the host OS
   String get command;

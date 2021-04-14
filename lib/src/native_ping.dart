@@ -7,7 +7,7 @@ import 'package:dart_ping/src/ping/mac_ping.dart';
 import 'package:dart_ping/src/ping/windows_ping.dart';
 
 Ping getPing(String host, int? count, double interval, double timeout, int ttl,
-    bool ipv6, RegexParser? parser) {
+    bool ipv6, PingParser? parser) {
   switch (Platform.operatingSystem) {
     case 'android':
     case 'fuchsia':

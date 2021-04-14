@@ -36,7 +36,7 @@ abstract class BasePing {
 
   /// Custom parser to interpret ping process output
   /// Useful for non-english based platforms
-  RegexParser parser;
+  PingParser parser;
 
   late final StreamController<PingData> _controller;
   Process? _process;
