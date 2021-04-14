@@ -18,16 +18,16 @@ abstract class BasePing {
   }
 
   String host;
-  int? count;
+  int count;
   double interval;
   double timeout;
   int ttl;
   bool ipv6;
 
-  late final StreamController<PingData> _controller;
-  Process? _process;
-  late final StreamSubscription<PingData> _sub;
-  PingData? _summaryData;
+  StreamController<PingData> _controller;
+  Process _process;
+  StreamSubscription<PingData> _sub;
+  PingData _summaryData;
   final List<PingError> _errors = [];
 
   /// Params and flags that should be applied to the ping command
@@ -45,7 +45,7 @@ abstract class BasePing {
 
   /// Transforms the ping process output into PingData objects
   Stream<PingData> get _parsedOutput =>
-      StreamGroup.merge([_process!.stderr, _process!.stdout])
+      StreamGroup.merge([_process.stderr, _process.stdout])
           .transform(utf8.decoder)
           .transform(LineSplitter())
           .transform<PingData>(parser);
@@ -58,11 +58,11 @@ abstract class BasePing {
       if (event.response != null || event.error != null) {
         // Accumulate error if one exists
         if (event.error != null) {
-          _errors.add(event.error!);
+          _errors.add(event.error);
         }
         _controller.add(event);
       } else if (event.summary != null) {
-        event.summary!.errors.addAll(_errors);
+        event.summary.errors.addAll(_errors);
         _summaryData = event;
       }
     }, onDone: _cleanup);
@@ -70,7 +70,7 @@ abstract class BasePing {
 
   /// Processes output summary and closes stream after ping process is done
   Future<void> _cleanup() async {
-    final exitCode = await _process!.exitCode;
+    final exitCode = await _process.exitCode;
 
     if (exitCode != 0) {
       // Does the exit code reveal an error?
@@ -78,7 +78,7 @@ abstract class BasePing {
       if (error != null) {
         // Is there a ping summary that we should add exit code info to?
         if (_summaryData != null) {
-          _summaryData!.summary!.errors.add(error);
+          _summaryData.summary.errors.add(error);
         } else {
           _summaryData = PingData(
               summary: PingSummary(
@@ -93,7 +93,7 @@ abstract class BasePing {
     }
 
     if (_summaryData != null) {
-      _controller.add(_summaryData!);
+      _controller.add(_summaryData);
     }
 
     // All done! Make sure nothing else gets added
@@ -103,10 +103,10 @@ abstract class BasePing {
   }
 
   /// Interprets exit code into a PingError
-  PingError? interpretExitCode(int exitCode);
+  PingError interpretExitCode(int exitCode);
 
   /// Converts error exit codes into Exceptions
-  Exception? throwExit(int exitCode);
+  Exception throwExit(int exitCode);
 
   Stream<PingData> get stream => _controller.stream;
 

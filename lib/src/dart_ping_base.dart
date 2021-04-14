@@ -6,7 +6,7 @@ import 'package:dart_ping/src/native_ping.dart';
 abstract class Ping {
   /// Creates an appropriate Ping instance for the detected platform
   factory Ping(String host,
-          {int? count,
+          {int count,
           double interval = 1.0,
           double timeout = 2.0,
           int ttl = 255,

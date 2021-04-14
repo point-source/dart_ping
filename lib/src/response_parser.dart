@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:meta/meta.dart';
 
 import 'models/ping_data.dart';
 import 'models/ping_error.dart';
@@ -6,14 +7,14 @@ import 'models/ping_response.dart';
 import 'models/ping_summary.dart';
 
 StreamTransformer<String, PingData> responseParser(
-        {required RegExp responseRgx,
-        RegExp? sequenceRgx,
-        required RegExp summaryRgx,
-        required RegExp responseStr,
-        required RegExp summaryStr,
-        required RegExp timeoutStr,
-        required RegExp unknownHostStr,
-        RegExp? errorStr}) =>
+        {@required RegExp responseRgx,
+        RegExp sequenceRgx,
+        @required RegExp summaryRgx,
+        @required RegExp responseStr,
+        @required RegExp summaryStr,
+        @required RegExp timeoutStr,
+        @required RegExp unknownHostStr,
+        RegExp errorStr}) =>
     StreamTransformer<String, PingData>.fromHandlers(
       handleData: (data, sink) {
         // Timeout
@@ -46,7 +47,7 @@ StreamTransformer<String, PingData> responseParser(
             PingData(
               response: PingResponse(
                 ip: match.group(1),
-                seq: seq?.isEmpty ?? true ? null : int.parse(seq!),
+                seq: seq?.isEmpty ?? true ? null : int.parse(seq),
                 ttl: ttl == null ? null : int.parse(ttl),
                 time: time == null
                     ? null

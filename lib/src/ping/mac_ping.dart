@@ -6,7 +6,7 @@ import 'package:dart_ping/src/ping/base_ping.dart';
 import 'package:dart_ping/src/dart_ping_base.dart';
 
 class PingMac extends BasePing implements Ping {
-  PingMac(String host, int? count, double interval, double timeout, int ttl,
+  PingMac(String host, int count, double interval, double timeout, int ttl,
       bool ipv6)
       : super(host, count, interval, timeout, ttl, ipv6);
 
@@ -38,7 +38,7 @@ class PingMac extends BasePing implements Ping {
   }
 
   @override
-  PingError? interpretExitCode(int exitCode) {
+  PingError interpretExitCode(int exitCode) {
     if (exitCode == 1) {
       return PingError(ErrorType.NoReply);
     } else if (exitCode == 68) {
@@ -47,7 +47,7 @@ class PingMac extends BasePing implements Ping {
   }
 
   @override
-  Exception? throwExit(int exitCode) {
+  Exception throwExit(int exitCode) {
     if (exitCode > 1 && exitCode != 68) {
       return Exception('Ping process exited with code: $exitCode');
     }

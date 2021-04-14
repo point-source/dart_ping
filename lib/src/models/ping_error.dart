@@ -3,7 +3,7 @@ class PingError {
   PingError(this.error, {this.message});
 
   final ErrorType error;
-  final String? message;
+  final String message;
 
   String get _errorStr =>
       error.toString().substring(error.toString().indexOf('.') + 1);

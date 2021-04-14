@@ -6,7 +6,7 @@ import 'package:dart_ping/src/ping/base_ping.dart';
 import 'package:dart_ping/src/dart_ping_base.dart';
 
 class PingWindows extends BasePing implements Ping {
-  PingWindows(String host, int? count, double interval, double timeout, int ttl,
+  PingWindows(String host, int count, double interval, double timeout, int ttl,
       bool ipv6)
       : super(host, count, interval, timeout, ttl, ipv6);
 
@@ -44,7 +44,7 @@ class PingWindows extends BasePing implements Ping {
   }
 
   @override
-  PingError? interpretExitCode(int exitCode) => PingError(ErrorType.Unknown,
+  PingError interpretExitCode(int exitCode) => PingError(ErrorType.Unknown,
       message: 'Ping process exited with code: $exitCode');
 
   @override

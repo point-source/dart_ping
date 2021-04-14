@@ -5,7 +5,7 @@ import 'package:dart_ping/src/ping/linux_ping.dart';
 import 'package:dart_ping/src/ping/mac_ping.dart';
 import 'package:dart_ping/src/ping/windows_ping.dart';
 
-Ping getPing(String host, int? count, double interval, double timeout, int ttl,
+Ping getPing(String host, int count, double interval, double timeout, int ttl,
     bool ipv6) {
   switch (Platform.operatingSystem) {
     case 'android':
