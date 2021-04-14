@@ -1,35 +1,25 @@
-import 'dart:async';
-
 import 'package:dart_ping/dart_ping.dart';
-import 'package:dart_ping/src/response_parser.dart';
+import 'package:dart_ping/src/models/regex_parser.dart';
 import 'package:dart_ping/src/ping/base_ping.dart';
 import 'package:dart_ping/src/dart_ping_base.dart';
 
 class PingLinux extends BasePing implements Ping {
   PingLinux(String host, int? count, double interval, double timeout, int ttl,
-      bool ipv6)
-      : super(host, count, interval, timeout, ttl, ipv6);
+      bool ipv6,
+      {RegexParser? parser})
+      : super(host, count, interval, timeout, ttl, ipv6, parser ?? _parser);
 
-  static final _responseRgx =
-      RegExp(r'from (.*): icmp_seq=(\d+) ttl=(\d+) time=((\d+).?(\d+))');
-  static final _sequenceRgx = RegExp(r'icmp_seq=(\d+)');
-  static final _summaryRgx =
-      RegExp(r'(\d+) packets transmitted, (\d+) received,.*time (\d+)ms');
-  static final _responseStr = RegExp(r'bytes from');
-  static final _timeoutStr = RegExp(r'no answer yet');
-  static final _unknownHostStr =
-      RegExp(r'unknown host|service not known|failure in name');
-  static final _summaryStr = RegExp(r'packet loss');
-
-  @override
-  StreamTransformer<String, PingData> get parser => responseParser(
-      responseRgx: _responseRgx,
-      sequenceRgx: _sequenceRgx,
-      summaryRgx: _summaryRgx,
-      responseStr: _responseStr,
-      timeoutStr: _timeoutStr,
-      unknownHostStr: _unknownHostStr,
-      summaryStr: _summaryStr);
+  static RegexParser get _parser => RegexParser(
+      responseStr: RegExp(r'bytes from'),
+      responseRgx:
+          RegExp(r'from (.*): icmp_seq=(\d+) ttl=(\d+) time=((\d+).?(\d+))'),
+      sequenceRgx: RegExp(r'icmp_seq=(\d+)'),
+      summaryStr: RegExp(r'packet loss'),
+      summaryRgx:
+          RegExp(r'(\d+) packets transmitted, (\d+) received,.*time (\d+)ms'),
+      timeoutStr: RegExp(r'no answer yet'),
+      unknownHostStr:
+          RegExp(r'unknown host|service not known|failure in name'));
 
   @override
   List<String> get params {

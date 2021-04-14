@@ -1,34 +1,22 @@
-import 'dart:async';
-
 import 'package:dart_ping/dart_ping.dart';
-import 'package:dart_ping/src/response_parser.dart';
+import 'package:dart_ping/src/models/regex_parser.dart';
 import 'package:dart_ping/src/ping/base_ping.dart';
 import 'package:dart_ping/src/dart_ping_base.dart';
 
 class PingWindows extends BasePing implements Ping {
   PingWindows(String host, int? count, double interval, double timeout, int ttl,
-      bool ipv6)
-      : super(host, count, interval, timeout, ttl, ipv6);
+      bool ipv6,
+      {RegexParser? parser})
+      : super(host, count, interval, timeout, ttl, ipv6, parser ?? _parser);
 
-  static final _responseRgx =
-      RegExp(r'from (.*): bytes=\d+() time=(\d+)ms TTL=(\d+)');
-  static final _summaryRgx =
-      RegExp(r'Sent = (\d+), Received = (\d+), Lost = (\d+)');
-  static final _responseStr = RegExp(r'Reply from');
-  static final _summaryStr = RegExp(r'Lost');
-  static final _timeoutStr = RegExp(r'host unreachable|timed out');
-  static final _unknownHostStr = RegExp(r'could not find host');
-  static final _errorStr = RegExp(r'transmit failed');
-
-  @override
-  StreamTransformer<String, PingData> get parser => responseParser(
-      responseRgx: _responseRgx,
-      summaryRgx: _summaryRgx,
-      responseStr: _responseStr,
-      summaryStr: _summaryStr,
-      timeoutStr: _timeoutStr,
-      unknownHostStr: _unknownHostStr,
-      errorStr: _errorStr);
+  static RegexParser get _parser => RegexParser(
+      responseStr: RegExp(r'Reply from'),
+      responseRgx: RegExp(r'from (.*): bytes=\d+() time=(\d+)ms TTL=(\d+)'),
+      summaryStr: RegExp(r'Lost'),
+      summaryRgx: RegExp(r'Sent = (\d+), Received = (\d+), Lost = (\d+)'),
+      timeoutStr: RegExp(r'host unreachable|timed out'),
+      unknownHostStr: RegExp(r'could not find host'),
+      errorStr: RegExp(r'transmit failed'));
 
   @override
   List<String> get params {

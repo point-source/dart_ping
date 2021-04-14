@@ -6,10 +6,11 @@ import 'package:async/async.dart';
 import 'package:dart_ping/src/models/ping_data.dart';
 import 'package:dart_ping/src/models/ping_error.dart';
 import 'package:dart_ping/src/models/ping_summary.dart';
+import 'package:dart_ping/src/models/regex_parser.dart';
 
 abstract class BasePing {
-  BasePing(
-      this.host, this.count, this.interval, this.timeout, this.ttl, this.ipv6) {
+  BasePing(this.host, this.count, this.interval, this.timeout, this.ttl,
+      this.ipv6, this.parser) {
     _controller = StreamController<PingData>(
         onListen: _onListen,
         onCancel: _onCancel,
@@ -17,12 +18,25 @@ abstract class BasePing {
         onResume: () => _sub.resume);
   }
 
+  /// Hostname, domain, or IP which you would like to ping
   String host;
+
+  /// How many times the host should be pinged before the process ends
   int? count;
+
+  /// Delay between ping attempts
   double interval;
+
+  /// How long to wait for a ping to return before marking it as lost
   double timeout;
+  // How many network hops the packet should travel before expiring
   int ttl;
+  // IPv6 Mode (Not supported on Windows)
   bool ipv6;
+
+  /// Custom parser to interpret ping process output
+  /// Useful for non-english based platforms
+  RegexParser parser;
 
   late final StreamController<PingData> _controller;
   Process? _process;
@@ -40,15 +54,12 @@ abstract class BasePing {
   Future<Process> get platformProcess async =>
       await Process.start(ipv6 ? 'ping6' : 'ping', [...params, host]);
 
-  /// Parses ping process strings into PingData objects
-  StreamTransformer<String, PingData> get parser;
-
   /// Transforms the ping process output into PingData objects
   Stream<PingData> get _parsedOutput =>
       StreamGroup.merge([_process!.stderr, _process!.stdout])
           .transform(utf8.decoder)
           .transform(LineSplitter())
-          .transform<PingData>(parser);
+          .transform<PingData>(parser.responseParser);
 
   Future<void> _onListen() async {
     // Start new ping process on host OS
