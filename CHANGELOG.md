@@ -1,3 +1,7 @@
+## 5.4.2
+
+- Fix ping base to expose encoding override
+
 ## 5.4.1
 
 - Allow overriding the character decoder via optional encoding flag

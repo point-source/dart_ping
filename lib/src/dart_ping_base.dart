@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dart_ping/dart_ping.dart';
 import 'package:dart_ping/src/models/regex_parser.dart';
 import 'package:dart_ping/src/native_ping.dart';
@@ -29,8 +31,11 @@ abstract class Ping {
 
           /// Custom parser to interpret ping process output
           /// Useful for non-english based platforms
-          PingParser? parser}) =>
-      getPing(host, count, interval, timeout, ttl, ipv6, parser);
+          PingParser? parser,
+
+          /// Encoding used to decode character codes from process output
+          Encoding encoding = const Utf8Codec()}) =>
+      getPing(host, count, interval, timeout, ttl, ipv6, parser, encoding);
 
   /// Parser used to interpret ping process output
   late PingParser parser;
