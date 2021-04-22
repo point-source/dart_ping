@@ -18,10 +18,10 @@ abstract class Ping {
           int? count,
 
           /// Delay between ping attempts
-          double interval = 1.0,
+          int interval = 1,
 
           /// How long to wait for a ping to return before marking it as lost
-          double timeout = 2.0,
+          int timeout = 2,
 
           /// How many network hops the packet should travel before expiring
           int ttl = 255,

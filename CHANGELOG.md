@@ -1,3 +1,9 @@
+## 6.0.0
+
+- Force timeout and interval to be int instead of double to support ping on all system locales
+- Simplify example
+- Add additional documentation to readme
+
 ## 5.4.2
 
 - Fix ping base to expose encoding override

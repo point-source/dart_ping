@@ -14,26 +14,45 @@ void main() async {
   // Create ping object with desired args
   final ping = Ping('google.com', count: 5);
 
-  // [Optional]
-  // Preview command that will be run (helpful for debugging)
-  print('Running command: ${ping.command}');
-
   // Begin ping process and listen for output
   ping.stream.listen((event) {
     print(event);
   });
-
-  // [Optional]
-  // Waiting for ping to output first two results
-  // Not needed in actual use. For example only!
-  await Future.delayed(Duration(seconds: 2));
-
-  // [Optional]
-  // Stop the ping prematurely and output a summary
-  // Make sure you do not call this before listening to the stream!
-  // Not necessary for actual use. For example only!
-  await ping.stop();
 }
+```
+
+To print the underlying ping command that will be used
+(useful for debugging):
+
+```dart
+print('Running command: ${ping.command}')
+```
+
+To prematurely halt the process:
+
+```dart
+await ping.stop()
+```
+
+To override the parser to support an alternative OS language
+(Portuguese shown here):
+
+```dart
+final parser = PingParser(
+    responseStr: RegExp(r'Resposta de'),
+    responseRgx: RegExp(r'de (.*): bytes=(\d+) tempo=(\d+)ms TTL=(\d+)'),
+    summaryStr: RegExp(r'Perdidos'),
+    summaryRgx: RegExp(r'Enviados = (\d+), Recebidos = (\d+), Perdidos = (\d+)'),
+    timeoutStr: RegExp(r'host unreachable'),
+    unknownHostStr: RegExp(r'A solicitação ping não pôde encontrar o host'));
+
+final ping = Ping('google.com', parser: parser);
+```
+
+To override the character encoding to ignore non-utf characters:
+
+```dart
+final ping = Ping('google.com', encoding: Utf8Codec(allowMalformed: true));
 ```
 
 ## Features and bugs

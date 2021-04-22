@@ -6,8 +6,9 @@ import 'package:dart_ping/src/ping/base_ping.dart';
 import 'package:dart_ping/src/dart_ping_base.dart';
 
 class PingMac extends BasePing implements Ping {
-  PingMac(String host, int? count, double interval, double timeout, int ttl,
-      bool ipv6, {PingParser? parser, Encoding encoding = const Utf8Codec()})
+  PingMac(
+      String host, int? count, int interval, int timeout, int ttl, bool ipv6,
+      {PingParser? parser, Encoding encoding = const Utf8Codec()})
       : super(host, count, interval, timeout, ttl, ipv6, parser ?? _parser,
             encoding);
 
