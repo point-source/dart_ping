@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dart_ping/dart_ping.dart';
 import 'package:dart_ping/src/models/regex_parser.dart';
 import 'package:dart_ping/src/ping/base_ping.dart';
@@ -5,9 +7,9 @@ import 'package:dart_ping/src/dart_ping_base.dart';
 
 class PingLinux extends BasePing implements Ping {
   PingLinux(String host, int? count, double interval, double timeout, int ttl,
-      bool ipv6,
-      {PingParser? parser})
-      : super(host, count, interval, timeout, ttl, ipv6, parser ?? _parser);
+      bool ipv6, {PingParser? parser, Encoding encoding = const Utf8Codec()})
+      : super(host, count, interval, timeout, ttl, ipv6, parser ?? _parser,
+            encoding);
 
   static PingParser get _parser => PingParser(
       responseStr: RegExp(r'bytes from'),

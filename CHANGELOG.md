@@ -1,3 +1,7 @@
+## 5.4.1
+
+- Allow overriding the character decoder via optional encoding flag
+
 ## 5.3.1
 
 - Fix ttl flag on Windows

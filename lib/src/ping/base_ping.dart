@@ -10,7 +10,7 @@ import 'package:dart_ping/src/models/regex_parser.dart';
 
 abstract class BasePing {
   BasePing(this.host, this.count, this.interval, this.timeout, this.ttl,
-      this.ipv6, this.parser) {
+      this.ipv6, this.parser, this.encoding) {
     _controller = StreamController<PingData>(
         onListen: _onListen,
         onCancel: _onCancel,
@@ -29,14 +29,19 @@ abstract class BasePing {
 
   /// How long to wait for a ping to return before marking it as lost
   double timeout;
+
   // How many network hops the packet should travel before expiring
   int ttl;
+
   // IPv6 Mode (Not supported on Windows)
   bool ipv6;
 
   /// Custom parser to interpret ping process output
   /// Useful for non-english based platforms
   PingParser parser;
+
+  /// Encoding used to decode character codes from process output
+  Encoding encoding;
 
   late final StreamController<PingData> _controller;
   Process? _process;
@@ -57,7 +62,7 @@ abstract class BasePing {
   /// Transforms the ping process output into PingData objects
   Stream<PingData> get _parsedOutput =>
       StreamGroup.merge([_process!.stderr, _process!.stdout])
-          .transform(utf8.decoder)
+          .transform(encoding.decoder)
           .transform(LineSplitter())
           .transform<PingData>(parser.responseParser);
 
