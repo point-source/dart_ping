@@ -30,10 +30,10 @@ abstract class BasePing {
   /// How long to wait for a ping to return before marking it as lost
   int timeout;
 
-  // How many network hops the packet should travel before expiring
+  /// How many network hops the packet should travel before expiring
   int ttl;
 
-  // IPv6 Mode (Not supported on Windows)
+  /// IPv6 Mode (Not supported on Windows)
   bool ipv6;
 
   /// Custom parser to interpret ping process output
