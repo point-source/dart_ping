@@ -23,6 +23,9 @@ class PingMac extends BasePing implements Ping {
       unknownHostStr: RegExp(r'Unknown host'));
 
   @override
+  Map<String, String> get locale => {'LC_ALL': 'C'};
+
+  @override
   List<String> get params {
     var params = ['-n', '-W ${timeout * 1000}', '-i $interval', '-m $ttl'];
     if (count != null) params.add('-c $count');

@@ -22,6 +22,9 @@ class PingWindows extends BasePing implements Ping {
       errorStr: RegExp(r'transmit failed'));
 
   @override
+  Map<String, String> get locale => {'LANG': 'en_US'};
+
+  @override
   List<String> get params {
     if (ipv6) throw UnimplementedError('IPv6 not implemented for windows');
     var params = ['-w', timeout.toString(), '-i', ttl.toString()];

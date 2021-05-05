@@ -49,6 +49,9 @@ abstract class BasePing {
   PingData? _summaryData;
   final List<PingError> _errors = [];
 
+  /// Command to set english locale before running ping command
+  Map<String, String> get locale;
+
   /// Params and flags that should be applied to the ping command
   List<String> get params;
 
@@ -57,7 +60,8 @@ abstract class BasePing {
 
   /// Starts a ping process on the host OS
   Future<Process> get platformProcess async =>
-      await Process.start(ipv6 ? 'ping6' : 'ping', [...params, host]);
+      await Process.start(ipv6 ? 'ping6' : 'ping', [...params, host],
+          environment: locale);
 
   /// Transforms the ping process output into PingData objects
   Stream<PingData> get _parsedOutput =>

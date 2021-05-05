@@ -25,6 +25,9 @@ class PingLinux extends BasePing implements Ping {
           RegExp(r'unknown host|service not known|failure in name'));
 
   @override
+  Map<String, String> get locale => {'LC_ALL': 'C'};
+
+  @override
   List<String> get params {
     var params = ['-O', '-n', '-W $timeout', '-i $interval', '-t $ttl'];
     if (count != null) params.add('-c $count');
