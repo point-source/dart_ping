@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:dart_ping/src/dart_ping_base.dart';
+import 'package:dart_ping/src/ping_interface.dart';
 import 'package:dart_ping/src/models/regex_parser.dart';
 import 'package:dart_ping/src/ping/linux_ping.dart';
 import 'package:dart_ping/src/ping/mac_ping.dart';

@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:dart_ping/dart_ping.dart';
 import 'package:dart_ping/src/models/regex_parser.dart';
 import 'package:dart_ping/src/ping/base_ping.dart';
-import 'package:dart_ping/src/dart_ping_base.dart';
+import 'package:dart_ping/src/ping_interface.dart';
 
 class PingWindows extends BasePing implements Ping {
   PingWindows(
