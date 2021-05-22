@@ -74,7 +74,7 @@ abstract class BasePing {
     // Start new ping process on host OS
     _process = await platformProcess;
     // Get platform-specific parsed PingData
-    _parsedOutput.listen((event) {
+    _sub = _parsedOutput.listen((event) {
       if (event.response != null || event.error != null) {
         // Accumulate error if one exists
         if (event.error != null) {
