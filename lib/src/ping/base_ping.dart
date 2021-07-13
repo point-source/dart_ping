@@ -6,7 +6,7 @@ import 'package:async/async.dart';
 import 'package:dart_ping/src/models/ping_data.dart';
 import 'package:dart_ping/src/models/ping_error.dart';
 import 'package:dart_ping/src/models/ping_summary.dart';
-import 'package:dart_ping/src/models/regex_parser.dart';
+import 'package:dart_ping/src/models/ping_parser.dart';
 
 abstract class BasePing {
   BasePing(this.host, this.count, this.interval, this.timeout, this.ttl,

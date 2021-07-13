@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:dart_ping/dart_ping.dart';
-import 'package:dart_ping/src/models/regex_parser.dart';
+import 'package:dart_ping/src/models/ping_parser.dart';
 import 'package:dart_ping/src/native_ping.dart';
 
 /// Ping class used to instantiate a ping instance.
