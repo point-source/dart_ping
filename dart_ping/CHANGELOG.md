@@ -1,3 +1,11 @@
+## 6.1.0
+
+- Add static variable to register iOS plugin with
+- When supported, attempt to set system locale before pinging
+- Fix pause/resume of stream subscriptions
+- Fix docstrings
+- Rename files for consistency / clarity
+
 ## 6.0.0
 
 - Force timeout and interval to be int instead of double to support ping on all system locales

@@ -21,6 +21,15 @@ void main() async {
 }
 ```
 
+To use dart_ping on iOS, add the [dart_ping_ios](https://pub.dev/packages/dart_ping_ios) package as a dependency and register the iOS plugin before initializing Ping. For more detailed docs, see the [dart_ping_ios](https://pub.dev/packages/dart_ping_ios) package.
+
+```dart
+// Register DartPingIOS
+DartPingIOS.register();
+// Create ping object with desired args
+final ping = Ping('google.com', count: 5);
+```
+
 To print the underlying ping command that will be used
 (useful for debugging):
 
@@ -60,7 +69,3 @@ final ping = Ping('google.com', encoding: Utf8Codec(allowMalformed: true));
 Please file feature requests and bugs at the [issue tracker][tracker].
 
 [tracker]: https://github.com/point-source/dart_ping/issues
-
-## Credit
-
-This package contains code from [flutter_icmp_ping](https://pub.dev/packages/flutter_icmp_ping) by [zuvola](zuvola.com), used with permission.
