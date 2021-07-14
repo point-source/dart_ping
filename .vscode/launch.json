@@ -6,10 +6,22 @@
     "configurations": [
         {
             "name": "dart_ping",
+            "cwd": "dart_ping",
+            "request": "launch",
+            "type": "dart"
+        },
+        {
+            "name": "example",
+            "cwd": "dart_ping_ios/example",
+            "request": "launch",
+            "type": "dart"
+        },
+        {
+            "name": "example (profile mode)",
+            "cwd": "dart_ping_ios/example",
             "request": "launch",
             "type": "dart",
-            "program": "example/dart_ping_example.dart",
-            "args": []
+            "flutterMode": "profile"
         }
     ]
 }
