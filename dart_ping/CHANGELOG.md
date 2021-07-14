@@ -1,3 +1,7 @@
+## 6.1.1
+
+- Removed unused ios related files that may have not been tree shaken due to MethodChannel
+
 ## 6.1.0
 
 - Add static variable to register iOS plugin with
