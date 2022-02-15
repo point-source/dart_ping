@@ -23,7 +23,7 @@ abstract class Ping {
       /// Delay between ping attempts
       int interval = 1,
 
-      /// How long to wait for a ping to return before marking it as lost
+      /// How long (in seconds) to wait for a ping to return before marking it as lost
       int timeout = 2,
 
       /// How many network hops the packet should travel before expiring
