@@ -1,3 +1,8 @@
+## 6.1.2
+
+- Improve documentation
+- Improve code formatting
+
 ## 6.1.1
 
 - Removed unused ios related files that may have not been tree shaken due to MethodChannel
