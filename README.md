@@ -2,9 +2,9 @@
 
 dart_ping is a multi-platform network ping utility for Dart applications.
 
-It is available for use via the pub.dev package repository
+It is available for use via the [pub.dev package repository](https://pub.dev/packages/dart_ping)
 
-###iOS Compatibility
+### iOS Compatibility
 
 In order to provide compatibility on iOS (via Flutter Method Channels) while retaining native dart support, the package is split into two parts:
 
