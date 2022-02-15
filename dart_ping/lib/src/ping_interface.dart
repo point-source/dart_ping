@@ -11,60 +11,101 @@ import 'ping/windows_ping.dart';
 /// Spawns an OS ping process when the stream property is listened to
 abstract class Ping {
   /// Creates an appropriate Ping instance for the detected platform
+  // ignore: long-method
   factory Ping(
+    /// Hostname, domain, or IP which you would like to ping
+    String host, {
 
-      /// Hostname, domain, or IP which you would like to ping
-      String host,
-      {
+    /// How many times the host should be pinged before the process ends
+    int? count,
 
-      /// How many times the host should be pinged before the process ends
-      int? count,
+    /// Delay between ping attempts
+    int interval = 1,
 
-      /// Delay between ping attempts
-      int interval = 1,
+    /// How long (in seconds) to wait for a ping to return before marking it as lost
+    int timeout = 2,
 
-      /// How long (in seconds) to wait for a ping to return before marking it as lost
-      int timeout = 2,
+    /// How many network hops the packet should travel before expiring
+    int ttl = 255,
 
-      /// How many network hops the packet should travel before expiring
-      int ttl = 255,
+    /// IPv6 Mode (Not supported on Windows)
+    bool ipv6 = false,
 
-      /// IPv6 Mode (Not supported on Windows)
-      bool ipv6 = false,
+    /// Custom parser to interpret ping process output
+    /// Useful for non-english based platforms
+    PingParser? parser,
 
-      /// Custom parser to interpret ping process output
-      /// Useful for non-english based platforms
-      PingParser? parser,
-
-      /// Encoding used to decode character codes from process output
-      Encoding encoding = const Utf8Codec()}) {
+    /// Encoding used to decode character codes from process output
+    Encoding encoding = const Utf8Codec(),
+  }) {
     switch (Platform.operatingSystem) {
       case 'android':
       case 'fuchsia':
       case 'linux':
-        return PingLinux(host, count, interval, timeout, ttl, ipv6,
-            parser: parser, encoding: encoding);
+        return PingLinux(
+          host,
+          count,
+          interval,
+          timeout,
+          ttl,
+          ipv6,
+          parser: parser,
+          encoding: encoding,
+        );
       case 'macos':
-        return PingMac(host, count, interval, timeout, ttl, ipv6,
-            parser: parser, encoding: encoding);
+        return PingMac(
+          host,
+          count,
+          interval,
+          timeout,
+          ttl,
+          ipv6,
+          parser: parser,
+          encoding: encoding,
+        );
       case 'windows':
-        return PingWindows(host, count, interval, timeout, ttl, ipv6,
-            parser: parser, encoding: encoding);
+        return PingWindows(
+          host,
+          count,
+          interval,
+          timeout,
+          ttl,
+          ipv6,
+          parser: parser,
+          encoding: encoding,
+        );
       case 'ios':
         Function? ios = iosFactory;
         if (iosFactory != null) {
           return ios!(
-              host, count, interval, timeout, ttl, ipv6, parser, encoding);
+            host,
+            count,
+            interval,
+            timeout,
+            ttl,
+            ipv6,
+            parser,
+            encoding,
+          );
         }
         throw UnimplementedError(
-            'iOS support has not been enabled. Please see the docs at https://pub.dev/packages/dart_ping');
+          'iOS support has not been enabled. Please see the docs at https://pub.dev/packages/dart_ping',
+        );
       default:
         throw UnimplementedError('Ping not supported on this platform');
     }
   }
 
-  static Ping Function(String host, int? count, int interval, int timeout,
-      int ttl, bool ipv6, PingParser? parser, Encoding encoding)? iosFactory;
+  static Ping Function(
+    String host,
+    int? count,
+    int interval,
+    int timeout,
+    int ttl,
+    bool ipv6,
+    PingParser? parser,
+    Encoding encoding,
+  )? iosFactory;
 
   /// Parser used to interpret ping process output
   late PingParser parser;

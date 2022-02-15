@@ -10,13 +10,24 @@ class DartPingIOS implements Ping {
     Ping.iosFactory = _init;
   }
 
-  static DartPingIOS _init(String host, int? count, int interval, int timeout,
-      int ttl, bool ipv6, PingParser? parser, Encoding encoding) {
-    return DartPingIOS(fp.Ping(host,
-        count: count,
-        interval: interval.toDouble(),
-        timeout: timeout.toDouble(),
-        ipv6: ipv6));
+  // ignore: long-parameter-list
+  static DartPingIOS _init(
+    String host,
+    int? count,
+    int interval,
+    int timeout,
+    int ttl,
+    bool ipv6,
+    PingParser? parser,
+    Encoding encoding,
+  ) {
+    return DartPingIOS(fp.Ping(
+      host,
+      count: count,
+      interval: interval.toDouble(),
+      timeout: timeout.toDouble(),
+      ipv6: ipv6,
+    ));
   }
 
   /// Unused on iOS and should not be called
@@ -38,6 +49,7 @@ class DartPingIOS implements Ping {
   @override
   Future<bool> stop() async {
     _ping.stop();
+
     return true;
   }
 
@@ -60,16 +72,19 @@ class DartPingIOS implements Ping {
             e = PingError(ErrorType.Unknown);
             break;
         }
+
         return PingData(
-            response: r == null
-                ? null
-                : PingResponse(seq: r.seq, ttl: r.ttl, time: r.time),
-            summary: s == null
-                ? null
-                : PingSummary(
-                    transmitted: s.transmitted ?? 0,
-                    received: s.received ?? 0,
-                    time: s.time),
-            error: e);
+          response: r == null
+              ? null
+              : PingResponse(seq: r.seq, ttl: r.ttl, time: r.time),
+          summary: s == null
+              ? null
+              : PingSummary(
+                  transmitted: s.transmitted ?? 0,
+                  received: s.received ?? 0,
+                  time: s.time,
+                ),
+          error: e,
+        );
       });
 }

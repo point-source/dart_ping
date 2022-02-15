@@ -1,7 +1,7 @@
 # Defines a default set of lint rules enforced for
 # projects at Google. For details and rationale,
 # see https://github.com/dart-lang/pedantic#enabled-lints.
-include: package:pedantic/analysis_options.yaml
+include: package:lints/recommended.yaml
 
 # For lint rules and documentation, see http://dart-lang.github.io/linter/lints.
 # Uncomment to specify additional rules.
@@ -10,5 +10,30 @@ include: package:pedantic/analysis_options.yaml
 #     - camel_case_types
 
 analyzer:
-#   exclude:
-#     - path/to/excluded/files/**
+  exclude:
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+  plugins:
+    - dart_code_metrics
+
+dart_code_metrics:
+  exclude:
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+  anti-patterns:
+    - long-method
+    - long-parameter-list
+  metrics:
+    cyclomatic-complexity: 20
+    maximum-nesting-level: 5
+    number-of-parameters: 4
+    source-lines-of-code: 50
+  metrics-exclude:
+    - test/**
+  rules:
+    - newline-before-return
+    - no-boolean-literal-compare
+    - no-empty-block
+    - prefer-trailing-comma
+    - prefer-conditional-expressions
+    - no-equal-then-else

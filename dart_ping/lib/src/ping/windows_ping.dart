@@ -1,25 +1,38 @@
 import 'dart:convert';
 
 import 'package:dart_ping/dart_ping.dart';
-import 'package:dart_ping/src/models/ping_parser.dart';
 import 'package:dart_ping/src/ping/base_ping.dart';
-import 'package:dart_ping/src/ping_interface.dart';
 
 class PingWindows extends BasePing implements Ping {
   PingWindows(
-      String host, int? count, int interval, int timeout, int ttl, bool ipv6,
-      {PingParser? parser, Encoding encoding = const Utf8Codec()})
-      : super(host, count, interval, timeout, ttl, ipv6, parser ?? _parser,
-            encoding);
+    String host,
+    int? count,
+    int interval,
+    int timeout,
+    int ttl,
+    bool ipv6, {
+    PingParser? parser,
+    Encoding encoding = const Utf8Codec(),
+  }) : super(
+          host,
+          count,
+          interval,
+          timeout,
+          ttl,
+          ipv6,
+          parser ?? _parser,
+          encoding,
+        );
 
   static PingParser get _parser => PingParser(
-      responseStr: RegExp(r'Reply from'),
-      responseRgx: RegExp(r'from (.*): bytes=\d+() time=(\d+)ms TTL=(\d+)'),
-      summaryStr: RegExp(r'Lost'),
-      summaryRgx: RegExp(r'Sent = (\d+), Received = (\d+), Lost = (\d+)'),
-      timeoutStr: RegExp(r'host unreachable|timed out'),
-      unknownHostStr: RegExp(r'could not find host'),
-      errorStr: RegExp(r'transmit failed'));
+        responseStr: RegExp(r'Reply from'),
+        responseRgx: RegExp(r'from (.*): bytes=\d+() time=(\d+)ms TTL=(\d+)'),
+        summaryStr: RegExp(r'Lost'),
+        summaryRgx: RegExp(r'Sent = (\d+), Received = (\d+), Lost = (\d+)'),
+        timeoutStr: RegExp(r'host unreachable|timed out'),
+        unknownHostStr: RegExp(r'could not find host'),
+        errorStr: RegExp(r'transmit failed'),
+      );
 
   @override
   Map<String, String> get locale => {'LANG': 'en_US'};
@@ -39,12 +52,15 @@ class PingWindows extends BasePing implements Ping {
       params.add('-n');
       params.add(count.toString());
     }
+
     return params;
   }
 
   @override
-  PingError? interpretExitCode(int exitCode) => PingError(ErrorType.Unknown,
-      message: 'Ping process exited with code: $exitCode');
+  PingError? interpretExitCode(int exitCode) => PingError(
+        ErrorType.Unknown,
+        message: 'Ping process exited with code: $exitCode',
+      );
 
   @override
   Exception throwExit(int exitCode) =>

@@ -10,5 +10,6 @@ dependencies:
   async: ^2.4.2
 
 dev_dependencies:
-  pedantic: ^1.9.0
+  dart_code_metrics: ^4.8.1
+  lints: ^1.0.1
   test: ^1.14.4

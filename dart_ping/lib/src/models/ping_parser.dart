@@ -6,15 +6,16 @@ import 'package:dart_ping/src/models/ping_response.dart';
 import 'package:dart_ping/src/models/ping_summary.dart';
 
 class PingParser {
-  PingParser(
-      {required this.responseStr,
-      required this.responseRgx,
-      this.sequenceRgx,
-      required this.summaryStr,
-      required this.summaryRgx,
-      required this.timeoutStr,
-      required this.unknownHostStr,
-      this.errorStr});
+  PingParser({
+    required this.responseStr,
+    required this.responseRgx,
+    this.sequenceRgx,
+    required this.summaryStr,
+    required this.summaryRgx,
+    required this.timeoutStr,
+    required this.unknownHostStr,
+    this.errorStr,
+  });
 
   /// String used to detect a ping response
   RegExp responseStr;
@@ -43,6 +44,7 @@ class PingParser {
   /// String(s) used to detect misc unknown error(s)
   RegExp? errorStr;
 
+  // ignore: long-method
   StreamTransformer<String, PingData> get responseParser =>
       StreamTransformer<String, PingData>.fromHandlers(
         handleData: (data, sink) {
@@ -81,7 +83,8 @@ class PingParser {
                   time: time == null
                       ? null
                       : Duration(
-                          microseconds: ((double.parse(time)) * 1000).floor()),
+                          microseconds: ((double.parse(time)) * 1000).floor(),
+                        ),
                 ),
               ),
             );
@@ -92,7 +95,7 @@ class PingParser {
             final match = summaryRgx.firstMatch(data);
             var tx = match?.group(1);
             var rx = match?.group(2);
-            var time;
+            String? time;
             if ((match?.groupCount ?? 0) > 2) {
               time = match?.group(3);
             }

@@ -2,11 +2,12 @@ import 'package:dart_ping/src/models/ping_error.dart';
 
 /// Summary of the results
 class PingSummary {
-  PingSummary(
-      {required this.transmitted,
-      required this.received,
-      this.time,
-      List<PingError>? errors}) {
+  PingSummary({
+    required this.transmitted,
+    required this.received,
+    this.time,
+    List<PingError>? errors,
+  }) {
     this.errors = errors ?? [];
   }
 

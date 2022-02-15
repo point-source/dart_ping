@@ -9,13 +9,22 @@ import 'package:dart_ping/src/models/ping_summary.dart';
 import 'package:dart_ping/src/models/ping_parser.dart';
 
 abstract class BasePing {
-  BasePing(this.host, this.count, this.interval, this.timeout, this.ttl,
-      this.ipv6, this.parser, this.encoding) {
+  BasePing(
+    this.host,
+    this.count,
+    this.interval,
+    this.timeout,
+    this.ttl,
+    this.ipv6,
+    this.parser,
+    this.encoding,
+  ) {
     _controller = StreamController<PingData>(
-        onListen: _onListen,
-        onCancel: _onCancel,
-        onPause: () => _sub.pause,
-        onResume: () => _sub.resume);
+      onListen: _onListen,
+      onCancel: _onCancel,
+      onPause: () => _sub.pause,
+      onResume: () => _sub.resume,
+    );
   }
 
   /// Hostname, domain, or IP which you would like to ping
@@ -59,9 +68,11 @@ abstract class BasePing {
   String get command => 'ping ' + params.join(' ') + ' $host';
 
   /// Starts a ping process on the host OS
-  Future<Process> get platformProcess async =>
-      await Process.start(ipv6 ? 'ping6' : 'ping', [...params, host],
-          environment: locale);
+  Future<Process> get platformProcess async => await Process.start(
+        ipv6 ? 'ping6' : 'ping',
+        [...params, host],
+        environment: locale,
+      );
 
   /// Transforms the ping process output into PingData objects
   Stream<PingData> get _parsedOutput =>
@@ -74,18 +85,21 @@ abstract class BasePing {
     // Start new ping process on host OS
     _process = await platformProcess;
     // Get platform-specific parsed PingData
-    _sub = _parsedOutput.listen((event) {
-      if (event.response != null || event.error != null) {
-        // Accumulate error if one exists
-        if (event.error != null) {
-          _errors.add(event.error!);
+    _sub = _parsedOutput.listen(
+      (event) {
+        if (event.response != null || event.error != null) {
+          // Accumulate error if one exists
+          if (event.error != null) {
+            _errors.add(event.error!);
+          }
+          _controller.add(event);
+        } else if (event.summary != null) {
+          event.summary!.errors.addAll(_errors);
+          _summaryData = event;
         }
-        _controller.add(event);
-      } else if (event.summary != null) {
-        event.summary!.errors.addAll(_errors);
-        _summaryData = event;
-      }
-    }, onDone: _cleanup);
+      },
+      onDone: _cleanup,
+    );
   }
 
   /// Processes output summary and closes stream after ping process is done
@@ -101,11 +115,13 @@ abstract class BasePing {
           _summaryData!.summary!.errors.add(error);
         } else {
           _summaryData = PingData(
-              summary: PingSummary(
-                  transmitted: 0,
-                  received: 0,
-                  time: Duration(),
-                  errors: [error]));
+            summary: PingSummary(
+              transmitted: 0,
+              received: 0,
+              time: Duration(),
+              errors: [error],
+            ),
+          );
         }
       } else {
         throwExit(exitCode);
@@ -141,8 +157,10 @@ abstract class BasePing {
     }
     if (_process?.kill(ProcessSignal.sigint) ?? false) {
       await _controller.done;
+
       return true;
     }
+
     return false;
   }
 }
