@@ -1,6 +1,6 @@
 name: dart_ping_ios
 description: This package adds iOS support to the dart_ping package via plugin registration.
-version: 1.0.0
+version: 1.1.0
 homepage: https://github.com/point-source/dart_ping
 
 environment:
@@ -8,7 +8,7 @@ environment:
 
 dependencies:
   dart_ping: ^6.1.0
-  flutter_icmp_ping: ^3.0.1
+  flutter_icmp_ping: ^3.1.0
 
 dev_dependencies:
   dart_code_metrics: ^4.8.1
