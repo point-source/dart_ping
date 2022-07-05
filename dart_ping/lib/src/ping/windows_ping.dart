@@ -58,7 +58,7 @@ class PingWindows extends BasePing implements Ping {
 
   @override
   PingError? interpretExitCode(int exitCode) => PingError(
-        ErrorType.Unknown,
+        ErrorType.unknown,
         message: 'Ping process exited with code: $exitCode',
       );
 

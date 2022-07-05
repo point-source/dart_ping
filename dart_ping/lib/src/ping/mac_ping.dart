@@ -50,9 +50,9 @@ class PingMac extends BasePing implements Ping {
   @override
   PingError? interpretExitCode(int exitCode) {
     if (exitCode == 1) {
-      return PingError(ErrorType.NoReply);
+      return PingError(ErrorType.noReply);
     } else if (exitCode == 68) {
-      return PingError(ErrorType.UnknownHost);
+      return PingError(ErrorType.unknownHost);
     }
 
     return null;

@@ -1,3 +1,12 @@
+## 7.0.0
+
+- Require min dart 2.17 sdk (for enhanced enums)
+- Make data classes immutable and add serialization and copyWith methods
+- Use lowercase names for enums
+- Split tests into multiple files
+- Depends on pacakge:collection for list equality comparison
+- Update dependencies
+
 ## 6.1.2
 
 - Improve documentation

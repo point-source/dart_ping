@@ -50,7 +50,7 @@ class PingLinux extends BasePing implements Ping {
 
   @override
   PingError? interpretExitCode(int exitCode) {
-    return exitCode == 1 ? PingError(ErrorType.NoReply) : null;
+    return exitCode == 1 ? PingError(ErrorType.noReply) : null;
   }
 
   @override

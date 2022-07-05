@@ -60,7 +60,7 @@ class PingParser {
                 response: PingResponse(
                   seq: seq == null ? null : int.parse(seq),
                 ),
-                error: PingError(ErrorType.RequestTimedOut),
+                error: PingError(ErrorType.requestTimedOut),
               ),
             );
           }
@@ -119,7 +119,7 @@ class PingParser {
           if (data.contains(unknownHostStr)) {
             sink.add(
               PingData(
-                error: PingError(ErrorType.UnknownHost),
+                error: PingError(ErrorType.unknownHost),
               ),
             );
           }
@@ -128,7 +128,7 @@ class PingParser {
           if (errorStr != null && data.contains(errorStr!)) {
             sink.add(
               PingData(
-                error: PingError(ErrorType.Unknown, message: data),
+                error: PingError(ErrorType.unknown, message: data),
               ),
             );
           }

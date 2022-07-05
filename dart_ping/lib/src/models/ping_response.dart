@@ -1,6 +1,8 @@
+import 'dart:convert';
+
 /// Each probe response
 class PingResponse {
-  PingResponse({this.seq, this.ttl, this.time, this.ip});
+  const PingResponse({this.seq, this.ttl, this.time, this.ip});
 
   /// Transmission sequence position identifier
   /// (can be used to reconstruct packet order)
@@ -27,6 +29,60 @@ class PingResponse {
       buff.write(', time:$ms ms');
     }
     buff.write(')');
+
     return buff.toString();
   }
+
+  PingResponse copyWith({
+    int? seq,
+    int? ttl,
+    Duration? time,
+    String? ip,
+  }) {
+    return PingResponse(
+      seq: seq ?? this.seq,
+      ttl: ttl ?? this.ttl,
+      time: time ?? this.time,
+      ip: ip ?? this.ip,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+
+    return other is PingResponse &&
+        other.seq == seq &&
+        other.ttl == ttl &&
+        other.time == time &&
+        other.ip == ip;
+  }
+
+  @override
+  int get hashCode {
+    return seq.hashCode ^ ttl.hashCode ^ time.hashCode ^ ip.hashCode;
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'seq': seq,
+      'ttl': ttl,
+      'time': time?.inMilliseconds,
+      'ip': ip,
+    };
+  }
+
+  factory PingResponse.fromMap(Map<String, dynamic> map) {
+    return PingResponse(
+      seq: map['seq']?.toInt(),
+      ttl: map['ttl']?.toInt(),
+      time: map['time'] != null ? Duration(milliseconds: map['time']) : null,
+      ip: map['ip'],
+    );
+  }
+
+  String toJson() => json.encode(toMap());
+
+  factory PingResponse.fromJson(String source) =>
+      PingResponse.fromMap(json.decode(source));
 }
