@@ -30,10 +30,10 @@ class PingSummary {
   String toString() {
     var str = 'PingSummary(transmitted:$transmitted, received:$received)';
     if (time != null) {
-      str = str + ', time: ${time?.inMilliseconds ?? ''} ms';
+      str = '$str, time: ${time?.inMilliseconds ?? ''} ms';
     }
     if (errors.isNotEmpty) {
-      str = str + ', Errors: ' + errors.toString();
+      str = '$str, Errors: $errors';
     }
 
     return str;

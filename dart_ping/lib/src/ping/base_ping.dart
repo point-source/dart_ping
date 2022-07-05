@@ -65,7 +65,7 @@ abstract class BasePing {
   List<String> get params;
 
   /// The command that will be run on the host OS
-  String get command => 'ping ' + params.join(' ') + ' $host';
+  String get command => 'ping ${params.join(' ')} $host';
 
   /// Starts a ping process on the host OS
   Future<Process> get platformProcess async => await Process.start(
