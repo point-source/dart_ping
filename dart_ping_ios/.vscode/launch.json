@@ -1,0 +1,11 @@
+{
+    "configurations": [
+        {
+            "name": "Flutter Example",
+            "type": "dart",
+            "request": "launch",
+            "cwd": "example",
+            "program": "lib/main.dart"
+        }
+    ]
+}

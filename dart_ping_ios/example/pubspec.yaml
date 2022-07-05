@@ -23,7 +23,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  dart_ping: ^6.1.0
+  dart_ping: ^7.0.0
   dart_ping_ios:
     path: ../
 
