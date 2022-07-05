@@ -63,13 +63,13 @@ class DartPingIOS implements Ping {
           case null:
             break;
           case fp.PingError.requestTimedOut:
-            e = PingError(ErrorType.RequestTimedOut);
+            e = const PingError(ErrorType.requestTimedOut);
             break;
           case fp.PingError.unknownHost:
-            e = PingError(ErrorType.UnknownHost);
+            e = const PingError(ErrorType.unknownHost);
             break;
           default:
-            e = PingError(ErrorType.Unknown);
+            e = const PingError(ErrorType.unknown);
             break;
         }
 
