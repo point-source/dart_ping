@@ -1,3 +1,7 @@
+## 7.0.1
+
+- Add documentation note about apple app sandbox in release mode
+
 ## 7.0.0
 
 - Require min dart 2.17 sdk (for enhanced enums)
