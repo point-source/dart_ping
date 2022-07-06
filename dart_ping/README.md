@@ -63,6 +63,15 @@ To override the character encoding to ignore non-utf characters:
 ```dart
 final ping = Ping('google.com', encoding: Utf8Codec(allowMalformed: true));
 ```
+### macOS Release Build with App Sandbox
+When building in release mode with [app sandbox](https://developer.apple.com/documentation/security) enabled, you must ensure you add the following entitlements to the Release.entitlements file in your macos folder:
+
+```
+<key>com.apple.security.network.server</key>
+<true/>
+<key>com.apple.security.network.client</key>
+<true/>
+```
 
 ### Windows Compatibility
 
