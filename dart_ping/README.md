@@ -73,10 +73,6 @@ When building in release mode with [app sandbox](https://developer.apple.com/doc
 <true/>
 ```
 
-### Windows Compatibility
-
-When using this package with Flutter for Windows, release builds [may not work as intended](https://github.com/point-source/dart_ping/issues/16). This is due to a [known issue](https://github.com/dart-lang/sdk/issues/39945) with the Flutter framework on windows. There is [a workaround described here.](https://github.com/dart-lang/sdk/issues/39945#issuecomment-870428151)
-
 ## Features and bugs
 
 Please file feature requests and bugs at the [issue tracker][tracker].
