@@ -1,6 +1,6 @@
 This package adds iOS support to the [dart_ping](https://pub.dev/packages/dart_ping) package via registration.
 
-The [dart_ping](https://pub.dev/packages/dart_ping) is required for use.
+The [dart_ping](https://pub.dev/packages/dart_ping) package is required for use.
 
 Created from templates made available by Stagehand under a BSD-style
 [license](https://github.com/dart-lang/stagehand/blob/master/LICENSE).
