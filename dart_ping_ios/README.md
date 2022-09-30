@@ -40,7 +40,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'DartPing iOS Demo',
+      title: 'DartPing Flutter Demo',
       home: MyHomePage(),
     );
   }
@@ -70,7 +70,7 @@ class _MyHomePageState extends State<MyHomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('DartPing iOS Demo'),
+        title: Text('DartPing Flutter Demo'),
       ),
       body: Center(
         child: Column(
@@ -84,12 +84,13 @@ class _MyHomePageState extends State<MyHomePage> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _startPing,
-        tooltip: 'Ping',
-        child: Icon(Icons.send),
+        tooltip: 'Start Ping',
+        child: Icon(Icons.radar_sharp),
       ), // This trailing comma makes auto-formatting nicer for build methods.
     );
   }
 }
+
 ```
 
 ## Features and bugs
