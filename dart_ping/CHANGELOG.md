@@ -1,3 +1,8 @@
+## 7.0.2
+
+- Remove windows compatibility warning. Issue #27 / fixed upstream
+- Add repository link to pubspec / pub.dev
+
 ## 7.0.1
 
 - Add documentation note about apple app sandbox in release mode
