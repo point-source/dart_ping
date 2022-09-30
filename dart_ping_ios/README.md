@@ -7,7 +7,22 @@ Created from templates made available by Stagehand under a BSD-style
 
 ## Usage
 
-A simple usage example:
+The key to using this package is to import it and call this method before you use dart_ping:
+
+```dart
+import 'package:dart_ping_ios/dart_ping_ios.dart';
+
+void main() {
+  // Register dart_ping_ios with dart_ping
+  // You only need to call this once
+  DartPingIOS.register();
+}
+
+```
+
+You only need to call this once. I usually do this somewhere in my main method before my app runs.
+
+Here is a simple but full example based on the Flutter counter app:
 
 ```dart
 import 'package:dart_ping/dart_ping.dart';
@@ -69,8 +84,8 @@ class _MyHomePageState extends State<MyHomePage> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _startPing,
-        tooltip: 'Increment',
-        child: Icon(Icons.add),
+        tooltip: 'Ping',
+        child: Icon(Icons.send),
       ), // This trailing comma makes auto-formatting nicer for build methods.
     );
   }
