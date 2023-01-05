@@ -1,3 +1,8 @@
+## 8.0.0
+
+- Use named capture groups for regex parsing
+- Return false instead of throwing exception when stop() is called prematurely
+
 ## 7.0.2
 
 - Remove windows compatibility warning. Issue #27 / fixed upstream
