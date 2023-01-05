@@ -26,9 +26,12 @@ class PingWindows extends BasePing implements Ping {
 
   static PingParser get _parser => PingParser(
         responseStr: RegExp(r'Reply from'),
-        responseRgx: RegExp(r'from (?<ip>.*): bytes=(?:\d+) time(?:=|<)(?<time>\d+)ms TTL=(?<ttl>\d+)'),
+        responseRgx: RegExp(
+          r'from (?<ip>.*): bytes=(?:\d+) time(?:=|<)(?<time>\d+)ms TTL=(?<ttl>\d+)',
+        ),
         summaryStr: RegExp(r'Lost'),
-        summaryRgx: RegExp(r'Sent = (?<tx>\d+), Received = (?<rx>\d+), Lost = (?:\d+)'),
+        summaryRgx:
+            RegExp(r'Sent = (?<tx>\d+), Received = (?<rx>\d+), Lost = (?:\d+)'),
         timeoutStr: RegExp(r'host unreachable|timed out'),
         unknownHostStr: RegExp(r'could not find host'),
         errorStr: RegExp(r'transmit failed'),
@@ -63,5 +66,6 @@ class PingWindows extends BasePing implements Ping {
       );
 
   @override
-  Exception throwExit(int exitCode) => Exception('Ping process exited with code: $exitCode');
+  Exception throwExit(int exitCode) =>
+      Exception('Ping process exited with code: $exitCode');
 }
