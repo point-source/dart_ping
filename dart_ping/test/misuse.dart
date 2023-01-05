@@ -5,7 +5,7 @@ void main() {
   group('Misuse: ', () {
     test('Termination before starting', () async {
       var ping = Ping('1.1.1.1', count: 5);
-      expect(ping.stop(), throwsException);
+      expect(ping.stop(), isFalse);
     });
   });
 }
