@@ -49,9 +49,9 @@ To override the parser to support an alternative OS language
 ```dart
 final parser = PingParser(
     responseStr: RegExp(r'Resposta de'),
-    responseRgx: RegExp(r'de (.*): bytes=(\d+) tempo=(\d+)ms TTL=(\d+)'),
+    responseRgx: RegExp(r'de (?<ip>.*): bytes=(?:\d+) tempo=(?<time>\d+)ms TTL=(?<ttl>\d+)'),
     summaryStr: RegExp(r'Perdidos'),
-    summaryRgx: RegExp(r'Enviados = (\d+), Recebidos = (\d+), Perdidos = (\d+)'),
+    summaryRgx: RegExp(r'Enviados = (?<tx>\d+), Recebidos = (?<rx>\d+), Perdidos = (?:\d+)'),
     timeoutStr: RegExp(r'host unreachable'),
     unknownHostStr: RegExp(r'A solicitação ping não pôde encontrar o host'));
 
@@ -63,10 +63,11 @@ To override the character encoding to ignore non-utf characters:
 ```dart
 final ping = Ping('google.com', encoding: Utf8Codec(allowMalformed: true));
 ```
+
 ### macOS Release Build with App Sandbox
 When building in release mode with [app sandbox](https://developer.apple.com/documentation/security) enabled, you must ensure you add the following entitlements to the Release.entitlements file in your macos folder:
 
-```
+```xml
 <key>com.apple.security.network.server</key>
 <true/>
 <key>com.apple.security.network.client</key>
