@@ -43,7 +43,7 @@ class PingWindows extends BasePing implements Ping {
   @override
   List<String> get params {
     if (ipv6) throw UnimplementedError('IPv6 not implemented for windows');
-    var params = ['-w', timeout.toString(), '-i', ttl.toString()];
+    var params = ['-w ${timeout * 1000}', '-i', ttl.toString()];
     if (ipv6) {
       params.add('-6');
     } else {
