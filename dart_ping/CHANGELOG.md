@@ -1,3 +1,7 @@
+## 8.0.1
+
+- Fix windows timeout flag (Issue #37)
+
 ## 8.0.0
 
 - Use named capture groups for regex parsing
