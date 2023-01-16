@@ -21,6 +21,12 @@ void main() async {
 }
 ```
 
+Instead of listening to a stream, you can perform a single ping and immediately return the result like so:
+
+```dart
+final result = await Ping('google.com', count: 1).stream.first;
+```
+
 To use dart_ping on iOS, add the [dart_ping_ios](https://pub.dev/packages/dart_ping_ios) package as a dependency and register the iOS plugin before initializing Ping. For more detailed docs, see the [dart_ping_ios](https://pub.dev/packages/dart_ping_ios) package. Note that the iOS plugin requires the flutter sdk. (this is why it is not integrated into dart_ping directly)
 
 ```dart
