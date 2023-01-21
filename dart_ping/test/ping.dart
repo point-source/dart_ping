@@ -1,7 +1,6 @@
-import 'dart:io';
-
 import 'package:dart_ping/dart_ping.dart';
 import 'package:test/test.dart';
+import 'package:universal_io/io.dart';
 
 void main() {
   final seq = Platform.operatingSystem == 'macos' ? 0 : 1;

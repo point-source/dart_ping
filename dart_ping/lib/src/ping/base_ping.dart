@@ -1,12 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:async/async.dart';
 import 'package:dart_ping/src/models/ping_data.dart';
 import 'package:dart_ping/src/models/ping_error.dart';
-import 'package:dart_ping/src/models/ping_summary.dart';
 import 'package:dart_ping/src/models/ping_parser.dart';
+import 'package:dart_ping/src/models/ping_summary.dart';
+import 'package:universal_io/io.dart';
 
 abstract class BasePing {
   BasePing(
@@ -75,8 +75,10 @@ abstract class BasePing {
       );
 
   /// Transforms the ping process output into PingData objects
-  Stream<PingData> get _parsedOutput =>
-      StreamGroup.merge([_process!.stderr, _process!.stdout])
+  Stream<PingData> get _parsedOutput => StreamGroup.merge([
+        _process!.stderr,
+        _process!.stdout,
+      ])
           .transform(encoding.decoder)
           .transform(LineSplitter())
           .transform<PingData>(parser.responseParser);
@@ -84,6 +86,7 @@ abstract class BasePing {
   Future<void> _onListen() async {
     // Start new ping process on host OS
     _process = await platformProcess;
+
     // Get platform-specific parsed PingData
     _sub = _parsedOutput.listen(
       (event) {
