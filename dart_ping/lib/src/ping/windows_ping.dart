@@ -26,9 +26,12 @@ class PingWindows extends BasePing implements Ping {
 
   static PingParser get _parser => PingParser(
         responseStr: RegExp(r'Reply from'),
-        responseRgx: RegExp(r'from (.*): bytes=\d+() time=(\d+)ms TTL=(\d+)'),
+        responseRgx: RegExp(
+          r'from (?<ip>.*): bytes=(?:\d+) time(?:=|<)(?<time>\d+)ms TTL=(?<ttl>\d+)',
+        ),
         summaryStr: RegExp(r'Lost'),
-        summaryRgx: RegExp(r'Sent = (\d+), Received = (\d+), Lost = (\d+)'),
+        summaryRgx:
+            RegExp(r'Sent = (?<tx>\d+), Received = (?<rx>\d+), Lost = (?:\d+)'),
         timeoutStr: RegExp(r'host unreachable|timed out'),
         unknownHostStr: RegExp(r'could not find host'),
         errorStr: RegExp(r'transmit failed'),
@@ -40,7 +43,7 @@ class PingWindows extends BasePing implements Ping {
   @override
   List<String> get params {
     if (ipv6) throw UnimplementedError('IPv6 not implemented for windows');
-    var params = ['-w', timeout.toString(), '-i', ttl.toString()];
+    var params = ['-w', (timeout * 1000).toString(), '-i', ttl.toString()];
     if (ipv6) {
       params.add('-6');
     } else {

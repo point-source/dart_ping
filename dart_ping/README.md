@@ -21,6 +21,12 @@ void main() async {
 }
 ```
 
+Instead of listening to a stream, you can perform a single ping and immediately return the result like so:
+
+```dart
+final result = await Ping('google.com', count: 1).stream.first;
+```
+
 To use dart_ping on iOS, add the [dart_ping_ios](https://pub.dev/packages/dart_ping_ios) package as a dependency and register the iOS plugin before initializing Ping. For more detailed docs, see the [dart_ping_ios](https://pub.dev/packages/dart_ping_ios) package. Note that the iOS plugin requires the flutter sdk. (this is why it is not integrated into dart_ping directly)
 
 ```dart
@@ -49,9 +55,9 @@ To override the parser to support an alternative OS language
 ```dart
 final parser = PingParser(
     responseStr: RegExp(r'Resposta de'),
-    responseRgx: RegExp(r'de (.*): bytes=(\d+) tempo=(\d+)ms TTL=(\d+)'),
+    responseRgx: RegExp(r'de (?<ip>.*): bytes=(?:\d+) tempo=(?<time>\d+)ms TTL=(?<ttl>\d+)'),
     summaryStr: RegExp(r'Perdidos'),
-    summaryRgx: RegExp(r'Enviados = (\d+), Recebidos = (\d+), Perdidos = (\d+)'),
+    summaryRgx: RegExp(r'Enviados = (?<tx>\d+), Recebidos = (?<rx>\d+), Perdidos = (?:\d+)'),
     timeoutStr: RegExp(r'host unreachable'),
     unknownHostStr: RegExp(r'A solicitação ping não pôde encontrar o host'));
 
@@ -63,19 +69,16 @@ To override the character encoding to ignore non-utf characters:
 ```dart
 final ping = Ping('google.com', encoding: Utf8Codec(allowMalformed: true));
 ```
+
 ### macOS Release Build with App Sandbox
 When building in release mode with [app sandbox](https://developer.apple.com/documentation/security) enabled, you must ensure you add the following entitlements to the Release.entitlements file in your macos folder:
 
-```
+```xml
 <key>com.apple.security.network.server</key>
 <true/>
 <key>com.apple.security.network.client</key>
 <true/>
 ```
-
-### Windows Compatibility
-
-When using this package with Flutter for Windows, release builds [may not work as intended](https://github.com/point-source/dart_ping/issues/16). This is due to a [known issue](https://github.com/dart-lang/sdk/issues/39945) with the Flutter framework on windows. There is [a workaround described here.](https://github.com/dart-lang/sdk/issues/39945#issuecomment-870428151)
 
 ## Features and bugs
 

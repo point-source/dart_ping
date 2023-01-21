@@ -1,3 +1,17 @@
+## 8.0.1
+
+- Fix windows timeout flag (Issue #37)
+
+## 8.0.0
+
+- Use named capture groups for regex parsing
+- Return false instead of throwing exception when stop() is called prematurely
+
+## 7.0.2
+
+- Remove windows compatibility warning. Issue #27 / fixed upstream
+- Add repository link to pubspec / pub.dev
+
 ## 7.0.1
 
 - Add documentation note about apple app sandbox in release mode

@@ -45,8 +45,7 @@ class PingParser {
   RegExp? errorStr;
 
   // ignore: long-method
-  StreamTransformer<String, PingData> get responseParser =>
-      StreamTransformer<String, PingData>.fromHandlers(
+  StreamTransformer<String, PingData> get responseParser => StreamTransformer<String, PingData>.fromHandlers(
         handleData: (data, sink) {
           // Timeout
           if (sequenceRgx != null && data.contains(timeoutStr)) {
@@ -54,7 +53,7 @@ class PingParser {
             if (match == null) {
               return;
             }
-            var seq = match.group(1);
+            var seq = match.namedGroup('seq');
             sink.add(
               PingData(
                 response: PingResponse(
@@ -71,13 +70,13 @@ class PingParser {
             if (match == null) {
               return;
             }
-            var seq = match.group(2);
-            var ttl = match.group(3);
-            var time = match.group(4);
+            var seq = match.groupNames.contains('seq') ? match.namedGroup('seq') : null;
+            var ttl = match.namedGroup('ttl');
+            var time = match.namedGroup('time');
             sink.add(
               PingData(
                 response: PingResponse(
-                  ip: match.group(1),
+                  ip: match.namedGroup('ip'),
                   seq: seq?.isEmpty ?? true ? null : int.parse(seq!),
                   ttl: ttl == null ? null : int.parse(ttl),
                   time: time == null
@@ -93,11 +92,11 @@ class PingParser {
           // Summary
           if (data.contains(summaryStr)) {
             final match = summaryRgx.firstMatch(data);
-            var tx = match?.group(1);
-            var rx = match?.group(2);
+            var tx = match?.namedGroup('tx');
+            var rx = match?.namedGroup('rx');
             String? time;
             if ((match?.groupCount ?? 0) > 2) {
-              time = match?.group(3);
+              time = match?.namedGroup('time');
             }
             if (tx == null || rx == null) {
               return;
@@ -107,9 +106,7 @@ class PingParser {
                 summary: PingSummary(
                   transmitted: int.parse(tx),
                   received: int.parse(rx),
-                  time: time == null
-                      ? null
-                      : Duration(milliseconds: int.parse(time)),
+                  time: time == null ? null : Duration(milliseconds: int.parse(time)),
                 ),
               ),
             );

@@ -1,13 +1,28 @@
 This package adds iOS support to the [dart_ping](https://pub.dev/packages/dart_ping) package via registration.
 
-The [dart_ping](https://pub.dev/packages/dart_ping) is required for use.
+The [dart_ping](https://pub.dev/packages/dart_ping) package is required for use.
 
 Created from templates made available by Stagehand under a BSD-style
 [license](https://github.com/dart-lang/stagehand/blob/master/LICENSE).
 
 ## Usage
 
-A simple usage example:
+The key to using this package is to import it and call this method before you use dart_ping:
+
+```dart
+import 'package:dart_ping_ios/dart_ping_ios.dart';
+
+void main() {
+  // Register dart_ping_ios with dart_ping
+  // You only need to call this once
+  DartPingIOS.register();
+}
+
+```
+
+You only need to call this once. I usually do this somewhere in my main method before my app runs.
+
+Here is a simple but full example based on the Flutter counter app:
 
 ```dart
 import 'package:dart_ping/dart_ping.dart';
@@ -25,7 +40,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'DartPing iOS Demo',
+      title: 'DartPing Flutter Demo',
       home: MyHomePage(),
     );
   }
@@ -55,7 +70,7 @@ class _MyHomePageState extends State<MyHomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('DartPing iOS Demo'),
+        title: Text('DartPing Flutter Demo'),
       ),
       body: Center(
         child: Column(
@@ -69,12 +84,13 @@ class _MyHomePageState extends State<MyHomePage> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _startPing,
-        tooltip: 'Increment',
-        child: Icon(Icons.add),
+        tooltip: 'Start Ping',
+        child: Icon(Icons.radar_sharp),
       ), // This trailing comma makes auto-formatting nicer for build methods.
     );
   }
 }
+
 ```
 
 ## Features and bugs

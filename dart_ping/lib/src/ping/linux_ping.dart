@@ -26,15 +26,12 @@ class PingLinux extends BasePing implements Ping {
 
   static PingParser get _parser => PingParser(
         responseStr: RegExp(r'bytes from'),
-        responseRgx:
-            RegExp(r'from (.*): icmp_seq=(\d+) ttl=(\d+) time=((\d+).?(\d+))'),
-        sequenceRgx: RegExp(r'icmp_seq=(\d+)'),
+        responseRgx: RegExp(r'from (?<ip>.*): icmp_seq=(?<seq>\d+) ttl=(?<ttl>\d+) time=(?<time>(\d+).?(\d+))'),
+        sequenceRgx: RegExp(r'icmp_seq=(?<seq>\d+)'),
         summaryStr: RegExp(r'packet loss'),
-        summaryRgx:
-            RegExp(r'(\d+) packets transmitted, (\d+) received,.*time (\d+)ms'),
+        summaryRgx: RegExp(r'(?<tx>\d+) packets transmitted, (?<rx>\d+) received,.*time (?<time>\d+)ms'),
         timeoutStr: RegExp(r'no answer yet'),
-        unknownHostStr:
-            RegExp(r'unknown host|service not known|failure in name'),
+        unknownHostStr: RegExp(r'unknown host|service not known|failure in name'),
       );
 
   @override
@@ -55,8 +52,6 @@ class PingLinux extends BasePing implements Ping {
 
   @override
   Exception? throwExit(int exitCode) {
-    return exitCode > 1
-        ? Exception('Ping process exited with code: $exitCode')
-        : null;
+    return exitCode > 1 ? Exception('Ping process exited with code: $exitCode') : null;
   }
 }

@@ -151,10 +151,6 @@ abstract class BasePing {
   }
 
   Future<bool> stop() async {
-    // ignore: unnecessary_null_comparison
-    if (_process == null) {
-      throw Exception('Cannot kill a process that has not yet been started');
-    }
     if (_process?.kill(ProcessSignal.sigint) ?? false) {
       await _controller.done;
 
