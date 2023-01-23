@@ -1,6 +1,5 @@
 import 'dart:convert';
-
-import 'package:universal_io/io.dart';
+import 'dart:io';
 
 import 'models/ping_data.dart';
 import 'models/ping_parser.dart';

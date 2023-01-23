@@ -10,7 +10,6 @@ environment:
 dependencies:
   async: ^2.10.0
   collection: ^1.17.0
-  universal_io: ^2.0.4
 
 dev_dependencies:
   dart_code_metrics: ^5.4.0

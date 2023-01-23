@@ -1,11 +1,11 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:dart_ping/src/models/ping_parser.dart';
 import 'package:dart_ping/src/ping/linux_ping.dart';
 import 'package:dart_ping/src/ping/mac_ping.dart';
 import 'package:dart_ping/src/ping/windows_ping.dart';
 import 'package:dart_ping/src/ping_interface.dart';
-import 'package:universal_io/io.dart';
 
 // ignore: long-parameter-list
 Ping getPing(
