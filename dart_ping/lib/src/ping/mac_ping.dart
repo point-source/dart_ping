@@ -36,6 +36,7 @@ class PingMac extends BasePing implements Ping {
         ),
         timeoutStr: RegExp(r'Request timeout'),
         unknownHostStr: RegExp(r'Unknown host'),
+        unreachableStr: RegExp(r'[Uu]nreachable'),
       );
 
   @override
