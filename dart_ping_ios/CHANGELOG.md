@@ -1,3 +1,8 @@
+## 3.0.0
+
+- Upgrade dart_ping to 8.0.1
+- Update example
+
 ## 2.0.1
 
 - Improve usage docs
