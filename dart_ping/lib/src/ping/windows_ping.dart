@@ -32,8 +32,9 @@ class PingWindows extends BasePing implements Ping {
         summaryStr: RegExp(r'Lost'),
         summaryRgx:
             RegExp(r'Sent = (?<tx>\d+), Received = (?<rx>\d+), Lost = (?:\d+)'),
-        timeoutStr: RegExp(r'host unreachable|timed out'),
+        timeoutStr: RegExp(r'timed out'),
         unknownHostStr: RegExp(r'could not find host'),
+        unreachableStr: RegExp(r'[Uu]nreachable'),
         errorStr: RegExp(r'transmit failed'),
       );
 

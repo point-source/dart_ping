@@ -60,7 +60,8 @@ enum ErrorType {
   requestTimedOut('Request Timed Out'),
   unknownHost('Unknown Host'),
   unknown('Unknown Error'),
-  noReply('No Reply');
+  noReply('No Reply'),
+  unreachable('Host/Network Unreachable');
 
   const ErrorType(this.message);
 
@@ -74,6 +75,8 @@ enum ErrorType {
         return ErrorType.unknownHost;
       case 'No Reply':
         return ErrorType.noReply;
+      case 'Unreachable':
+        return ErrorType.unreachable;
       default:
         return ErrorType.unknown;
     }

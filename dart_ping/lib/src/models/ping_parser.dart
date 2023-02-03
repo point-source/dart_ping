@@ -14,6 +14,7 @@ class PingParser {
     required this.summaryRgx,
     required this.timeoutStr,
     required this.unknownHostStr,
+    required this.unreachableStr,
     this.errorStr,
   });
 
@@ -41,11 +42,15 @@ class PingParser {
   /// String used to detect an unknown host error
   RegExp unknownHostStr;
 
+  /// String used to detect a host unreachable error
+  RegExp unreachableStr;
+
   /// String(s) used to detect misc unknown error(s)
   RegExp? errorStr;
 
   // ignore: long-method
-  StreamTransformer<String, PingData> get responseParser => StreamTransformer<String, PingData>.fromHandlers(
+  StreamTransformer<String, PingData> get responseParser =>
+      StreamTransformer<String, PingData>.fromHandlers(
         handleData: (data, sink) {
           // Timeout
           if (sequenceRgx != null && data.contains(timeoutStr)) {
@@ -70,7 +75,9 @@ class PingParser {
             if (match == null) {
               return;
             }
-            var seq = match.groupNames.contains('seq') ? match.namedGroup('seq') : null;
+            var seq = match.groupNames.contains('seq')
+                ? match.namedGroup('seq')
+                : null;
             var ttl = match.namedGroup('ttl');
             var time = match.namedGroup('time');
             sink.add(
@@ -106,7 +113,9 @@ class PingParser {
                 summary: PingSummary(
                   transmitted: int.parse(tx),
                   received: int.parse(rx),
-                  time: time == null ? null : Duration(milliseconds: int.parse(time)),
+                  time: time == null
+                      ? null
+                      : Duration(milliseconds: int.parse(time)),
                 ),
               ),
             );
@@ -117,6 +126,15 @@ class PingParser {
             sink.add(
               PingData(
                 error: PingError(ErrorType.unknownHost),
+              ),
+            );
+          }
+
+          // Host or Network Unreachable
+          if (data.contains(unreachableStr)) {
+            sink.add(
+              PingData(
+                error: PingError(ErrorType.unreachable),
               ),
             );
           }
