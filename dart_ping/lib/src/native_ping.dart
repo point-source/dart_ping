@@ -17,6 +17,7 @@ Ping getPing(
   bool ipv6,
   PingParser? parser,
   Encoding encoding,
+  bool forceCodepage,
 ) {
   switch (Platform.operatingSystem) {
     case 'android':
@@ -53,6 +54,7 @@ Ping getPing(
         ipv6,
         parser: parser,
         encoding: encoding,
+        forceCodepage: forceCodepage,
       );
     default:
       throw UnimplementedError('Ping not supported on this platform');

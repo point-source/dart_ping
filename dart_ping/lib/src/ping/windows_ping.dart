@@ -13,6 +13,7 @@ class PingWindows extends BasePing implements Ping {
     bool ipv6, {
     PingParser? parser,
     Encoding encoding = const Utf8Codec(),
+    bool forceCodepage = false,
   }) : super(
           host,
           count,
@@ -22,6 +23,7 @@ class PingWindows extends BasePing implements Ping {
           ipv6,
           parser ?? _parser,
           encoding,
+          forceCodepage,
         );
 
   static PingParser get _parser => PingParser(

@@ -18,6 +18,7 @@ abstract class BasePing {
     this.ipv6,
     this.parser,
     this.encoding,
+    this.forceCodepage,
   ) {
     _controller = StreamController<PingData>(
       onListen: _onListen,
@@ -52,6 +53,12 @@ abstract class BasePing {
   /// Encoding used to decode character codes from process output
   Encoding encoding;
 
+  /// On Windows, force the console process to use codepage 437 (DOS Latin US)
+  ///
+  /// Under the hood, this appends the ping command with the `chcp` command
+  /// like so: `chcp 437 && ping {opts}`
+  bool forceCodepage;
+
   late final StreamController<PingData> _controller;
   Process? _process;
   late final StreamSubscription<PingData> _sub;
@@ -68,11 +75,15 @@ abstract class BasePing {
   String get command => 'ping ${params.join(' ')} $host';
 
   /// Starts a ping process on the host OS
-  Future<Process> get platformProcess async => await Process.start(
-        ipv6 ? 'ping6' : 'ping',
-        [...params, host],
-        environment: locale,
-      );
+  Future<Process> get platformProcess async {
+    final ping = ipv6 ? 'ping6' : 'ping';
+
+    return await Process.start(
+      forceCodepage ? 'chcp' : ping,
+      forceCodepage ? ['437', '&&', ping, ...params, host] : [...params, host],
+      environment: locale,
+    );
+  }
 
   /// Transforms the ping process output into PingData objects
   Stream<PingData> get _parsedOutput =>

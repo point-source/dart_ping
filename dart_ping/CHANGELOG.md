@@ -1,6 +1,7 @@
 ## 9.0.0
 
 - Upgraded sdk to Dart 3
+- Add "forceCodepage" option for Windows systems with non-English default languages
 - Add clearer exception when "ping" binary is not available on the host OS (#50)
 - Removed dart_code_metrics dev dependency
 - Renamed test files

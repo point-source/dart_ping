@@ -15,7 +15,6 @@ abstract class Ping {
   factory Ping(
     /// Hostname, domain, or IP which you would like to ping
     String host, {
-
     /// How many times the host should be pinged before the process ends
     int? count,
 
@@ -37,6 +36,12 @@ abstract class Ping {
 
     /// Encoding used to decode character codes from process output
     Encoding encoding = const Utf8Codec(),
+
+    /// Force the console process to use codepage 437 (DOS Latin US)
+    ///
+    /// Under the hood, this appends the ping command with the `chcp` command
+    /// like so: `chcp 437 && ping {opts}`
+    bool forceCodepage = false,
   }) {
     switch (Platform.operatingSystem) {
       case 'android':
@@ -73,6 +78,7 @@ abstract class Ping {
           ipv6,
           parser: parser,
           encoding: encoding,
+          forceCodepage: forceCodepage,
         );
       case 'ios':
         Function? ios = iosFactory;

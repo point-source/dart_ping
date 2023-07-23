@@ -22,6 +22,7 @@ class PingMac extends BasePing implements Ping {
           ipv6,
           parser ?? _parser,
           encoding,
+          false,
         );
 
   static PingParser get _parser => PingParser(
