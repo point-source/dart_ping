@@ -2,6 +2,7 @@
 
 - Upgraded sdk to Dart 3
 - Removed dart_code_metrics dev dependency
+- Renamed test files
 
 ## 8.0.1
 
