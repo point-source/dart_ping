@@ -83,7 +83,14 @@ abstract class BasePing {
 
   Future<void> _onListen() async {
     // Start new ping process on host OS
-    _process = await platformProcess;
+    _process = await platformProcess.catchError((error) {
+      if (error.toString().contains('No such file')) {
+        throw Exception(
+          'Could not find ping binary on this system. Please ensure it is installed',
+        );
+      }
+      throw error;
+    });
     // Get platform-specific parsed PingData
     _sub = _parsedOutput.listen(
       (event) {
