@@ -1,3 +1,7 @@
+## 9.0.0
+
+- Upgraded sdk to Dart 3
+
 ## 8.0.1
 
 - Fix windows timeout flag (Issue #37)
