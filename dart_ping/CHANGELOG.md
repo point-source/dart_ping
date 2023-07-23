@@ -1,6 +1,7 @@
 ## 9.0.0
 
 - Upgraded sdk to Dart 3
+- Removed dart_code_metrics dev dependency
 
 ## 8.0.1
 
