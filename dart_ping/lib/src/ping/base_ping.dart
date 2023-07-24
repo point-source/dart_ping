@@ -82,6 +82,7 @@ abstract class BasePing {
       forceCodepage ? 'chcp' : ping,
       forceCodepage ? ['437', '&&', ping, ...params, host] : [...params, host],
       environment: locale,
+      runInShell: forceCodepage,
     );
   }
 
