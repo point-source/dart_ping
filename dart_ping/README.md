@@ -49,19 +49,26 @@ To prematurely halt the process:
 await ping.stop()
 ```
 
-To override the parser to support an alternative OS language
-(Portuguese shown here):
+### Non-English Language Support
+
+To support OS languages other than English, you can override the parser (Portuguese shown here):
 
 ```dart
 final parser = PingParser(
-    responseStr: RegExp(r'Resposta de'),
     responseRgx: RegExp(r'de (?<ip>.*): bytes=(?:\d+) tempo=(?<time>\d+)ms TTL=(?<ttl>\d+)'),
-    summaryStr: RegExp(r'Perdidos'),
     summaryRgx: RegExp(r'Enviados = (?<tx>\d+), Recebidos = (?<rx>\d+), Perdidos = (?:\d+)'),
-    timeoutStr: RegExp(r'host unreachable'),
-    unknownHostStr: RegExp(r'A solicitação ping não pôde encontrar o host'));
+    timeoutRgx: RegExp(r'host unreachable'),
+    timeToLiveRgx: RegExp(r''),
+    unknownHostStr: RegExp(r'A solicitação ping não pôde encontrar o host'),
+  );
 
 final ping = Ping('google.com', parser: parser);
+```
+
+On Windows installations, you can force the codepage (437) of the console instead of providing a custom parser:
+
+```dart
+final ping = Ping('google.com', forceCodepage: true);
 ```
 
 To override the character encoding to ignore non-utf characters:
@@ -71,6 +78,7 @@ final ping = Ping('google.com', encoding: Utf8Codec(allowMalformed: true));
 ```
 
 ### macOS Release Build with App Sandbox
+
 When building in release mode with [app sandbox](https://developer.apple.com/documentation/security) enabled, you must ensure you add the following entitlements to the Release.entitlements file in your macos folder:
 
 ```xml
