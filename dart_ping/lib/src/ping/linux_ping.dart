@@ -33,6 +33,9 @@ class PingLinux extends BasePing implements Ping {
           r'(?<tx>\d+) packets transmitted, (?<rx>\d+) received,.*time (?<time>\d+)ms',
         ),
         timeoutRgx: RegExp(r'no answer yet for icmp_seq=(?<seq>\d+)'),
+        timeToLiveRgx: RegExp(
+          r'From (?<ip>.*) \((?:.*)\) icmp_seq=(?<seq>\d+) Time to live exceeded',
+        ),
         unknownHostStr:
             RegExp(r'unknown host|service not known|failure in name'),
       );

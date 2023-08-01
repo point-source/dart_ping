@@ -10,6 +10,7 @@ class PingParser {
     required this.responseRgx,
     required this.summaryRgx,
     required this.timeoutRgx,
+    required this.timeToLiveRgx,
     required this.unknownHostStr,
     this.errorStrs = const [],
   });
@@ -24,6 +25,9 @@ class PingParser {
 
   /// String used to parse timeout error
   RegExp timeoutRgx;
+
+  /// String used to parse a TTL exceeded error
+  RegExp timeToLiveRgx;
 
   /// String used to detect an unknown host error
   RegExp unknownHostStr;
@@ -100,9 +104,17 @@ class PingParser {
         ),
       );
     }
-              ),
-            );
-          }
+
+    // TTL Exceeded
+    match = timeToLiveRgx.firstMatch(data);
+    if (match != null) {
+      return PingData(
+        response: PingResponse(
+          ip: match.namedGroup('ip'),
+        ),
+        error: PingError(ErrorType.timeToLiveExceeded),
+      );
+    }
 
     // Unknown Host
     if (data.contains(unknownHostStr)) {

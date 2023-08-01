@@ -33,6 +33,7 @@ class PingMac extends BasePing implements Ping {
           r'(?<tx>\d+) packets transmitted, (?<rx>\d+) packets received',
         ),
         timeoutRgx: RegExp(r'Request timeout for icmp_seq (?<seq>\d+)'),
+        timeToLiveRgx: RegExp(r'from (?<ip>.*): Time to live exceeded'),
         unknownHostStr: RegExp(r'Unknown host'),
       );
 

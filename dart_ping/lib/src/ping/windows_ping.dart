@@ -33,6 +33,7 @@ class PingWindows extends BasePing implements Ping {
         summaryRgx:
             RegExp(r'Sent = (?<tx>\d+), Received = (?<rx>\d+), Lost = (?:\d+)'),
         timeoutRgx: RegExp(r'Request timed out'),
+        timeToLiveRgx: RegExp(r'Reply from (?<ip>.*): TTL expired in transit'),
         unknownHostStr: RegExp(r'could not find host'),
         errorStrs: [
           RegExp(r'General failure'),

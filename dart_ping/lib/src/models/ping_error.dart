@@ -57,6 +57,7 @@ class PingError {
 }
 
 enum ErrorType {
+  timeToLiveExceeded('Time To Live Exceeded'),
   requestTimedOut('Request Timed Out'),
   unknownHost('Unknown Host'),
   unknown('Unknown Error'),
@@ -68,6 +69,8 @@ enum ErrorType {
 
   static ErrorType fromMessage(String message) {
     switch (message) {
+      case 'Time To Live Exceeded':
+        return ErrorType.timeToLiveExceeded;
       case 'Request Timed Out':
         return ErrorType.requestTimedOut;
       case 'Unknown Host':
