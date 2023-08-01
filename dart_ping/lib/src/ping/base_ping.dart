@@ -91,7 +91,7 @@ abstract class BasePing {
       StreamGroup.merge([_process!.stderr, _process!.stdout])
           .transform(encoding.decoder)
           .transform(LineSplitter())
-          .transform<PingData>(parser.responseParser);
+          .transform<PingData>(parser.transformParser);
 
   Future<void> _onListen() async {
     // Start new ping process on host OS

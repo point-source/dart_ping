@@ -20,22 +20,19 @@ class PingLinux extends BasePing implements Ping {
           timeout,
           ttl,
           ipv6,
-          parser ?? _parser,
+          parser ?? defaultParser,
           encoding,
           false,
         );
 
-  static PingParser get _parser => PingParser(
-        responseStr: RegExp(r'bytes from'),
+  static PingParser get defaultParser => PingParser(
         responseRgx: RegExp(
-          r'from (?<ip>.*): icmp_seq=(?<seq>\d+) ttl=(?<ttl>\d+) time=(?<time>(\d+).?(\d+))',
+          r'bytes from (?:.*)(?<ip>\b(?:\d{1,3}\.){3}\d{1,3}\b)\)?: icmp_seq=(?<seq>\d+) ttl=(?<ttl>\d+) time=(?<time>(\d+).?(\d+))',
         ),
-        sequenceRgx: RegExp(r'icmp_seq=(?<seq>\d+)'),
-        summaryStr: RegExp(r'packet loss'),
         summaryRgx: RegExp(
           r'(?<tx>\d+) packets transmitted, (?<rx>\d+) received,.*time (?<time>\d+)ms',
         ),
-        timeoutStr: RegExp(r'no answer yet'),
+        timeoutRgx: RegExp(r'no answer yet for icmp_seq=(?<seq>\d+)'),
         unknownHostStr:
             RegExp(r'unknown host|service not known|failure in name'),
       );

@@ -20,22 +20,19 @@ class PingMac extends BasePing implements Ping {
           timeout,
           ttl,
           ipv6,
-          parser ?? _parser,
+          parser ?? defaultParser,
           encoding,
           false,
         );
 
-  static PingParser get _parser => PingParser(
-        responseStr: RegExp(r'bytes from'),
+  static PingParser get defaultParser => PingParser(
         responseRgx: RegExp(
-          r'from (?<ip>.*): icmp_seq=(?<seq>\d+) ttl=(?<ttl>\d+) time=(?<time>(\d+).?(\d+))',
+          r'bytes from (?<ip>.*): icmp_seq=(?<seq>\d+) ttl=(?<ttl>\d+) time=(?<time>(\d+).?(\d+))',
         ),
-        sequenceRgx: RegExp(r'icmp_seq (?<seq>\d+)'),
-        summaryStr: RegExp(r'packet loss'),
         summaryRgx: RegExp(
           r'(?<tx>\d+) packets transmitted, (?<rx>\d+) packets received',
         ),
-        timeoutStr: RegExp(r'Request timeout'),
+        timeoutRgx: RegExp(r'Request timeout for icmp_seq (?<seq>\d+)'),
         unknownHostStr: RegExp(r'Unknown host'),
       );
 
