@@ -1,3 +1,8 @@
+## 4.0.0
+
+- Upgrade dart_ping to 9.0.0
+- Upgrade dependencies
+
 ## 3.0.0
 
 - Upgrade dart_ping to 8.0.1
@@ -9,6 +14,7 @@
 - Add repository link to pubspec
 - Fix typos
 - Update / improve flutter example
+
 ## 2.0.0
 
 - Support dart_ping 7.0.0
