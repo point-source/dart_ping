@@ -1,3 +1,7 @@
+## 4.0.1
+
+- Include IP address in PingResponse
+
 ## 4.0.0
 
 - Upgrade dart_ping to 9.0.0

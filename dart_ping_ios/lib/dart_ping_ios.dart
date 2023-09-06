@@ -76,7 +76,7 @@ class DartPingIOS implements Ping {
         return PingData(
           response: r == null
               ? null
-              : PingResponse(seq: r.seq, ttl: r.ttl, time: r.time),
+              : PingResponse(seq: r.seq, ttl: r.ttl, time: r.time, ip: r.ip),
           summary: s == null
               ? null
               : PingSummary(

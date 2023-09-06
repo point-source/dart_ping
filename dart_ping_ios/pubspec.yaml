@@ -1,6 +1,6 @@
 name: dart_ping_ios
 description: This package adds iOS support to the dart_ping package via plugin registration.
-version: 4.0.0
+version: 4.0.1
 homepage: https://github.com/point-source/dart_ping
 repository: https://github.com/point-source/dart_ping
 
