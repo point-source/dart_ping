@@ -6,13 +6,15 @@ void main() {
   // Register dart_ping_ios with dart_ping
   DartPingIOS.register();
 
-  runApp(MyApp());
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
+  const MyApp({Key? key}) : super(key: key);
+
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    return const MaterialApp(
       title: 'DartPing Flutter Demo',
       home: MyHomePage(),
     );
@@ -20,18 +22,21 @@ class MyApp extends StatelessWidget {
 }
 
 class MyHomePage extends StatefulWidget {
-  MyHomePage({Key? key}) : super(key: key);
+  const MyHomePage({Key? key}) : super(key: key);
 
   @override
-  _MyHomePageState createState() => _MyHomePageState();
+  MyHomePageState createState() => MyHomePageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  // Create instance of DartPing
-  Ping ping = Ping('google.com', count: 5);
+class MyHomePageState extends State<MyHomePage> {
   PingData? _lastPing;
+  final TextEditingController _controller =
+      TextEditingController(text: 'google.com');
 
   void _startPing() {
+    // Create instance of DartPing
+    final ping = Ping(_controller.text, count: 5);
+    print('Running command: ${ping.command}');
     ping.stream.listen((event) {
       setState(() {
         _lastPing = event;
@@ -43,12 +48,19 @@ class _MyHomePageState extends State<MyHomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('DartPing Flutter Demo'),
+        title: const Text('DartPing Flutter Demo'),
       ),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: TextField(
+                controller: _controller,
+                textAlign: TextAlign.center,
+              ),
+            ),
             Text(
               _lastPing?.toString() ?? 'Push the button to begin ping',
             ),
@@ -58,7 +70,7 @@ class _MyHomePageState extends State<MyHomePage> {
       floatingActionButton: FloatingActionButton(
         onPressed: _startPing,
         tooltip: 'Start Ping',
-        child: Icon(Icons.radar_sharp),
+        child: const Icon(Icons.radar_sharp),
       ), // This trailing comma makes auto-formatting nicer for build methods.
     );
   }
