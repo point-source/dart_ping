@@ -1,3 +1,7 @@
+# 4.0.2
+
+- Fix #56: Upgrade flutter_icmp_ping to 3.1.3
+
 ## 4.0.1
 
 - Include IP address in PingResponse
