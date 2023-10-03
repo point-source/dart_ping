@@ -1,3 +1,8 @@
+## 9.0.1
+
+- Fix #49: No IP response when TTL exceeded on Android platforms
+- Add sequence number to PingData on Linux / Android
+
 ## 9.0.0
 
 - Implement TTL expiration handling (#49)

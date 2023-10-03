@@ -111,6 +111,7 @@ class PingParser {
       return PingData(
         response: PingResponse(
           ip: match.namedGroup('ip'),
+          seq: int.tryParse(match.namedGroup('seq')!),
         ),
         error: PingError(ErrorType.timeToLiveExceeded),
       );
