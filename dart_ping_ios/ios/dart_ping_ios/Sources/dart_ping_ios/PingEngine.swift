@@ -11,9 +11,10 @@
 //  - All cadence is driven by a DispatchSourceTimer; receiving runs on a
 //    dedicated DispatchQueue; all mutable bookkeeping is serialized on a private
 //    serial queue so counters and the per-seq send-time table are race-free.
-//  - IPv4 only in this batch. The `ipv6` and `ttl` Config fields are accepted
-//    but do not change behavior here (IPv6 and outgoing-TTL/Time-Exceeded are a
-//    later batch).
+//  - IPv4 only in this batch. The `ipv6` Config field is accepted but does not
+//    change behavior here (IPv6 is a later batch). The `ttl` field IS enforced:
+//    it sets the outgoing IP hop limit (IP_TTL) and ICMP Time Exceeded replies
+//    from intermediate hops are surfaced as `.timeToLiveExceeded` errors.
 //
 //  This file imports ONLY Foundation and Darwin — no Flutter.
 //
@@ -21,10 +22,13 @@
 import Foundation
 import Darwin
 
-/// Error kinds this batch can report. TTL-exceeded / no-reply parity is a later
-/// batch; here we surface only timeouts, resolution failures, and the catch-all.
+/// Error kinds this engine can report: per-probe timeouts, TTL/hop-limit
+/// exceeded by an intermediate hop, the run-level "no reply" (nothing came back
+/// for the whole run), host-resolution failures, and the catch-all.
 public enum PingErrorKind {
     case requestTimedOut
+    case timeToLiveExceeded
+    case noReply
     case unknownHost
     case unknown
 }
@@ -44,7 +48,7 @@ public final class PingEngine {
         public let count: Int?            // nil => run until stopped
         public let interval: TimeInterval // seconds between probes
         public let timeout: TimeInterval  // seconds to wait for a reply
-        public let ttl: Int               // accepted but NOT enforced in this batch
+        public let ttl: Int               // outgoing IP hop limit (IP_TTL)
         public let ipv6: Bool             // accepted; this batch resolves IPv4 only
 
         public init(host: String,
@@ -64,8 +68,8 @@ public final class PingEngine {
 
     public enum Event {
         case response(seq: Int, ttl: Int, timeMs: Int, ip: String)
-        case error(kind: PingErrorKind, seq: Int?)
-        case summary(transmitted: Int, received: Int, timeMs: Int)
+        case error(kind: PingErrorKind, seq: Int?, ip: String?)
+        case summary(transmitted: Int, received: Int, timeMs: Int, errors: [PingErrorKind])
     }
 
     public init(config: Config, onEvent: @escaping (Event) -> Void) {
@@ -102,6 +106,11 @@ public final class PingEngine {
     private var receivedCount = 0                // total replies matched
     private var totalRTTMillis = 0               // sum of matched RTTs (ms)
 
+    /// Every error kind emitted during the run, in emission order, so the final
+    /// summary can carry the full error list (parity with the other platforms,
+    /// where `summary.errors` aggregates everything seen on the stream).
+    private var accumulatedErrors: [PingErrorKind] = []
+
     /// Per-seq send timestamps (microseconds) for probes still awaiting a reply
     /// or a timeout. Entries are removed when resolved (reply or timeout).
     private var pendingSendTimes: [UInt16: UInt64] = [:]
@@ -125,7 +134,7 @@ public final class PingEngine {
 
             // 1) Resolve the host (IPv4). On failure: unknownHost + empty summary, stop.
             guard let addr = self.resolveIPv4(host: self.config.host) else {
-                self.emit(.error(kind: .unknownHost, seq: nil))
+                self.emit(.error(kind: .unknownHost, seq: nil, ip: nil))
                 self.finishWithSummaryLocked()
                 self.stopped = true
                 return
@@ -136,7 +145,7 @@ public final class PingEngine {
             let fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP)
             guard fd >= 0 else {
                 // socket() failure is an unexpected system error -> .unknown.
-                self.emit(.error(kind: .unknown, seq: nil))
+                self.emit(.error(kind: .unknown, seq: nil, ip: nil))
                 self.finishWithSummaryLocked()
                 self.stopped = true
                 return
@@ -148,6 +157,12 @@ public final class PingEngine {
             // SOCK_DGRAM path). Best-effort: if this fails we simply report ttl 0.
             var on: Int32 = 1
             setsockopt(fd, IPPROTO_IP, IP_RECVTTL, &on, socklen_t(MemoryLayout<Int32>.size))
+
+            // Set the outgoing IP hop limit (TTL). Best-effort, like IP_RECVTTL:
+            // when the limit is exceeded in transit an intermediate hop replies
+            // with ICMP Time Exceeded, which we surface as .timeToLiveExceeded.
+            var ttlVal = Int32(self.config.ttl)
+            setsockopt(fd, IPPROTO_IP, IP_TTL, &ttlVal, socklen_t(MemoryLayout<Int32>.size))
 
             // 3) Start receiving and schedule sends.
             self.startReceiveLoopLocked()
@@ -256,7 +271,7 @@ public final class PingEngine {
 
         guard sent >= 0 else {
             // A send failure is an unexpected system error for this seq.
-            emit(.error(kind: .unknown, seq: Int(seq)))
+            emit(.error(kind: .unknown, seq: Int(seq), ip: nil))
             // Still count cadence so a transient failure doesn't stall completion
             // when a fixed count was requested.
             sentCount += 1
@@ -279,7 +294,7 @@ public final class PingEngine {
             guard self.pendingSendTimes[seq] != nil else { return } // already resolved
             self.pendingSendTimes.removeValue(forKey: seq)
             self.timeoutItems.removeValue(forKey: seq)
-            self.emit(.error(kind: .requestTimedOut, seq: Int(seq)))
+            self.emit(.error(kind: .requestTimedOut, seq: Int(seq), ip: nil))
             self.checkCompletionLocked()
         }
         timeoutItems[seq] = item
@@ -358,6 +373,27 @@ public final class PingEngine {
     private func handleReceivedLocked(packet: Data, ttl: Int, sourceIP: String) {
         guard !summaryEmitted else { return }
 
+        // ICMP Time Exceeded (type 11) from an intermediate hop: the outgoing
+        // TTL reached zero before the destination. Match the QUOTED original
+        // probe by sequence and report it as a TTL-exceeded error for that seq;
+        // this is NOT a successful reply (no receivedCount / RTT contribution).
+        if let first = packet.first, first == ICMPType.timeExceeded {
+            guard let seq = ICMPPacket.parseTimeExceededOriginalSequence(packet) else { return }
+            guard pendingSendTimes[seq] != nil else {
+                // No pending probe for this seq (late/dup). Ignore, as with replies.
+                return
+            }
+            // Resolve the probe's bookkeeping (cancel its timeout) but do NOT
+            // treat it as received.
+            pendingSendTimes.removeValue(forKey: seq)
+            timeoutItems[seq]?.cancel()
+            timeoutItems.removeValue(forKey: seq)
+
+            emit(.error(kind: .timeToLiveExceeded, seq: Int(seq), ip: sourceIP))
+            checkCompletionLocked()
+            return
+        }
+
         guard let reply = ICMPPacket.parseEchoReply(packet) else { return }
         let seq = reply.sequence
 
@@ -409,9 +445,17 @@ public final class PingEngine {
         guard !summaryEmitted else { return }
         summaryEmitted = true
 
+        // Run-level "no reply": probes were sent but nothing came back. This
+        // matches the Linux/macOS exit-code-1 semantics. Resolution/socket
+        // failures have sentCount == 0, so they never acquire a spurious noReply.
+        if receivedCount == 0 && sentCount > 0 {
+            accumulatedErrors.append(.noReply)
+        }
+
         emit(.summary(transmitted: sentCount,
                       received: receivedCount,
-                      timeMs: totalRTTMillis))
+                      timeMs: totalRTTMillis,
+                      errors: accumulatedErrors))
 
         // Closing the socket unblocks the receive loop (recvmsg returns < 0).
         if socketFD >= 0 {
@@ -424,7 +468,15 @@ public final class PingEngine {
 
     /// Forward an event to the caller. Always invoked on stateQueue so ordering
     /// of emitted events matches the order state transitions occur.
+    ///
+    /// Every `.error` event is also recorded in `accumulatedErrors` (in emission
+    /// order, before the summary is built) so the terminal summary can carry the
+    /// full error list. Doing the bookkeeping here keeps every error call site
+    /// from having to remember to append.
     private func emit(_ event: Event) {
+        if case let .error(kind, _, _) = event {
+            accumulatedErrors.append(kind)
+        }
         onEvent(event)
     }
 
