@@ -61,7 +61,10 @@ public enum ICMPPacket {
     /// big-endian send timestamp expressed in microseconds since the reference
     /// date. This makes the packet self-describing for debugging and lets a
     /// reply's echoed payload corroborate the engine's own send-time table.
-    public static let payloadLength = 8
+    ///
+    /// Internal: an implementation detail of `echoRequest`; not part of the
+    /// test seam, so it stays out of the public API surface.
+    static let payloadLength = 8
 
     /// Construct an ICMP Echo Request datagram.
     ///

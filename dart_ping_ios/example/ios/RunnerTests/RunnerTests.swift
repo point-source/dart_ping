@@ -269,11 +269,8 @@ class RunnerTests: XCTestCase {
   /// An IHL implying fewer than 20 bytes (IHL=4 → 16 bytes) is rejected, since a
   /// valid IPv4 header is at least 20 bytes.
   func testParseTimeExceededRejectsIHLBelowMinimum() {
-    // Build manually: type-11 header + a 16-byte "IP header" (IHL=4) + echo.
-    var data = Data([0x0B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
-    data.append(0x40 | 0x04) // version 4, IHL 4 => 16 bytes
-    data.append(contentsOf: Array(repeating: 0xAA, count: 15))
-    data.append(contentsOf: [0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x12, 0x34])
+    // IHL=4 => a 16-byte quoted IP header, below the 20-byte IPv4 minimum.
+    let data = makeTimeExceeded(ihl: 4, originalSequence: 0x1234)
     XCTAssertNil(ICMPPacket.parseTimeExceededOriginalSequence(data))
   }
 
