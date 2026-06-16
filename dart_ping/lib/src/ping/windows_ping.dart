@@ -12,7 +12,7 @@ class PingWindows extends BasePing implements Ping {
     int ttl,
     bool ipv6, {
     PingParser? parser,
-    Encoding encoding = const Utf8Codec(),
+    Encoding encoding = const Utf8Codec(allowMalformed: true),
     bool forceCodepage = false,
   }) : super(
           host,

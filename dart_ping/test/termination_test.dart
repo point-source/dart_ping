@@ -23,4 +23,17 @@ void main() {
       expect(data.last.summary, isNotNull);
     });
   });
+
+  group('Stop after error: ', () {
+    test('stop() after unknownHost closes stream', () async {
+      var ping = Ping('this.host.does.not.exist.invalid', count: 3);
+      var data = <PingData>[];
+      ping.stream.listen(data.add);
+      // Allow the process to fail with unknownHost
+      await Future.delayed(Duration(milliseconds: 3000));
+      // stop() must return even when the process already exited
+      await ping.stop().timeout(Duration(seconds: 5));
+      expect(data.last.summary, isNotNull);
+    });
+  });
 }
