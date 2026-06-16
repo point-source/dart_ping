@@ -207,7 +207,10 @@ public final class PingEngine {
         var hints = addrinfo()
         hints.ai_family = AF_INET          // IPv4 only this batch
         hints.ai_socktype = SOCK_DGRAM
-        hints.ai_protocol = IPPROTO_ICMP
+        // NB: do NOT constrain ai_protocol to IPPROTO_ICMP here. getaddrinfo
+        // validates the socktype/protocol pair and rejects SOCK_DGRAM+ICMP with
+        // EAI_BADHINTS, which would make every host resolve as unknownHost. The
+        // protocol only matters for the socket() call, not for name resolution.
 
         var result: UnsafeMutablePointer<addrinfo>?
         let status = getaddrinfo(host, nil, &hints, &result)
@@ -234,7 +237,7 @@ public final class PingEngine {
     // MARK: - Sending (all calls on stateQueue)
 
     private func scheduleSendTimerLocked() {
-        let timer = DispatchSourceTimer(queue: stateQueue)
+        let timer = DispatchSource.makeTimerSource(queue: stateQueue)
         // Fire immediately, then every `interval` seconds.
         timer.schedule(deadline: .now(), repeating: config.interval)
         timer.setEventHandler { [weak self] in
@@ -363,8 +366,17 @@ public final class PingEngine {
             }
             if received == 0 { continue }
 
-            let packet = Data(buffer[0..<received])
-            let ttl = Self.extractTTL(from: &msg) ?? 0
+            // Darwin's SOCK_DGRAM/IPPROTO_ICMP socket delivers the FULL IPv4
+            // header ahead of the ICMP message on receive (unlike Linux, which
+            // strips it). Strip it so the ICMP parsers see the ICMP header at
+            // offset 0, matching their documented contract.
+            guard let datagram = ICMPPacket.stripIPv4Header(Data(buffer[0..<received])) else {
+                continue
+            }
+            let packet = datagram.icmpMessage
+            // Prefer the IP_RECVTTL control message, but it is not always present
+            // on Darwin, so fall back to the TTL from the (now stripped) IP header.
+            let ttl = Self.extractTTL(from: &msg) ?? datagram.ttl
             let sourceIP = Self.sourceIPString(from: &sourceAddr) ?? ""
 
             // Hand off to the state queue for sequence matching & emission.
@@ -505,25 +517,62 @@ public final class PingEngine {
     ///
     /// We requested IP_RECVTTL, so the kernel attaches an ancillary message of
     /// level IPPROTO_IP / type IP_RECVTTL whose data is the IP header TTL. We
-    /// walk the cmsg list with CMSG_FIRSTHDR/CMSG_NXTHDR and read the value.
+    /// walk the cmsg list with our Swift reimplementations of CMSG_FIRSTHDR /
+    /// CMSG_NXTHDR (the C macros are not imported into Swift) and read the value.
     /// Returns nil if no TTL cmsg is present (caller reports 0).
     private static func extractTTL(from msg: inout msghdr) -> Int? {
-        var cmsg = CMSG_FIRSTHDR(&msg)
+        var cmsg = cmsgFirstHeader(&msg)
         while let current = cmsg {
             if current.pointee.cmsg_level == IPPROTO_IP,
                current.pointee.cmsg_type == IP_RECVTTL {
-                if let dataPtr = CMSG_DATA(current) {
-                    // On Darwin/iOS the IP_RECVTTL ancillary datum is a single
-                    // byte (u_char), so read exactly one byte. Reading a wider
-                    // Int32 here would fold in adjacent cmsg padding/stale bytes
-                    // (the control buffer is not re-zeroed per recvmsg) and yield
-                    // a garbage TTL.
-                    return Int(dataPtr.pointee)
-                }
+                // On Darwin/iOS the IP_RECVTTL ancillary datum is a single byte
+                // (u_char), so read exactly one byte. Reading a wider Int32 here
+                // would fold in adjacent cmsg padding/stale bytes (the control
+                // buffer is not re-zeroed per recvmsg) and yield a garbage TTL.
+                return Int(cmsgData(current).load(as: UInt8.self))
             }
-            cmsg = CMSG_NXTHDR(&msg, current)
+            cmsg = cmsgNextHeader(&msg, current)
         }
         return nil
+    }
+
+    // MARK: - CMSG macro reimplementations
+    //
+    // The POSIX CMSG_FIRSTHDR / CMSG_DATA / CMSG_NXTHDR helpers are C
+    // function-like macros, which Swift's Clang importer does not surface, so we
+    // reimplement them here following the Darwin <sys/socket.h> definitions.
+    // Darwin aligns control-message components to 4 bytes (__DARWIN_ALIGN32).
+
+    /// __DARWIN_ALIGN32: round `length` up to the next 4-byte boundary.
+    private static func cmsgAlign(_ length: Int) -> Int {
+        let alignment = MemoryLayout<UInt32>.size
+        return (length + alignment - 1) & ~(alignment - 1)
+    }
+
+    /// CMSG_FIRSTHDR: first control header, or nil if the buffer is too small.
+    private static func cmsgFirstHeader(_ msg: inout msghdr) -> UnsafeMutablePointer<cmsghdr>? {
+        guard Int(msg.msg_controllen) >= MemoryLayout<cmsghdr>.size,
+              let control = msg.msg_control else { return nil }
+        return control.assumingMemoryBound(to: cmsghdr.self)
+    }
+
+    /// CMSG_DATA: pointer to the data following a control header.
+    private static func cmsgData(_ cmsg: UnsafeMutablePointer<cmsghdr>) -> UnsafeRawPointer {
+        return UnsafeRawPointer(cmsg).advanced(by: cmsgAlign(MemoryLayout<cmsghdr>.size))
+    }
+
+    /// CMSG_NXTHDR: next control header, or nil once the list is exhausted.
+    private static func cmsgNextHeader(_ msg: inout msghdr,
+                                       _ cmsg: UnsafeMutablePointer<cmsghdr>) -> UnsafeMutablePointer<cmsghdr>? {
+        guard let control = msg.msg_control else { return nil }
+        let cmsgLen = Int(cmsg.pointee.cmsg_len)
+        let base = UnsafeRawPointer(cmsg)
+        let next = base.advanced(by: cmsgAlign(cmsgLen))
+        // The next header must have room for at least a full cmsghdr.
+        let nextEnd = next.advanced(by: cmsgAlign(MemoryLayout<cmsghdr>.size))
+        let controlEnd = UnsafeRawPointer(control).advanced(by: Int(msg.msg_controllen))
+        guard nextEnd <= controlEnd else { return nil }
+        return UnsafeMutableRawPointer(mutating: next).assumingMemoryBound(to: cmsghdr.self)
     }
 
     /// Render the source sockaddr (IPv4) as a dotted-quad string via inet_ntop.

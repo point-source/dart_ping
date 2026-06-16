@@ -15,13 +15,13 @@ import Foundation
 
 /// ICMP message types we care about for IPv4 echo (RFC 792).
 ///
-/// Note on the `SOCK_DGRAM`/`IPPROTO_ICMP` ("ping socket") path: unlike a raw
-/// socket, a datagram ICMP socket does NOT prepend the IPv4 header on receive —
-/// the kernel strips it and hands us the ICMP message starting at the ICMP
-/// header. So when parsing replies we index from offset 0 of the received bytes
-/// as the ICMP header, not from an IP header. (The TTL, which lives in the IP
-/// header, is therefore not in the payload and must be read out-of-band via a
-/// `recvmsg` control message — see `PingEngine`.)
+/// Note on the `SOCK_DGRAM`/`IPPROTO_ICMP` ("ping socket") path: on Darwin
+/// (macOS/iOS) a datagram ICMP socket DOES deliver the leading IPv4 header on
+/// receive (unlike Linux, which strips it). `PingEngine` strips that IPv4 header
+/// before calling the parsers here, so these functions can index from offset 0
+/// of their input as the ICMP header. The reply's TTL lives in that stripped
+/// IPv4 header (and is also requestable out-of-band via a `recvmsg` control
+/// message) — see `PingEngine`.
 enum ICMPType {
     static let echoReply: UInt8 = 0    // Echo Reply (the response to our probe)
     static let echoRequest: UInt8 = 8  // Echo Request (what we send)
@@ -175,6 +175,46 @@ public enum ICMPPacket {
         guard echoStart + ICMPHeader.length <= data.endIndex else { return nil }
 
         return readUInt16BE(data, at: echoStart + ICMPHeader.sequenceOffset)
+    }
+
+    // MARK: - Receive framing (Darwin leading IPv4 header)
+
+    /// A received datagram after its leading IPv4 header has been stripped: the
+    /// ICMP message (starting at the ICMP header) plus the IP header's TTL.
+    public struct ReceivedDatagram {
+        /// The IPv4 header's TTL field (offset 8). For an Echo Reply this is the
+        /// reply's remaining hop count, the value the other platforms report.
+        public let ttl: Int
+        /// The ICMP message bytes, starting at the ICMP header (offset 0), ready
+        /// for `parseEchoReply` / `parseTimeExceededOriginalSequence`.
+        public let icmpMessage: Data
+    }
+
+    /// Strip the leading IPv4 header that Darwin's `SOCK_DGRAM`/`IPPROTO_ICMP`
+    /// socket delivers ahead of the ICMP message on receive (unlike Linux, which
+    /// strips it for us — see the note on `ICMPType`).
+    ///
+    /// Returns the ICMP message and the IP header's TTL, or `nil` if the bytes
+    /// are not a plausible IPv4 datagram (wrong version nibble, IHL below the
+    /// 20-byte minimum) or are too short to hold the IPv4 header plus at least
+    /// one ICMP header byte.
+    public static func stripIPv4Header(_ data: Data) -> ReceivedDatagram? {
+        let base = data.startIndex
+
+        // Need at least a minimum (20-byte) IPv4 header to read version/IHL/TTL.
+        guard data.count >= 20 else { return nil }
+
+        // High nibble of byte 0 is the IP version; we only handle IPv4 here.
+        let firstByte = data[base]
+        guard (firstByte >> 4) == 4 else { return nil }
+
+        // Low nibble is IHL in 32-bit words; a valid IPv4 header is >= 20 bytes.
+        let ipHeaderLength = Int(firstByte & 0x0F) * 4
+        guard ipHeaderLength >= 20, data.count > ipHeaderLength else { return nil }
+
+        let ttl = Int(data[base + 8]) // IPv4 TTL field lives at offset 8.
+        let icmpMessage = Data(data[(base + ipHeaderLength)..<data.endIndex])
+        return ReceivedDatagram(ttl: ttl, icmpMessage: icmpMessage)
     }
 
     // MARK: - Checksum
