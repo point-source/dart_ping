@@ -113,7 +113,7 @@ served natively by the core `dart_ping` subprocess path and is out of
 scope.
 
 ## iOS ping responses and summary §spec:ios-ping-behavior
-*Status: implemented (Batch 1) — native results map onto unchanged `PingResponse`/`PingSummary`; per-probe responses and the completion summary flow over the method/event channel; `stop()` lets the summary emit before the stream closes. Mapping covered by unit tests. (Batch-1 error subset only — full error/`errors` parity is §spec:ios-error-parity, deferred.)*
+*Status: implemented (Batch 1) — native results map onto unchanged `PingResponse`/`PingSummary`; per-probe responses and the completion summary flow over the method/event channel; `stop()` lets the summary emit before the stream closes. Mapping covered by unit tests. (Full error set and the per-run `errors` list landed in Batch 2 — see §spec:ios-error-parity.)*
 
 On iOS, listening to a `Ping` instance's `stream` produces the same
 `PingData` event shape as every other platform. The native engine
@@ -142,7 +142,7 @@ spec survives a change of transport mechanism; only the observable
 `PingData` contract is normative.
 
 ## iOS TTL control and time-to-live-exceeded §spec:ios-ttl
-*Status: not started*
+*Status: implemented (Batch 2) — the Swift engine sets the outgoing IP hop limit via `setsockopt(IP_TTL)` to the caller's `ttl`, and the receive path parses ICMP Time Exceeded (type 11) to recover the original probe's sequence and the intermediate-hop IP, surfacing a `timeToLiveExceeded` event (response carrying hop `ip`+`seq`, plus the error) instead of dropping it. Dart-side mapping covered by unit tests. Pending on-device/simulator verification (not compilable on the Linux CI host); note the platform risk that Darwin may deliver Time Exceeded only via the socket error queue (`MSG_ERRQUEUE`) rather than the normal `recvmsg` path used here.*
 
 The system honors the `ttl` parameter on iOS and reports hop-limit
 expiry the same way the other platforms do.
@@ -161,7 +161,7 @@ and Windows already support (§req:user-stories,
 secondary only to "SPM works at all" (§req:priorities).
 
 ## iOS error parity §spec:ios-error-parity
-*Status: not started*
+*Status: implemented (Batch 2) — the engine accumulates every error during a run and emits the full set — `timeToLiveExceeded`, `requestTimedOut`, `unknownHost`, `noReply`, `unknown` — over the channel, where `noReply` is a run-level error (received == 0 with probes sent, matching the Linux/macOS exit-code-1 semantics). The summary payload now carries an `errors` list, so `PingSummary.errors` is populated on iOS exactly as on the other platforms. Mapping (including the combined response+error for timeouts/TTL-exceeded and the summary error-list) covered by unit tests. Pending on-device confirmation of the live error conditions.*
 
 The system surfaces the full cross-platform error set on iOS and records
 it in the run summary.
