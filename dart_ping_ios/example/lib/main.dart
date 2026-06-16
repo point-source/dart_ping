@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dart_ping/dart_ping.dart';
 import 'package:dart_ping_ios/dart_ping_ios.dart';
 import 'package:flutter/material.dart';
@@ -33,6 +35,7 @@ class MyHomePageState extends State<MyHomePage> {
   final TextEditingController _controller =
       TextEditingController(text: 'google.com');
   final TextEditingController _ttlController = TextEditingController(text: '64');
+  StreamSubscription<PingData>? _subscription;
 
   void _startPing() {
     final ttl = int.tryParse(_ttlController.text) ?? 64;
@@ -41,11 +44,15 @@ class MyHomePageState extends State<MyHomePage> {
     final ping = Ping(_controller.text, count: 5, ttl: ttl);
     debugPrint('Running command: ${ping.command}');
 
+    // Drop any previous run before starting a new one so taps don't stack
+    // subscriptions all feeding setState.
+    _subscription?.cancel();
+
     setState(() {
       _events.clear();
     });
 
-    ping.stream.listen((event) {
+    _subscription = ping.stream.listen((event) {
       setState(() {
         _events.add(event);
       });
@@ -54,6 +61,7 @@ class MyHomePageState extends State<MyHomePage> {
 
   @override
   void dispose() {
+    _subscription?.cancel();
     _controller.dispose();
     _ttlController.dispose();
     super.dispose();
