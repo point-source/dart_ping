@@ -299,4 +299,96 @@ class RunnerTests: XCTestCase {
     XCTAssertEqual(ICMPPacket.parseTimeExceededOriginalSequence(slice), 0x4243)
   }
 
+  // MARK: - stripIPv4Header(_:)
+  //
+  // Regression coverage for the Darwin receive path: a SOCK_DGRAM/IPPROTO_ICMP
+  // socket on macOS/iOS hands us the FULL IPv4 header ahead of the ICMP message
+  // (unlike Linux). The engine must strip it before parsing, otherwise the IP
+  // header's first byte (0x45) is read as the ICMP type, no reply ever matches,
+  // and every probe times out. These tests pin that wire layout down.
+
+  /// Helper: build a Darwin-style received IPv4 datagram = a 20-byte IPv4 header
+  /// (with `ttl` at offset 8) followed by `payload` (the ICMP message).
+  private func makeIPv4Datagram(ttl: UInt8, ihl: UInt8 = 5, payload: Data) -> Data {
+    let ipHeaderLength = Int(ihl) * 4
+    var header = Data(repeating: 0xAA, count: ipHeaderLength)
+    header[0] = 0x40 | ihl // version 4 in the high nibble, IHL in the low nibble
+    header[8] = ttl        // IPv4 TTL field lives at offset 8
+    return header + payload
+  }
+
+  /// End-to-end regression: an Echo Reply wrapped in a real IPv4 header must,
+  /// after stripping, parse back to the original identifier/sequence and surface
+  /// the IP header's TTL. This is the exact shape that previously timed out.
+  func testStripIPv4HeaderThenParseEchoReplyRecoversFields() {
+    // type=0 (Echo Reply), code=0, csum=0, id=0x1A2B, seq=0x0007
+    let echoReply = Data([0x00, 0x00, 0x00, 0x00, 0x1A, 0x2B, 0x00, 0x07])
+    let datagram = makeIPv4Datagram(ttl: 115, payload: echoReply)
+
+    let stripped = ICMPPacket.stripIPv4Header(datagram)
+    XCTAssertNotNil(stripped)
+    XCTAssertEqual(stripped?.ttl, 115)
+    XCTAssertEqual(stripped?.icmpMessage.count, 8)
+
+    let reply = stripped.flatMap { ICMPPacket.parseEchoReply($0.icmpMessage) }
+    XCTAssertNotNil(reply)
+    XCTAssertEqual(reply?.identifier, 0x1A2B)
+    XCTAssertEqual(reply?.sequence, 0x0007)
+  }
+
+  /// The IHL field must be honored: an IPv4 header carrying options (IHL=6 →
+  /// 24 bytes) must be skipped in full so the ICMP message is found intact.
+  func testStripIPv4HeaderHonorsIHLWithOptions() {
+    let echoReply = Data([0x00, 0x00, 0x00, 0x00, 0xCA, 0xFE, 0x12, 0x34])
+    let datagram = makeIPv4Datagram(ttl: 64, ihl: 6, payload: echoReply)
+
+    let stripped = ICMPPacket.stripIPv4Header(datagram)
+    XCTAssertEqual(stripped?.ttl, 64)
+    XCTAssertEqual(stripped?.icmpMessage, echoReply)
+  }
+
+  /// Non-IPv4 version nibble is rejected (here 0x6_ , an IPv6-looking first byte).
+  func testStripIPv4HeaderRejectsNonIPv4Version() {
+    var datagram = makeIPv4Datagram(ttl: 1, payload: Data(repeating: 0, count: 8))
+    datagram[0] = 0x60 // version 6 in the high nibble
+    XCTAssertNil(ICMPPacket.stripIPv4Header(datagram))
+  }
+
+  /// An IHL implying fewer than 20 bytes (IHL=4 → 16) is rejected: below the
+  /// IPv4 minimum header size.
+  func testStripIPv4HeaderRejectsIHLBelowMinimum() {
+    // 20 bytes total so the length precondition passes, but byte0 claims IHL=4.
+    var datagram = Data(repeating: 0xAA, count: 20)
+    datagram[0] = 0x44 // version 4, IHL 4 (=16 bytes, too small)
+    XCTAssertNil(ICMPPacket.stripIPv4Header(datagram))
+  }
+
+  /// Buffers too short to even contain a minimum IPv4 header are rejected.
+  func testStripIPv4HeaderRejectsTooShort() {
+    XCTAssertNil(ICMPPacket.stripIPv4Header(Data(repeating: 0x45, count: 19)))
+    XCTAssertNil(ICMPPacket.stripIPv4Header(Data()))
+  }
+
+  /// A datagram that is exactly the IP header with no ICMP bytes after it is
+  /// rejected (there is no ICMP message to hand back).
+  func testStripIPv4HeaderRejectsNoPayload() {
+    let headerOnly = makeIPv4Datagram(ttl: 50, payload: Data())
+    XCTAssertEqual(headerOnly.count, 20)
+    XCTAssertNil(ICMPPacket.stripIPv4Header(headerOnly))
+  }
+
+  /// Base-relative correctness: stripping must work on a slice with a non-zero
+  /// startIndex (the engine builds `Data` from an array slice).
+  func testStripIPv4HeaderWorksOnSliceWithNonZeroStartIndex() {
+    let echoReply = Data([0x00, 0x00, 0x00, 0x00, 0x77, 0x88, 0x99, 0xAA])
+    var backing = Data([0xDE, 0xAD, 0xBE]) // junk prefix
+    backing.append(makeIPv4Datagram(ttl: 99, payload: echoReply))
+    let slice = backing.suffix(from: 3)
+    XCTAssertEqual(slice.startIndex, 3)
+
+    let stripped = ICMPPacket.stripIPv4Header(slice)
+    XCTAssertEqual(stripped?.ttl, 99)
+    XCTAssertEqual(stripped.flatMap { ICMPPacket.parseEchoReply($0.icmpMessage) }?.sequence, 0x99AA)
+  }
+
 }
