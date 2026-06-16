@@ -80,8 +80,7 @@ class DartPingIOS implements Ping {
   set parser(PingParser parser) => throw UnimplementedError();
 
   @override
-  String get command =>
-      'Ping on iOS is provided by a native Swift ICMP engine';
+  String get command => 'Ping on iOS is provided by a native Swift ICMP engine';
 
   /// Stream of [PingData] events. One for each response, error, or summary.
   ///
@@ -131,9 +130,14 @@ class DartPingIOS implements Ping {
 
   Future<void> _onCancel() async {
     // Cancelling the subscription means "drop the summary" per the Ping
-    // contract, so we do NOT ask native to stop here.
+    // contract: cancel our event subscription first so the forthcoming
+    // summary is not delivered. We STILL tell native to stop, otherwise an
+    // unbounded run (count == null) would leak its socket/timer/engine and
+    // keep transmitting forever. The dropped summary is the contract; the
+    // leaked engine was a bug.
     await _eventSub?.cancel();
     _eventSub = null;
+    await _method.invokeMethod('stop', {'id': _id});
   }
 
   /// Stop the currently running ping.

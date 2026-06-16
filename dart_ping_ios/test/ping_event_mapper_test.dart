@@ -40,8 +40,7 @@ void main() {
       expect(data.response!.seq, 4);
     });
 
-    test('maps a timeToLiveExceeded error event with a response (seq, ip)',
-        () {
+    test('maps a timeToLiveExceeded error event with a response (seq, ip)', () {
       final data = mapNativeEvent({
         'id': 'run-1',
         'type': 'error',
@@ -347,6 +346,38 @@ void main() {
       expect(response.ttl, 64);
       expect(response.time, const Duration(milliseconds: 21));
       expect(response.ip, '8.8.8.8');
+    });
+
+    test('coerces a summary whose nested error maps are Map<dynamic, dynamic>',
+        () {
+      // Regression: the platform StandardMessageCodec delivers nested maps as
+      // Map<Object?, Object?>, not Map<String, dynamic>. The top-level Map.from
+      // is shallow, so PingError.fromMap (reached via PingSummary.fromMap) would
+      // throw a TypeError on any summary that carried an error. Build the nested
+      // entries as genuine dynamic-keyed maps to reproduce the codec shape.
+      final Map<dynamic, dynamic> event = <dynamic, dynamic>{
+        'id': 'run-1',
+        'type': 'summary',
+        'transmitted': 5,
+        'received': 3,
+        'time': 5000,
+        'errors': <dynamic>[
+          <dynamic, dynamic>{'error': 'Request Timed Out', 'message': null},
+          <dynamic, dynamic>{'error': 'No Reply', 'message': null},
+        ],
+      };
+
+      final data = mapNativeEvent(event);
+
+      expect(data, isNotNull);
+      final summary = data!.summary!;
+      expect(summary.transmitted, 5);
+      expect(summary.received, 3);
+      expect(summary.errors, hasLength(2));
+      expect(
+        summary.errors.map((e) => e.error).toList(),
+        <ErrorType>[ErrorType.requestTimedOut, ErrorType.noReply],
+      );
     });
   });
 }

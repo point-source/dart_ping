@@ -54,6 +54,13 @@ public class DartPingIosPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     /// `onCancel`. Always touched on the main thread.
     private var eventSink: FlutterEventSink?
 
+    /// Events produced before a sink has attached. `start` (MethodChannel) and
+    /// the EventChannel `onListen` handshake travel on different channels with
+    /// no ordering guarantee, so the engine can emit before the sink registers;
+    /// we buffer here and flush on `onListen` rather than dropping them (which
+    /// could lose a terminal summary and hang the Dart stream). Main thread only.
+    private var pendingEvents: [[String: Any]] = []
+
     /// Active engines keyed by run `id`. Guarded by `stateQueue` because, while
     /// channel callbacks arrive on the platform thread, summaries that prune the
     /// registry are dispatched from the engine's background queue.
@@ -69,11 +76,21 @@ public class DartPingIosPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         eventSink events: @escaping FlutterEventSink
     ) -> FlutterError? {
         eventSink = events
+        // Flush anything that arrived before the sink attached, preserving order.
+        if !pendingEvents.isEmpty {
+            let buffered = pendingEvents
+            pendingEvents.removeAll()
+            for map in buffered { events(map) }
+        }
         return nil
     }
 
     public func onCancel(withArguments arguments: Any?) -> FlutterError? {
         eventSink = nil
+        // No listener remains, so any buffered tail belongs to torn-down runs;
+        // a future listener is a new run that filters by its own `id`. Drop it
+        // so the buffer can't retain stale events for the process lifetime.
+        pendingEvents.removeAll()
         return nil
     }
 
@@ -196,7 +213,13 @@ public class DartPingIosPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         }
 
         DispatchQueue.main.async { [weak self] in
-            self?.eventSink?(map)
+            guard let self = self else { return }
+            if let sink = self.eventSink {
+                sink(map)
+            } else {
+                // No listener yet: buffer until onListen attaches the sink.
+                self.pendingEvents.append(map)
+            }
         }
     }
 

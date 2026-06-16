@@ -184,7 +184,16 @@ public final class PingEngine {
             self.sendTimer = nil
             for (_, item) in self.timeoutItems { item.cancel() }
             self.timeoutItems.removeAll()
+
+            // Report each probe still awaiting a reply as timed out before we
+            // drop it, so `transmitted`/`received` and the per-probe error
+            // stream stay consistent with the other platforms instead of
+            // silently losing sent-but-unanswered probes.
+            let pendingSeqs = self.pendingSendTimes.keys.sorted()
             self.pendingSendTimes.removeAll()
+            for seq in pendingSeqs {
+                self.emit(.error(kind: .requestTimedOut, seq: Int(seq), ip: nil))
+            }
 
             self.finishWithSummaryLocked()
         }
@@ -504,10 +513,12 @@ public final class PingEngine {
             if current.pointee.cmsg_level == IPPROTO_IP,
                current.pointee.cmsg_type == IP_RECVTTL {
                 if let dataPtr = CMSG_DATA(current) {
-                    // The TTL is delivered as an int (commonly a single byte's
-                    // worth of value, but carried in an int-sized slot).
-                    let value = dataPtr.withMemoryRebound(to: Int32.self, capacity: 1) { $0.pointee }
-                    return Int(value)
+                    // On Darwin/iOS the IP_RECVTTL ancillary datum is a single
+                    // byte (u_char), so read exactly one byte. Reading a wider
+                    // Int32 here would fold in adjacent cmsg padding/stale bytes
+                    // (the control buffer is not re-zeroed per recvmsg) and yield
+                    // a garbage TTL.
+                    return Int(dataPtr.pointee)
                 }
             }
             cmsg = CMSG_NXTHDR(&msg, current)

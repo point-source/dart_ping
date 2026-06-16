@@ -36,6 +36,18 @@ PingData? mapNativeEvent(Map<dynamic, dynamic> event) {
         error: PingError.fromMap(map),
       );
     case 'summary':
+      // The platform codec delivers the nested `errors` entries as
+      // Map<Object?, Object?>, but PingError.fromMap (reached via
+      // PingSummary.fromMap) requires Map<String, dynamic>. The top-level
+      // Map.from above is shallow, so deep-convert each error entry here;
+      // otherwise any summary carrying an error throws a TypeError.
+      final errors = map['errors'];
+      if (errors is List) {
+        map['errors'] = errors
+            .map<Map<String, dynamic>>(
+                (e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+      }
       return PingData(summary: PingSummary.fromMap(map));
     default:
       return null;
