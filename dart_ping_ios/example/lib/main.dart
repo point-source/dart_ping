@@ -36,7 +36,7 @@ class MyHomePageState extends State<MyHomePage> {
   void _startPing() {
     // Create instance of DartPing
     final ping = Ping(_controller.text, count: 5);
-    print('Running command: ${ping.command}');
+    debugPrint('Running command: ${ping.command}');
     ping.stream.listen((event) {
       setState(() {
         _lastPing = event;
