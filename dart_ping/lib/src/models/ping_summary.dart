@@ -20,7 +20,9 @@ class PingSummary {
   /// Number of packets returned to the source from the target
   final int received;
 
-  /// Total time spent for all sent/received packets to complete a round trip (summed)
+  /// Total wall-clock duration of the ping session as reported by the OS.
+  /// On Linux/Android, this includes interval delays between pings.
+  /// On macOS and Windows, this value is null.
   final Duration? time;
 
   /// All errors that occurred during the ping process
