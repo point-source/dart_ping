@@ -23,8 +23,9 @@ import Foundation
 /// header, is therefore not in the payload and must be read out-of-band via a
 /// `recvmsg` control message — see `PingEngine`.)
 enum ICMPType {
-    static let echoReply: UInt8 = 0   // Echo Reply (the response to our probe)
-    static let echoRequest: UInt8 = 8 // Echo Request (what we send)
+    static let echoReply: UInt8 = 0    // Echo Reply (the response to our probe)
+    static let echoRequest: UInt8 = 8  // Echo Request (what we send)
+    static let timeExceeded: UInt8 = 11 // Time Exceeded (TTL hit zero in transit)
 }
 
 /// Layout of an ICMP Echo header (8 bytes), big-endian on the wire:
@@ -124,6 +125,53 @@ enum ICMPPacket {
         let identifier = readUInt16BE(data, at: base + ICMPHeader.identifierOffset)
         let sequence = readUInt16BE(data, at: base + ICMPHeader.sequenceOffset)
         return EchoReply(identifier: identifier, sequence: sequence)
+    }
+
+    /// Attempt to interpret received bytes as an ICMP Time Exceeded message
+    /// (type 11, e.g. TTL/hop-limit reached zero in transit) and extract the
+    /// sequence number of the ORIGINAL Echo Request that triggered it.
+    ///
+    /// On the `SOCK_DGRAM`/`IPPROTO_ICMP` path the kernel strips the OUTER IPv4
+    /// header (see the note on `ICMPType`), so a Time Exceeded message body is:
+    ///
+    ///   bytes 0..7:   the type-11 ICMP header (type=11, code, checksum, 4 unused)
+    ///   byte 8..:     the ORIGINAL IPv4 header (the packet that expired). Its
+    ///                 length is `(firstByte & 0x0F) * 4` bytes (IHL in 32-bit
+    ///                 words; normally 20).
+    ///   after that:   the ORIGINAL ICMP Echo header (8 bytes) — we read its
+    ///                 sequence at `+ICMPHeader.sequenceOffset`.
+    ///
+    /// We match by SEQUENCE only and ignore the identifier, consistent with
+    /// `parseEchoReply`: the kernel may have rewritten the identifier when our
+    /// probe was sent on the datagram socket.
+    ///
+    /// - Returns: the original probe's sequence number, or `nil` if the bytes
+    ///   are not a Time Exceeded message or are too short to contain the quoted
+    ///   original Echo header.
+    static func parseTimeExceededOriginalSequence(_ data: Data) -> UInt16? {
+        let base = data.startIndex
+
+        // Need at least the 8-byte type-11 header before the quoted IP header.
+        guard data.count >= ICMPHeader.length else { return nil }
+        guard data[base + ICMPHeader.typeOffset] == ICMPType.timeExceeded else { return nil }
+
+        // The original IPv4 header begins right after the type-11 header.
+        let ipHeaderStart = base + ICMPHeader.length
+        guard ipHeaderStart < data.endIndex else { return nil }
+
+        // IHL (low nibble of the first IP byte) gives the IP header length in
+        // 32-bit words; a valid IPv4 header is at least 20 bytes.
+        let ihlWords = Int(data[ipHeaderStart] & 0x0F)
+        let ipHeaderLength = ihlWords * 4
+        guard ipHeaderLength >= 20 else { return nil }
+
+        // The quoted original ICMP Echo header follows the original IP header.
+        let echoStart = ipHeaderStart + ipHeaderLength
+
+        // We need the full 8-byte original Echo header to reach the sequence field.
+        guard echoStart + ICMPHeader.length <= data.endIndex else { return nil }
+
+        return readUInt16BE(data, at: echoStart + ICMPHeader.sequenceOffset)
     }
 
     // MARK: - Checksum

@@ -11,6 +11,15 @@
 //  - EventChannel `dart_ping_ios/events`: a single shared broadcast stream;
 //    every engine event is forwarded to the one sink, tagged with its `id` and
 //    a `type`. The terminal `summary` removes the engine from the registry.
+//    Event payloads (besides `id`):
+//      response: `type:"response", seq, ttl, time, ip`
+//      error:    `type:"error", error:<message>` (+ `seq` when present, `ip`
+//                when the error came from an identified hop, e.g. TTL exceeded)
+//      summary:  `type:"summary", transmitted, received, time,
+//                 errors:[{error:<message>, message:NSNull}]`
+//    `<message>` is one of the exact literals the Dart `ErrorType.fromMessage`
+//    matches: "Time To Live Exceeded", "Request Timed Out", "Unknown Host",
+//    "No Reply", "Unknown Error".
 //
 //  Threading: `FlutterEventSink` must be invoked on the platform/main thread,
 //  but `PingEngine` delivers events on a background queue, so every sink call
@@ -156,23 +165,29 @@ public class DartPingIosPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
                 "time": timeMs,
                 "ip": ip,
             ]
-        case let .error(kind, _):
-            // `seq` is intentionally not forwarded: the cross-platform
-            // PingError model carries no per-error sequence number in this
-            // batch and the Dart mapper ignores it. (Re-add to the payload
-            // when per-seq error attribution lands.)
-            map = [
+        case let .error(kind, seq, ip):
+            var errorMap: [String: Any] = [
                 "id": id,
                 "type": "error",
                 "error": Self.message(for: kind),
             ]
-        case let .summary(transmitted, received, timeMs):
+            // Include `seq` when the error is attributable to a probe and `ip`
+            // when it came from an identified hop (e.g. TTL exceeded).
+            if let seq = seq { errorMap["seq"] = seq }
+            if let ip = ip { errorMap["ip"] = ip }
+            map = errorMap
+        case let .summary(transmitted, received, timeMs, errors):
             map = [
                 "id": id,
                 "type": "summary",
                 "transmitted": transmitted,
                 "received": received,
                 "time": timeMs,
+                // Each error becomes {error:<message>, message:null}, matching
+                // the cross-platform PingSummary.errors shape.
+                "errors": errors.map { kind in
+                    ["error": Self.message(for: kind), "message": NSNull()]
+                },
             ]
             // The summary is terminal for this run.
             stateQueue.async { [weak self] in
@@ -190,6 +205,10 @@ public class DartPingIosPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         switch kind {
         case .requestTimedOut:
             return "Request Timed Out"
+        case .timeToLiveExceeded:
+            return "Time To Live Exceeded"
+        case .noReply:
+            return "No Reply"
         case .unknownHost:
             return "Unknown Host"
         case .unknown:

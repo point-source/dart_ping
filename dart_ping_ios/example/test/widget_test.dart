@@ -16,5 +16,9 @@ void main() {
     expect(find.text('Push the button to begin ping'), findsOneWidget);
     // The default host is pre-filled in the input field.
     expect(find.text('google.com'), findsOneWidget);
+    // The TTL field is present with its default value.
+    expect(find.text('Host'), findsOneWidget);
+    expect(find.text('TTL'), findsOneWidget);
+    expect(find.text('64'), findsOneWidget);
   });
 }
