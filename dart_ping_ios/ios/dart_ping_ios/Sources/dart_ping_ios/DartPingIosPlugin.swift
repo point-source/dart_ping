@@ -156,16 +156,16 @@ public class DartPingIosPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
                 "time": timeMs,
                 "ip": ip,
             ]
-        case let .error(kind, seq):
-            var payload: [String: Any] = [
+        case let .error(kind, _):
+            // `seq` is intentionally not forwarded: the cross-platform
+            // PingError model carries no per-error sequence number in this
+            // batch and the Dart mapper ignores it. (Re-add to the payload
+            // when per-seq error attribution lands.)
+            map = [
                 "id": id,
                 "type": "error",
                 "error": Self.message(for: kind),
             ]
-            if let seq = seq {
-                payload["seq"] = seq
-            }
-            map = payload
         case let .summary(transmitted, received, timeMs):
             map = [
                 "id": id,

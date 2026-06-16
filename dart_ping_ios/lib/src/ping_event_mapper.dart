@@ -6,49 +6,25 @@ import 'package:dart_ping/dart_ping.dart';
 /// (over the `dart_ping_ios/events` [EventChannel]) into the corresponding
 /// cross-platform [PingData] model.
 ///
-/// Returns `null` for events that cannot be mapped (unknown `type`, or
-/// missing required fields), so callers can simply drop them.
+/// The native event keys (`seq`/`ttl`/`time`/`ip`, `transmitted`/`received`,
+/// `error`) deliberately match the `fromMap` contract of the `dart_ping`
+/// models, so each branch delegates to the model's own factory rather than
+/// re-implementing the parsing/coercion here.
+///
+/// Returns `null` for events that cannot be mapped (unknown `type`), so
+/// callers can simply drop them.
 PingData? mapNativeEvent(Map<dynamic, dynamic> event) {
-  final type = event['type'];
-  switch (type) {
+  // Channel codecs deliver Map<dynamic, dynamic>; the model factories expect
+  // Map<String, dynamic>. Channel keys are always strings, so this is safe.
+  final map = Map<String, dynamic>.from(event);
+  switch (map['type']) {
     case 'response':
-      return PingData(
-        response: PingResponse(
-          seq: _asInt(event['seq']),
-          ttl: _asInt(event['ttl']),
-          time: event['time'] != null
-              ? Duration(milliseconds: _asInt(event['time'])!)
-              : null,
-          ip: event['ip'] as String?,
-        ),
-      );
+      return PingData(response: PingResponse.fromMap(map));
     case 'error':
-      return PingData(
-        error: PingError(
-          ErrorType.fromMessage(event['error'] as String? ?? ''),
-        ),
-      );
+      return PingData(error: PingError.fromMap(map));
     case 'summary':
-      return PingData(
-        summary: PingSummary(
-          transmitted: _asInt(event['transmitted']) ?? 0,
-          received: _asInt(event['received']) ?? 0,
-          time: event['time'] != null
-              ? Duration(milliseconds: _asInt(event['time'])!)
-              : null,
-        ),
-      );
+      return PingData(summary: PingSummary.fromMap(map));
     default:
       return null;
   }
-}
-
-/// Defensively coerce a channel-supplied numeric value to an `int`.
-///
-/// Method/event channel codecs may deliver numbers as `int` (the common
-/// case) or, in some configurations, `double`; both are handled here.
-int? _asInt(Object? value) {
-  if (value is int) return value;
-  if (value is num) return value.toInt();
-  return null;
 }
