@@ -204,7 +204,7 @@ forcing app-code changes would compound an already-breaking
 Dart surface.
 
 ## CocoaPods consumers preserved §spec:cocoapods-continuity
-*Status: not started*
+*Status: implemented (Batch 3) — README and CHANGELOG document the clean major-version split: 5.0.0 ships SPM-only while the prior `flutter_icmp_ping`-backed 4.x line stays published/resolvable, and the major bump keeps existing `^4.x` constraints from auto-pulling the rewrite into CocoaPods projects. Continuity of the 4.x release on pub.dev is inherent (prior versions remain published) and is not re-verified here.*
 
 Projects that have not migrated to SPM keep a working iOS path on the
 previous, `flutter_icmp_ping`-backed release of `dart_ping_ios`.
@@ -225,7 +225,7 @@ on each consumer's schedule instead of as a forced break
 dual-distribution shim in one release.
 
 ## No special entitlements or App Store review steps §spec:no-special-entitlements
-*Status: satisfied by design (Batch 1) — the engine uses an unprivileged `SOCK_DGRAM`/`IPPROTO_ICMP` socket (no raw socket, no root, no entitlement); the example ships with no added entitlements. Pending macOS confirmation that no Local Network prompt or entitlement is required at runtime.*
+*Status: satisfied by design (Batch 1) — the engine uses an unprivileged `SOCK_DGRAM`/`IPPROTO_ICMP` socket (no raw socket, no root, no entitlement); the example ships with no added entitlements. Documented for consumers in the README migration guide (Batch 3): no special entitlements / extra App Store review steps, and local-network ping does not trigger the iOS Local Network privacy prompt. Pending macOS confirmation that no Local Network prompt or entitlement is required at runtime.*
 
 Using iOS ping shall not require the consuming app to add special
 entitlements or take extra App Store review steps
@@ -246,7 +246,7 @@ discovery APIs, not ICMP to a routable host; this is noted so a reviewer
 does not mistake its absence for a defect.
 
 ## iOS behavior tests §spec:ios-tests
-*Status: not started*
+*Status: implemented (Batch 3) — Dart-side mapping is covered by `dart_ping_ios/test/ping_event_mapper_test.dart` (19 cases over the native-result → PingData/PingResponse/PingSummary/PingError seam, including the full ErrorType set, the combined response+error contract, and PingSummary.errors population); runs green under `flutter test` on the Linux CI host. Swift-side ICMP framing/sequence/parse logic is covered by network-free XCTest cases in the example's `RunnerTests` target (`ICMPPacket` widened to `public`); hand-verified but not compiled here — run on macOS via `xcodebuild test -workspace Runner.xcworkspace -scheme Runner`. Live ICMP round-trips remain a manual example-app acceptance path by design.*
 
 Automated tests cover the iOS ping behavior where feasible
 (§req:success-criteria, §req:quality-attributes — testability).
