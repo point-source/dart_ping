@@ -55,13 +55,13 @@ enum ICMPHeader {
 ///
 /// All multi-byte header fields are serialized big-endian (network byte order),
 /// matching the wire format and what peers expect.
-enum ICMPPacket {
+public enum ICMPPacket {
 
     /// The fixed-size payload we attach to every Echo Request: an 8-byte
     /// big-endian send timestamp expressed in microseconds since the reference
     /// date. This makes the packet self-describing for debugging and lets a
     /// reply's echoed payload corroborate the engine's own send-time table.
-    static let payloadLength = 8
+    public static let payloadLength = 8
 
     /// Construct an ICMP Echo Request datagram.
     ///
@@ -74,9 +74,9 @@ enum ICMPPacket {
     ///   - sequence: the 16-bit sequence number used to match replies.
     ///   - sendTimeMicros: send timestamp (microseconds) embedded in the payload.
     /// - Returns: the complete ICMP message bytes (header + payload).
-    static func echoRequest(identifier: UInt16,
-                            sequence: UInt16,
-                            sendTimeMicros: UInt64) -> Data {
+    public static func echoRequest(identifier: UInt16,
+                                   sequence: UInt16,
+                                   sendTimeMicros: UInt64) -> Data {
         var packet = Data(count: ICMPHeader.length + payloadLength)
 
         packet[ICMPHeader.typeOffset] = ICMPType.echoRequest
@@ -99,9 +99,9 @@ enum ICMPPacket {
     // MARK: - Reply parsing
 
     /// A parsed ICMP Echo Reply.
-    struct EchoReply {
-        let identifier: UInt16
-        let sequence: UInt16
+    public struct EchoReply {
+        public let identifier: UInt16
+        public let sequence: UInt16
     }
 
     /// Attempt to interpret received bytes as an ICMP Echo Reply.
@@ -113,7 +113,7 @@ enum ICMPPacket {
     ///
     /// - Returns: the parsed reply, or `nil` if the bytes are too short or are
     ///   not an Echo Reply (e.g. some other ICMP message the kernel delivered).
-    static func parseEchoReply(_ data: Data) -> EchoReply? {
+    public static func parseEchoReply(_ data: Data) -> EchoReply? {
         guard data.count >= ICMPHeader.length else { return nil }
 
         // Use a base-relative view so this works even if `data` is a slice with
@@ -148,7 +148,7 @@ enum ICMPPacket {
     /// - Returns: the original probe's sequence number, or `nil` if the bytes
     ///   are not a Time Exceeded message or are too short to contain the quoted
     ///   original Echo header.
-    static func parseTimeExceededOriginalSequence(_ data: Data) -> UInt16? {
+    public static func parseTimeExceededOriginalSequence(_ data: Data) -> UInt16? {
         let base = data.startIndex
 
         // Need at least the 8-byte type-11 header before the quoted IP header.
@@ -183,7 +183,7 @@ enum ICMPPacket {
     /// padded with a zero low byte. Carries are folded back into the low 16 bits,
     /// and the final result is bit-inverted. The checksum field itself must be
     /// zero in `data` when this is computed.
-    static func checksum(_ data: Data) -> UInt16 {
+    public static func checksum(_ data: Data) -> UInt16 {
         var sum: UInt32 = 0
         var index = data.startIndex
         let end = data.endIndex
