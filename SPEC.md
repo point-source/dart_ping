@@ -26,7 +26,7 @@ below describe the iOS implementation only — `dart_ping`'s
 android/linux/macos/windows subprocess paths are unaffected.
 
 ## Native Swift ICMP ping engine §spec:swift-icmp-engine
-*Status: not started*
+*Status: implemented (Batch 1) — Swift `PingEngine`/`ICMPPacket` landed over an unprivileged `SOCK_DGRAM` ICMP socket; pending macOS/on-device build verification (not compilable on the Linux CI host).*
 
 The native iOS ping logic lives in this repository as Swift. The engine
 opens an unprivileged ICMP datagram socket (`SOCK_DGRAM` /
@@ -70,7 +70,7 @@ SPM. Round-trip timing is expected to stay comparable to the prior
 implementation (§req:quality-attributes — accuracy).
 
 ## SPM distribution of dart_ping_ios §spec:spm-distribution
-*Status: not started*
+*Status: implemented (Batch 1) — federated iOS plugin (`pluginClass`, no podspec), `Package.swift` (iOS 13.0 + `FlutterFramework`), `dart_ping_ios` bumped to 5.0.0, `flutter_icmp_ping` removed, and the example regenerated Podfile-free; pending macOS simulator/device acceptance run.*
 
 `dart_ping_ios` is a federated Flutter plugin that declares its iOS
 implementation as a Swift Package, buildable under Flutter's Swift
@@ -86,13 +86,18 @@ CocoaPods dependency.
   (§req:success-criteria — primary acceptance test).
 - The package shall ship as a **new major version** of `dart_ping_ios`,
   SPM-only (§req:constraints, §req:priorities).
-- The minimum supported iOS version shall be **iOS 12.0**.
+- The minimum supported iOS version shall be **iOS 13.0**.
 
-**Why iOS 12.0:** it matches Flutter's own minimum-deployment baseline,
+**Why iOS 13.0:** it matches Flutter's current minimum-deployment baseline,
 so the package imposes no floor stricter than Flutter already requires,
-while the `SOCK_DGRAM` ICMP API is available well below it. A higher
-floor was rejected as gratuitously exclusionary; a lower floor buys
-nothing because Flutter itself will not target it.
+while the `SOCK_DGRAM` ICMP API is available well below it. A higher floor
+was rejected as gratuitously exclusionary; a lower floor buys nothing
+because Flutter itself will not target it. (This was originally specified
+as iOS 12.0; during `/plan`-driven implementation the baseline was found to
+be 13.0 on the target Flutter toolchain — the Swift Package Manager
+`FlutterFramework` package that plugins depend on targets `.iOS("13.0")`,
+so declaring 12.0 would fail SwiftPM resolution. The value was corrected to
+13.0 to preserve the stated intent: track Flutter's baseline exactly.)
 
 **Why SPM-only (drop CocoaPods) rather than dual-publish:** Flutter is
 moving toward SPM as the default iOS/macOS build system and CocoaPods is
@@ -108,7 +113,7 @@ served natively by the core `dart_ping` subprocess path and is out of
 scope.
 
 ## iOS ping responses and summary §spec:ios-ping-behavior
-*Status: not started*
+*Status: implemented (Batch 1) — native results map onto unchanged `PingResponse`/`PingSummary`; per-probe responses and the completion summary flow over the method/event channel; `stop()` lets the summary emit before the stream closes. Mapping covered by unit tests. (Batch-1 error subset only — full error/`errors` parity is §spec:ios-error-parity, deferred.)*
 
 On iOS, listening to a `Ping` instance's `stream` produces the same
 `PingData` event shape as every other platform. The native engine
@@ -178,7 +183,7 @@ public API, so this section closes the iOS-side gap without an API
 change. High priority (§req:priorities).
 
 ## Unchanged public Dart API §spec:public-api-stability
-*Status: not started*
+*Status: implemented (Batch 1) — `Ping`/`PingData`/`PingResponse`/`PingSummary`/`PingError` unchanged; `DartPingIOS.register()` still installs `Ping.iosFactory` with the same factory signature. The rewrite is confined to `dart_ping_ios` internals; existing app code compiles unchanged.*
 
 The public Dart API is unchanged by this work. The `Ping` interface and
 the `PingData` / `PingResponse` / `PingSummary` / `PingError` (and
@@ -220,7 +225,7 @@ on each consumer's schedule instead of as a forced break
 dual-distribution shim in one release.
 
 ## No special entitlements or App Store review steps §spec:no-special-entitlements
-*Status: not started*
+*Status: satisfied by design (Batch 1) — the engine uses an unprivileged `SOCK_DGRAM`/`IPPROTO_ICMP` socket (no raw socket, no root, no entitlement); the example ships with no added entitlements. Pending macOS confirmation that no Local Network prompt or entitlement is required at runtime.*
 
 Using iOS ping shall not require the consuming app to add special
 entitlements or take extra App Store review steps
