@@ -1,5 +1,12 @@
 # Specification
 
+This document covers two areas, matching REQUIREMENTS.md:
+
+1. **iOS SPM migration (#73)** — `§spec:swift-icmp-engine` …
+   `§spec:ios-tests` below (implemented).
+2. **Maintenance & modernization refresh** — the `§spec:dependency-currency`
+   … `§spec:code-audit` sections at the end (not started).
+
 Solution-space design for issue #73 — native, Swift Package Manager
 (SPM)-compatible iOS support for `dart_ping`.
 
@@ -266,3 +273,203 @@ reproduced deterministically in CI. The testable seam is the
 result-mapping logic on both sides of the channel; the live round trip
 stays a manual acceptance test via the example app. Nice-to-have
 priority (§req:priorities) — it does not gate the must-have SPM bar.
+
+---
+
+# Maintenance & modernization refresh
+
+Solution-space design for the cross-package health pass defined in
+REQUIREMENTS.md (`§req:refresh-*`). The sections below are independent of
+the #73 SPM work above; they describe the desired end state of the
+repository's dependencies, SDK floor, lint baseline, parser correctness,
+test suite, documentation, and a one-time security/quality audit.
+
+The driver (from §req:refresh-problem-statement) is accumulated drift:
+dev-dependencies sit at old majors (`lints` 2 vs 6, `flutter_lints` 2 vs
+6), the SDK floor (`>=3.0.0`) predates current tooling, the root README
+describes an iOS implementation that no longer exists, the parser crashes
+on macOS/Windows TTL-exceeded lines, and the new native Swift engine has
+never had a focused review.
+
+## Dependency currency §spec:dependency-currency
+*Status: not started*
+
+Both packages resolve their direct dependencies at the latest versions
+the constraint solver allows, including major upgrades that require code
+changes.
+
+- `dart pub get` (core) and `flutter pub get` (iOS) shall resolve cleanly
+  with every **direct** dependency constraint admitting its latest
+  published major: `lints` 6.x and `test` 1.31.x in `dart_ping`;
+  `flutter_lints` 6.x and `test` 1.31.x in `dart_ping_ios`. The
+  `async`/`collection` runtime constraints already admit their latest and
+  stay as-is unless a tighter floor is needed (§req:refresh-success-criteria).
+- `dart pub outdated` shall report no direct dependency behind its latest
+  resolvable version (§req:refresh-success-criteria, §req:refresh-constraints).
+- No **direct** dependency shall be a discontinued package. (`js` appears
+  only transitively via the test toolchain and is out of this package's
+  control; it is noted, not owned here.)
+
+**Why move to latest majors rather than minimal bumps:** the packages are
+libraries other apps resolve against; leaving dev-tooling majors behind
+drags superseded analyzer/test machinery into every consumer's resolution
+and blocks adoption of current lint rules. The major bumps that force code
+changes (lints 6) are in scope by decision (§req:refresh-constraints).
+
+## Dart SDK floor §spec:sdk-floor
+*Status: not started*
+
+Both packages declare `environment: sdk: ">=3.8.0 <4.0.0"`.
+
+- The lower bound shall be the lowest stable Dart that the adopted tooling
+  requires — **3.8.0**, the floor declared by `lints` 6 and `flutter_lints`
+  6 (both `sdk: ^3.8.0`) — and no higher (§req:refresh-success-criteria,
+  §req:refresh-quality-attributes — compatibility).
+- The floor shall not be raised to match the installed toolchain (Dart
+  3.12) absent a concrete feature that requires it; no such feature is
+  adopted in this pass, so 3.8.0 stands (§req:refresh-constraints).
+
+**Why 3.8.0 and not higher:** the only concrete driver is the lint
+toolchain, which floors at 3.8.0. Raising further would exclude consumers
+for no delivered benefit, violating the "don't break what doesn't buy us
+anything" constraint (§req:refresh-priorities). 
+
+**Tradeoff (breaking change accepted):** raising the floor from 3.0.0 to
+3.8.0 can force a major-version bump for consumers on older SDKs. This is
+the justified break the constraints allow: adopting current lints (a
+stated must-have) is impossible on the old floor, so the break buys a
+concrete benefit (§req:refresh-constraints, §req:refresh-priorities).
+
+## Lint baseline §spec:lint-baseline
+*Status: not started*
+
+The code satisfies the current lint rule sets with no analyzer findings,
+and the analysis configuration carries no dead settings.
+
+- `dart analyze` in `dart_ping` and `flutter analyze` in `dart_ping_ios`
+  shall each report **zero** issues under `lints` 6 / `flutter_lints` 6
+  (§req:refresh-success-criteria).
+- The `analysis_options.yaml` of both packages shall contain no
+  `dart_code_metrics` block. That tooling is no longer part of the lints
+  ecosystem and is inert dead config; it is removed (or, if metric
+  enforcement is still wanted, replaced with a maintained equivalent —
+  nice-to-have) (§req:refresh-quality-attributes — maintainability,
+  §req:refresh-priorities).
+
+**Why zero issues rather than a tolerated baseline:** the packages are
+small and the lint upgrade is the point of the SDK bump; a clean analyze
+is the observable proof the upgrade landed. New rules that flag existing
+code are fixed in place rather than suppressed wholesale, so the upgrade
+delivers its intended signal.
+
+## TTL-exceeded parse correctness §spec:ttl-exceeded-parse
+*Status: not started*
+
+On every platform, a TTL/hop-limit-exceeded line from the system `ping`
+produces a `timeToLiveExceeded` `PingData` — never an exception.
+
+- When the macOS or Windows parser receives a TTL-exceeded line (e.g.
+  `"92 bytes from 172.17.0.1: Time to live exceeded"` /
+  `"Reply from 10.20.60.1: TTL expired in transit."`), the system shall
+  emit a `PingData` whose `error` is `ErrorType.timeToLiveExceeded`,
+  carrying whatever fields the platform's pattern exposes (`ip` always;
+  `seq` only when the pattern captures it) (§req:refresh-success-criteria).
+- The TTL-exceeded parse path shall not assume a `seq` capture group
+  exists; it reads `seq` only when the active pattern defines one, exactly
+  as the timeout and successful-response paths already do.
+
+**Why this is a correctness bug, not a missing feature:** the parser's
+TTL-exceeded branch force-unwraps the `seq` named group, but only the
+Linux pattern defines that group. On macOS and Windows the unwrap throws
+`"Not a capture group name: seq"`, so a real hop-limit-exceeded reply
+crashes the transform stream instead of surfacing the event the other
+platforms surface. This breaks traceroute-style use on those platforms
+and is the cause of the two known-failing `parse_test` cases
+(§req:refresh-problem-statement). The fix aligns this branch with the
+existing `groupNames.contains('seq')` guard used elsewhere in the parser,
+restoring cross-platform parity (§req:refresh-success-criteria).
+
+## Test suite integrity and coverage §spec:test-coverage
+*Status: not started*
+
+The full test suite passes for both packages with no known-failing or
+skipped cases, and previously thin areas gain coverage.
+
+- `dart test` (core) and `flutter test` (iOS) shall pass with **no**
+  failing or `skip`-ped tests — including the macOS and Windows
+  "TTL Exceeded" `parse_test` cases, which pass once
+  §spec:ttl-exceeded-parse lands (§req:refresh-success-criteria).
+- Thinly covered behavior shall gain tests where a deterministic seam
+  exists: parser error/edge paths (`errorStrs` matches, malformed summary,
+  the TTL-exceeded `seq`/no-`seq` split) and the stream start/stop
+  lifecycle in `base_ping` (§req:refresh-success-criteria).
+- No continuous-integration workflow or coverage-threshold gate is
+  introduced in this pass; the goal is closing obvious gaps, not
+  infrastructure (§req:refresh-constraints).
+
+**Why gap-filling without CI:** the constraint is explicit — fill gaps,
+don't build infrastructure (§req:refresh-priorities). The highest-value
+coverage is the parser, which is pure and deterministic (string in →
+`PingData` out) and is exactly where the known bug lived, so a regression
+test there is both cheap and load-bearing.
+
+## Documentation accuracy §spec:doc-accuracy
+*Status: not started*
+
+The repository's documentation describes the system as it actually ships.
+
+- The root `README` shall describe `dart_ping_ios` as it exists at 5.0.0 —
+  a native Swift ICMP plugin distributed via Swift Package Manager — and
+  shall not state that iOS support "adds cocoa dependencies" or relies on
+  CocoaPods, which is false as of the #73 rewrite
+  (§req:refresh-success-criteria, §req:refresh-problem-statement).
+- Each package `README`, `CHANGELOG`, and the public dartdoc shall reflect
+  current supported platforms, the SDK floor (§spec:sdk-floor), and the
+  iOS distribution model, so a new reader can install and use each package
+  from the docs without following a stale instruction
+  (§req:refresh-user-stories).
+
+**Why call documentation out as a spec section:** the root README predates
+the native-Swift rewrite and actively misdirects iOS adopters toward a
+CocoaPods story that no longer exists — a correctness defect in the
+product's primary surface, not cosmetic polish. Accurate docs are a stated
+success criterion (§req:refresh-success-criteria).
+
+## Code audit and Swift hardening §spec:code-audit
+*Status: not started*
+
+The Dart code (both packages) and the native Swift ICMP engine have been
+reviewed once for bugs, security flaws, and improvement opportunities, and
+the findings are enumerated and triaged (fix-now / defer / won't-fix), with
+cheap, clearly-correct fixes applied.
+
+- The audit shall cover the Dart source of both packages and the Swift
+  sources (`PingEngine`, `ICMPPacket`, `DartPingIosPlugin`), producing a
+  written, triaged finding list (§req:refresh-success-criteria,
+  §req:refresh-priorities).
+- Security-relevant Swift paths that parse **untrusted inbound network
+  data** shall be explicitly assessed for out-of-bounds reads and
+  malformed-input handling: IPv4-header stripping, Echo Reply parsing, ICMP
+  Time Exceeded original-sequence recovery, and the hand-rolled
+  `cmsg` ancillary-data walk (§req:refresh-quality-attributes — security).
+- No unaddressed **high-severity** finding shall remain at the end of the
+  pass; lower-severity findings may be deferred but shall be recorded.
+
+**Attack surface and why this section exists:** the engine binds a
+`SOCK_DGRAM`/`IPPROTO_ICMP` socket and parses every ICMP datagram the
+kernel delivers to it. Any host that can route a packet to the device can
+send crafted or truncated ICMP messages; the parsing code (length-prefixed
+IP header walk, fixed-offset field reads, manual `cmsg` pointer arithmetic)
+operates on that attacker-influenced input. A bounds error there is reached
+by hostile network input, with a blast radius of the consuming app's
+process (read past a buffer → crash or info leak). This is new,
+in-repo, never-audited code (§spec:swift-icmp-engine), so a focused review
+of the parsing bounds is proportionate (§req:refresh-quality-attributes —
+security). The Dart subprocess parsers, by contrast, consume the local
+`ping` binary's output — lower trust concern, reviewed for correctness
+rather than hostile input.
+
+**Why a one-time audit rather than an ongoing gate:** the constraint
+excludes new CI/infrastructure in this pass (§spec:test-coverage,
+§req:refresh-constraints). The deliverable is the triaged finding list and
+the applied cheap fixes; standing enforcement is out of scope.
