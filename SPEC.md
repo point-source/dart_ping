@@ -292,7 +292,7 @@ on macOS/Windows TTL-exceeded lines, and the new native Swift engine has
 never had a focused review.
 
 ## Dependency currency §spec:dependency-currency
-*Status: not started*
+*Status: complete*
 
 Both packages resolve their direct dependencies at the latest versions
 the constraint solver allows, including major upgrades that require code
@@ -317,7 +317,7 @@ and blocks adoption of current lint rules. The major bumps that force code
 changes (lints 6) are in scope by decision (§req:refresh-constraints).
 
 ## Dart SDK floor §spec:sdk-floor
-*Status: not started*
+*Status: complete*
 
 Both packages declare `environment: sdk: ">=3.8.0 <4.0.0"`.
 
@@ -334,14 +334,18 @@ toolchain, which floors at 3.8.0. Raising further would exclude consumers
 for no delivered benefit, violating the "don't break what doesn't buy us
 anything" constraint (§req:refresh-priorities). 
 
-**Tradeoff (breaking change accepted):** raising the floor from 3.0.0 to
-3.8.0 can force a major-version bump for consumers on older SDKs. This is
-the justified break the constraints allow: adopting current lints (a
-stated must-have) is impossible on the old floor, so the break buys a
-concrete benefit (§req:refresh-constraints, §req:refresh-priorities).
+**Tradeoff (minor bump, not breaking):** raising the floor from 3.0.0 to
+3.8.0 shipped as a **minor** version bump (`dart_ping` 9.1.0,
+`dart_ping_ios` 5.1.0), not a major. Pub's solver filters candidate
+versions by SDK constraint, so a consumer on an older Dart keeps resolving
+the prior release rather than failing — the bump is not a forced break.
+The public API is unchanged and only dev-dependencies (`lints`/`test`)
+took major bumps, neither of which reaches consumers. Adopting current
+lints (a stated must-have) is impossible on the old floor, so the bump
+buys a concrete benefit (§req:refresh-constraints, §req:refresh-priorities).
 
 ## Lint baseline §spec:lint-baseline
-*Status: not started*
+*Status: complete*
 
 The code satisfies the current lint rule sets with no analyzer findings,
 and the analysis configuration carries no dead settings.
@@ -363,7 +367,7 @@ code are fixed in place rather than suppressed wholesale, so the upgrade
 delivers its intended signal.
 
 ## TTL-exceeded parse correctness §spec:ttl-exceeded-parse
-*Status: not started*
+*Status: complete*
 
 On every platform, a TTL/hop-limit-exceeded line from the system `ping`
 produces a `timeToLiveExceeded` `PingData` — never an exception.
@@ -390,7 +394,7 @@ existing `groupNames.contains('seq')` guard used elsewhere in the parser,
 restoring cross-platform parity (§req:refresh-success-criteria).
 
 ## Test suite integrity and coverage §spec:test-coverage
-*Status: not started*
+*Status: complete*
 
 The full test suite passes for both packages with no known-failing or
 skipped cases, and previously thin areas gain coverage.
@@ -414,7 +418,7 @@ coverage is the parser, which is pure and deterministic (string in →
 test there is both cheap and load-bearing.
 
 ## Documentation accuracy §spec:doc-accuracy
-*Status: not started*
+*Status: complete*
 
 The repository's documentation describes the system as it actually ships.
 
@@ -436,7 +440,7 @@ product's primary surface, not cosmetic polish. Accurate docs are a stated
 success criterion (§req:refresh-success-criteria).
 
 ## Code audit and Swift hardening §spec:code-audit
-*Status: not started*
+*Status: complete*
 
 The Dart code (both packages) and the native Swift ICMP engine have been
 reviewed once for bugs, security flaws, and improvement opportunities, and
