@@ -107,10 +107,13 @@ class PingParser {
     // TTL Exceeded
     match = timeToLiveRgx.firstMatch(data);
     if (match != null) {
+      var seq =
+          match.groupNames.contains('seq') ? match.namedGroup('seq') : null;
+
       return PingData(
         response: PingResponse(
           ip: match.namedGroup('ip'),
-          seq: int.tryParse(match.namedGroup('seq')!),
+          seq: seq == null ? null : int.tryParse(seq),
         ),
         error: PingError(ErrorType.timeToLiveExceeded),
       );
