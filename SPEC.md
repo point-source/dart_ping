@@ -501,7 +501,7 @@ matrix, the iOS Dart suite on Linux, and the iOS Swift suite on macOS run on
 every pull request to `main`. `main` is branch-protected: no direct pushes,
 changes land only through a PR whose required checks are green. The Swift
 job builds the example for the simulator to generate Flutter artifacts, then
-runs `RunnerTests` via `xcodebuild` — its first live run on a macOS runner is
+runs `RunnerTests` via `xcodebuild`; its first run on a macOS runner passed,
 the on-CI confirmation the §spec:ios-tests Swift suite had been pending.*
 
 The repository runs its automated suites on every pull request to `main`,
@@ -516,11 +516,13 @@ through a passing PR.
   - the `dart_ping_ios` Swift `RunnerTests` suite on a macOS runner via
     `xcodebuild test` (#74, §spec:ios-tests).
 - The required (merge-gating) checks shall be **deterministic**: live
-  ICMP round-trips to external hosts are not part of the gate. Tests that
+  ICMP round-trips to external hosts are not part of CI at all. Tests that
   spawn the system `ping` against real hosts are tagged `live` and excluded
-  from the gating run (`dart test -x live`); they run only in a separate,
-  non-gating `live-ping` job. This mirrors the existing principle that live
-  network behavior is not reproducible in CI (§spec:ios-tests).
+  from every CI run (`dart test -x live`); hosted Linux/Windows runners block
+  unprivileged ICMP, so those tests cannot pass there regardless, and live
+  round-trips are non-deterministic everywhere. They run by default locally
+  and remain the manual acceptance path. This mirrors the existing principle
+  that live network behavior is not reproducible in CI (§spec:ios-tests).
 - `main` shall be protected so it cannot be pushed to directly; merges
   require a pull request with the required checks passing.
 - No coverage-threshold gate shall be introduced. Coverage is reported (a
@@ -534,8 +536,10 @@ and intermediate routers, so gating on them would make `main` un-mergeable
 on a transient network blip. The OS-specific *logic* (`params`, `locale`,
 exit-code interpretation) is pure and is covered deterministically
 (§spec:coverage-expansion), so the gate loses no real signal by excluding
-the live round trip; the `live-ping` job still surfaces real-world breakage
-as advisory signal.
+the live round trip. Running the live suite in CI was tried and removed: it
+failed permanently on hosted Linux/Windows runners (no unprivileged ICMP),
+producing red checks on every PR that signalled nothing — so the live suite
+stays a local/manual path rather than a noisy non-gating job.
 
 ## Coverage expansion §spec:coverage-expansion
 *Status: implemented — core line coverage rises from 69.9% to ~100% on the

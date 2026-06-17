@@ -93,9 +93,10 @@ jobs:
   # ---- Informational, non-gating ----------------------------------------
   # Coverage report for both packages, published as a build artifact and a job
   # summary. There is no coverage-threshold gate (by decision); this surfaces
-  # the numbers without blocking merges. The core run includes the live tests
-  # so `base_ping`'s spawn/cleanup path is measured; network flakiness here is
-  # tolerated via continue-on-error.
+  # the numbers without blocking merges. Live tests are excluded so the number
+  # is reproducible — note `base_ping`'s spawn/cleanup path is therefore not
+  # measured here (hosted Linux/Windows runners block ICMP anyway); it is
+  # exercised by the local/manual live suite.
   coverage:
     name: coverage (report only)
     runs-on: ubuntu-latest
@@ -110,7 +111,7 @@ jobs:
         working-directory: dart_ping
         run: |
           dart pub get
-          dart test --coverage=coverage || true
+          dart test -x live --coverage=coverage
           dart run coverage:format_coverage \
             --lcov --in=coverage --out=coverage/lcov.info --report-on=lib
       - name: iOS coverage
@@ -142,21 +143,8 @@ jobs:
             dart_ping_ios/coverage/lcov.info
           if-no-files-found: warn
 
-  # The live-network suite (real `ping` to external hosts) on each host OS.
-  # Inherently non-deterministic — kept as signal only, never gates a merge.
-  live-ping:
-    name: live-ping (informational, ${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
-    continue-on-error: true
-    defaults:
-      run:
-        working-directory: dart_ping
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dart-lang/setup-dart@v1
-      - run: dart pub get
-      - run: dart test -t live
+  # NOTE: the live-network suite (`dart test -t live` — real `ping` to external
+  # hosts) is intentionally NOT run in CI. Hosted Linux/Windows runners block
+  # unprivileged ICMP, so those tests can never pass there, and live round
+  # trips are non-deterministic everywhere. They stay tagged `live`, run by
+  # default locally, and remain the manual acceptance path (§spec:ci).
