@@ -502,7 +502,7 @@ non-zero exit, and the `onListen` body before the subscription is wired up —
 so the exception is swallowed and the stream controller is never closed.
 
 ## Stream always terminates and surfaces errors §spec:stream-lifecycle-robustness
-*Status: not started*
+*Status: implemented (dart_ping 9.1.1) — teardown centralized through an idempotent `_closeController()` and a `try/finally` in `_cleanup`, so the `StreamController` closes exactly once on every terminal path. Launch failures (incl. a missing `ping` binary, which reports the binary could not be found) are caught in `_onListen` and routed to the error channel before closing; an unmapped non-zero exit surfaces `throwExit`'s exception via `addError` instead of swallowing/throwing in `onDone`. stderr/stdout are decoded and line-split independently before merging. Covered by network-free `dart test` cases in `dart_ping/test/stream_lifecycle_test.dart` (launch failure, unmapped exit, normal-completion regression guard, close-exactly-once across all paths) that fail on a hang or swallowed error; public API and normal-run output unchanged.*
 
 The `Ping` stream terminates on every code path and routes failures through
 its error channel rather than leaving the consumer to hang. Errors surface

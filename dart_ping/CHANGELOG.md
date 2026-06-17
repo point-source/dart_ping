@@ -1,3 +1,8 @@
+## 9.1.1
+
+- Fix #76: the `Ping` stream could hang forever on two edge paths — a process-launch failure (e.g. a missing `ping` binary) and an unmapped non-zero exit code. Both now surface a catchable error through the stream's existing error channel and the stream always closes, so consumers (`await for`, `.drain()`, `.last`, `stop()`) never deadlock. A missing-binary failure reports that the ping binary could not be found.
+- Harden stderr/stdout line integrity: each stream is decoded and line-split independently before merging, so interleaved writes cannot corrupt, split, or drop a diagnostic line. Normal-run output is unchanged.
+
 ## 9.1.0
 
 - Fix parser crash on macOS and Windows when a TTL-exceeded reply is received: the `seq` capture group is now read only when the platform's pattern defines it (previously force-unwrapped, throwing "Not a capture group name: seq")

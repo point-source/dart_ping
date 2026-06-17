@@ -86,74 +86,107 @@ abstract class BasePing {
     );
   }
 
+  /// Decodes and line-splits a single raw byte stream so that whole lines are
+  /// produced before the streams are merged.
+  Stream<String> _lines(Stream<List<int>> raw) =>
+      raw.transform(encoding.decoder).transform(const LineSplitter());
+
   /// Transforms the ping process output into PingData objects
+  ///
+  /// Each raw stream is decoded and line-split independently before merging, so
+  /// interleaved stderr/stdout writes cannot corrupt or split a line.
   Stream<PingData> get _parsedOutput =>
-      StreamGroup.merge([_process!.stderr, _process!.stdout])
-          .transform(encoding.decoder)
-          .transform(LineSplitter())
+      StreamGroup.merge([_lines(_process!.stderr), _lines(_process!.stdout)])
           .transform<PingData>(parser.transformParser);
 
   Future<void> _onListen() async {
-    // Start new ping process on host OS
-    _process = await platformProcess.catchError((error) {
-      if (error.toString().contains('No such file')) {
-        throw Exception(
-          'Could not find ping binary on this system. Please ensure it is installed',
-        );
-      }
-      throw error;
-    });
-    // Get platform-specific parsed PingData
-    _sub = _parsedOutput.listen(
-      (event) {
-        if (event.response != null || event.error != null) {
-          // Accumulate error if one exists
-          if (event.error != null) {
-            _errors.add(event.error!);
+    try {
+      // Start new ping process on host OS
+      _process = await platformProcess;
+      // Get platform-specific parsed PingData
+      _sub = _parsedOutput.listen(
+        (event) {
+          if (event.response != null || event.error != null) {
+            // Accumulate error if one exists
+            if (event.error != null) {
+              _errors.add(event.error!);
+            }
+            _controller.add(event);
+          } else if (event.summary != null) {
+            event.summary!.errors.addAll(_errors);
+            _summaryData = event;
           }
-          _controller.add(event);
-        } else if (event.summary != null) {
-          event.summary!.errors.addAll(_errors);
-          _summaryData = event;
-        }
-      },
-      onDone: _cleanup,
-    );
+        },
+        onDone: _cleanup,
+      );
+    } catch (error, stackTrace) {
+      // The launch (or wiring) failed before a subscription was established;
+      // surface the error and close the stream so the consumer never hangs.
+      final mappedError = error.toString().contains('No such file')
+          ? Exception(
+              'Could not find ping binary on this system. Please ensure it is installed',
+            )
+          : error;
+      _controller.addError(mappedError, stackTrace);
+      await _closeController();
+      return;
+    }
+  }
+
+  /// Closes the stream controller exactly once.
+  Future<void> _closeController() async {
+    if (!_controller.isClosed) {
+      await _controller.close();
+    }
   }
 
   /// Processes output summary and closes stream after ping process is done
+  ///
+  /// The body runs inside a try/finally so the controller closes exactly once
+  /// on every terminal path (normal zero-exit, mapped error exit, unmapped
+  /// exit, and any unexpected throw), routing failures through the error
+  /// channel instead of leaving the consumer to hang.
   Future<void> _cleanup() async {
-    final exitCode = await _process!.exitCode;
+    try {
+      final exitCode = await _process!.exitCode;
 
-    if (exitCode != 0) {
-      // Does the exit code reveal an error?
-      final error = interpretExitCode(exitCode);
-      if (error != null) {
-        // Is there a ping summary that we should add exit code info to?
-        if (_summaryData != null) {
-          _summaryData!.summary!.errors.add(error);
+      if (exitCode != 0) {
+        // Does the exit code reveal an error?
+        final error = interpretExitCode(exitCode);
+        if (error != null) {
+          // Is there a ping summary that we should add exit code info to?
+          if (_summaryData != null) {
+            _summaryData!.summary!.errors.add(error);
+          } else {
+            _summaryData = PingData(
+              summary: PingSummary(
+                transmitted: 0,
+                received: 0,
+                time: Duration(),
+                errors: [error],
+              ),
+            );
+          }
         } else {
-          _summaryData = PingData(
-            summary: PingSummary(
-              transmitted: 0,
-              received: 0,
-              time: Duration(),
-              errors: [error],
-            ),
-          );
+          // Unmapped non-zero exit: surface the exception rather than
+          // discarding it, so the consumer can catch it.
+          final ex = throwExit(exitCode);
+          if (ex != null) {
+            _controller.addError(ex);
+          }
         }
-      } else {
-        throwExit(exitCode);
       }
-    }
 
-    if (_summaryData != null) {
-      _controller.add(_summaryData!);
-    }
-
-    // All done! Make sure nothing else gets added
-    if (!_controller.isClosed) {
-      await _controller.close();
+      if (_summaryData != null) {
+        _controller.add(_summaryData!);
+      }
+    } catch (error, stackTrace) {
+      if (!_controller.isClosed) {
+        _controller.addError(error, stackTrace);
+      }
+    } finally {
+      // All done! Make sure nothing else gets added
+      await _closeController();
     }
   }
 
