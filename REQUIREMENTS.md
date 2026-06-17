@@ -1,6 +1,6 @@
 # Requirements
 
-This document tracks two areas of work:
+This document tracks three areas of work:
 
 1. **iOS SPM migration (#73)** — *shipped in `dart_ping_ios` 5.0.0.*
    Replace the `flutter_icmp_ping` dependency with a native Swift ICMP
@@ -9,7 +9,13 @@ This document tracks two areas of work:
 2. **Maintenance & modernization refresh** — a cross-package pass to bring
    dependencies, SDK constraints, documentation, and test coverage current,
    and to surface bugs / security flaws / improvements across the Dart and
-   native Swift code. Captured in the `§req:refresh-*` sections at the end.
+   native Swift code. Captured in the `§req:refresh-*` sections.
+3. **`base_ping` stream lifecycle robustness (#76)** — fix two edge paths
+   in the core `dart_ping` stream where a consumer can hang forever
+   instead of seeing an error: an unmapped non-zero exit code, and a
+   failed process launch (e.g. a missing `ping` binary). Surfaced by the
+   Dart code audit (`§spec:code-audit`). Captured in the
+   `§req:robustness-*` sections at the end.
 
 ---
 
@@ -279,3 +285,132 @@ Observable, verifiable outcomes:
 - **Nice-to-have:** deeper test coverage beyond the obvious gaps; replacing
   the stale `dart_code_metrics` config with a maintained metrics/lint
   alternative.
+
+---
+
+# base_ping stream lifecycle robustness (#76)
+
+Two related medium-severity robustness defects in the core `dart_ping`
+ping stream, deferred from the maintenance audit (`§spec:code-audit`)
+because they were not cheap-and-clearly-correct enough to fix inline.
+Both only trigger on edge paths; normal runs are unaffected.
+
+## Robustness — problem statement §req:robustness-problem-statement
+
+The target users are developers consuming `dart_ping`'s `Ping` stream —
+typically with `await for`, `.drain()`, `.last`, or by awaiting `stop()`.
+They expect the stream to always finish: either delivering responses and
+a summary, or surfacing an error they can catch.
+
+On two edge paths the stream instead **hangs forever** — it never emits
+the failure and never closes, so the consumer's `await` blocks
+indefinitely:
+
+- **Unmapped non-zero exit code.** When the `ping` process exits with a
+  non-zero code that the platform does not recognize as a known error,
+  the cleanup logic throws from inside the subscription's `onDone`
+  callback. Because that callback's future is not awaited, the exception
+  is swallowed and — critically — the stream controller is never closed.
+  The consumer hangs on an exotic exit code.
+- **Process-launch failure.** When the `ping` binary cannot be started
+  (e.g. it is not installed), the failure escapes during stream start-up
+  before the subscription is wired up. The intended "Could not find ping
+  binary…" error never reaches the consumer, nothing is emitted, and the
+  stream never closes — so the consumer hangs instead of seeing the
+  error.
+
+Current behavior fails these users because a hang is the worst possible
+outcome: there is no error to catch, no completion to await, and no
+timeout — the calling code simply stalls. These paths are rare (unusual
+exit codes, a missing binary), but when they happen they are silent and
+unrecoverable from the consumer's side.
+
+A third, lower-severity observation is folded in: the stream merges the
+process's stderr and stdout *before* splitting into lines, which could in
+theory interleave and corrupt a diagnostic line. In practice `ping` is
+line-buffered on a single stream, so this has not been observed — but it
+is in scope to harden against.
+
+## Robustness — success criteria §req:robustness-success-criteria
+
+Observable, end-to-end outcomes a tester can demonstrate against the
+`Ping` stream:
+
+- **Missing-binary launch failure surfaces an error, then closes.** With
+  no usable `ping` binary on the system, a consumer listening to the
+  stream receives an error event whose message indicates the ping binary
+  could not be found, and the stream then closes — within bounded time,
+  with no hang. *(must-have)*
+- **Any other launch failure surfaces an error, then closes.** If the
+  process fails to start for any other reason, the consumer receives an
+  error event and the stream closes rather than hanging. *(must-have)*
+- **Unmapped non-zero exit surfaces an error, then closes.** When the
+  ping process exits with a non-zero code the platform does not map to a
+  known `PingError`, the consumer receives an error event and the stream
+  closes — instead of the stream staying open forever. *(must-have)*
+- **The stream always terminates.** On every path — normal completion,
+  a mapped error exit, an unmapped exit, a launch failure, and
+  cancel/`stop()` — the stream closes exactly once, so a consumer
+  awaiting completion always returns and never deadlocks. *(must-have)*
+- **Normal runs are unchanged.** For a successful run (zero exit) or a
+  recognized error exit, the consumer still receives the same per-probe
+  responses, the run summary, and the per-run error list as before, and
+  the stream closes as before. *(must-have — regression guard)*
+- **Diagnostic lines arrive intact.** Each response/error line the
+  consumer expects is delivered whole; lines are not corrupted, split,
+  or dropped as a result of stderr and stdout being combined before
+  line-splitting. *(high)*
+- **The edge paths are covered by automated tests.** Missing-binary
+  launch failure, unmapped non-zero exit, and unchanged normal
+  completion each have a test that fails if the stream hangs or
+  swallows the error. *(high — aligns with `§req:refresh-success-criteria`
+  stream-lifecycle coverage)*
+
+## Robustness — user stories §req:robustness-user-stories
+
+- As a developer pinging a host, when the `ping` binary is missing I want
+  to receive a clear error I can catch so that my `await for` loop fails
+  fast instead of hanging forever.
+- As a developer, when `ping` exits with an unusual code my platform
+  does not recognize, I want the stream to surface an error and close so
+  that I can handle the failure rather than stall.
+- As a developer who awaits stream completion (`.drain()`, `.last`, or
+  `stop()`), I want the stream to always close so that my code never
+  deadlocks on an edge path.
+- As an existing `dart_ping` user, I want normal ping runs to behave
+  exactly as they do today so that this fix is invisible to working code.
+
+## Robustness — quality attributes §req:robustness-quality-attributes
+
+- **Reliability:** the stream terminates on every code path. No path
+  leaves the controller open; failures are observable, not silent.
+- **Compatibility:** the public API is unchanged — the `Ping` interface
+  and the `PingData` / `PingResponse` / `PingSummary` / `PingError`
+  shapes stay the same. Errors surface through the stream's existing
+  error channel that consumers already handle; normal-run output is
+  byte-for-byte equivalent.
+- **Testability:** each edge path is exercised by an automated test that
+  fails on a hang or a swallowed error, runnable under `dart test`
+  without a live network.
+
+## Robustness — constraints §req:robustness-constraints
+
+- The fix is internal to the core `dart_ping` package
+  (`lib/src/ping/base_ping.dart`); no change to the public API or to
+  `dart_ping_ios`.
+- This is a **non-breaking, patch-level** change to `dart_ping`.
+- Scope is the three items above (two hang paths + stderr/stdout line
+  integrity). Surfaced by, and traceable to, the audit
+  (`§spec:code-audit`); related to the refresh's stream-lifecycle test
+  goal in `§req:refresh-success-criteria`.
+
+## Robustness — priorities §req:robustness-priorities
+
+- **Must-have:** both hang paths fixed — a missing binary and an unmapped
+  exit code each surface a catchable error and close the stream, with
+  normal runs unchanged.
+- **High priority:** automated tests covering the missing-binary,
+  unmapped-exit, and normal-completion paths; harden stderr/stdout line
+  integrity so diagnostic lines arrive intact.
+- **Nice-to-have:** none beyond the above — this is a focused robustness
+  fix.
