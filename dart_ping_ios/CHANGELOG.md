@@ -1,4 +1,4 @@
-## Unreleased
+## 5.1.0
 
 - Raise minimum Dart SDK to 3.8.0
 - Upgrade to `flutter_lints` 6 and `test` 1.31

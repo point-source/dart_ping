@@ -1,4 +1,4 @@
-## Unreleased
+## 9.1.0
 
 - Fix parser crash on macOS and Windows when a TTL-exceeded reply is received: the `seq` capture group is now read only when the platform's pattern defines it (previously force-unwrapped, throwing "Not a capture group name: seq")
 - Raise minimum Dart SDK to 3.8.0
