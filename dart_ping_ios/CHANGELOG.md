@@ -1,3 +1,9 @@
+## Unreleased
+
+- Raise minimum Dart SDK to 3.8.0
+- Upgrade to `flutter_lints` 6 and `test` 1.31
+- Remove leftover `dart_code_metrics` analysis config
+
 ## 5.0.0
 
 - **BREAKING:** The iOS implementation is rewritten as a native Swift ICMP engine owned in this repo; the `flutter_icmp_ping` dependency is **removed**.
