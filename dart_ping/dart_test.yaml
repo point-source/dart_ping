@@ -1,0 +1,12 @@
+# Test configuration for dart_ping.
+#
+# The `live` tag marks tests that spawn the system `ping` and reach external
+# hosts (google.com, 1.1.1.1, an unreachable IP). Their pass/fail depends on
+# network conditions and intermediate routers, so they are not deterministic
+# and are excluded from the required CI checks (`dart test -x live`). They
+# still run by default locally and in the informational live-ping CI job.
+tags:
+  live:
+    # Give live tests room for slow DNS / round trips without flaking on the
+    # default per-test timeout.
+    timeout: 2x

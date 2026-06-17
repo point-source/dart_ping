@@ -1,16 +1,17 @@
 name: dart_ping
 description: Multi-platform network ping utility for native desktop and android applications.
-version: 9.0.1
+version: 9.1.0
 homepage: https://github.com/point-source/dart_ping
 repository: https://github.com/point-source/dart_ping
 
 environment:
-  sdk: ">=3.0.0 <4.0.0"
+  sdk: ">=3.8.0 <4.0.0"
 
 dependencies:
   async: ^2.4.2
   collection: ^1.16.0
 
 dev_dependencies:
-  lints: ^2.0.0
-  test: ^1.14.4
+  coverage: ^1.7.0
+  lints: ^6.0.0
+  test: ^1.31.0

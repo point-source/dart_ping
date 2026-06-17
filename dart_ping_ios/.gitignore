@@ -9,5 +9,12 @@ pubspec.lock
 # Conventional directory for build outputs
 build/
 
+# Swift Package Manager build artifacts (native iOS plugin package)
+.build/
+.swiftpm/
+
 # Directory created by dartdoc
 doc/api/
+
+# Coverage output
+coverage/

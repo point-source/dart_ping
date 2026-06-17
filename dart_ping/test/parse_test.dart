@@ -48,6 +48,24 @@ void main() {
       expect(res, isA<PingData>());
       expect(res?.error?.error, ErrorType.timeToLiveExceeded);
     });
+
+    test('No route to host', () async {
+      final res = parser.parse('ping: sendto: No route to host');
+      expect(res, isA<PingData>());
+      expect(res?.error?.error, ErrorType.unknown);
+    });
+
+    test('Host is down', () async {
+      final res = parser.parse('ping: sendto: Host is down');
+      expect(res, isA<PingData>());
+      expect(res?.error?.error, ErrorType.unknown);
+    });
+
+    test('Network is unreachable (macOS)', () async {
+      final res = parser.parse('ping: sendto: Network is unreachable');
+      expect(res, isA<PingData>());
+      expect(res?.error?.error, ErrorType.unknown);
+    });
   });
 
   group('Parsing (Linux): ', () {
@@ -95,6 +113,19 @@ void main() {
       final res = parser.parse(strings.exceedTtl);
       expect(res, isA<PingData>());
       expect(res?.error?.error, ErrorType.timeToLiveExceeded);
+    });
+
+    test('Network is unreachable (Linux)', () async {
+      final res = parser.parse('ping: connect: Network is unreachable');
+      expect(res, isA<PingData>());
+      expect(res?.error?.error, ErrorType.unknown);
+    });
+
+    test('Destination host unreachable (Linux)', () async {
+      final res = parser.parse(
+          'From 192.168.1.1 icmp_seq=1 Destination Host Unreachable');
+      expect(res, isA<PingData>());
+      expect(res?.error?.error, ErrorType.unknown);
     });
   });
 

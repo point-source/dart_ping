@@ -5,6 +5,68 @@ The [dart_ping](https://pub.dev/packages/dart_ping) package is required for use.
 Created from templates made available by Stagehand under a BSD-style
 [license](https://github.com/dart-lang/stagehand/blob/master/LICENSE).
 
+## Version 5.0.0: SPM-only rewrite (migration guide)
+
+Version 5.0.0 is a major change to how iOS support is delivered. The iOS
+implementation is now a **native Swift ICMP engine owned in this repository**,
+replacing the previous dependency on the third-party `flutter_icmp_ping` plugin.
+The good news for your app code: **the public Dart API is unchanged** — existing
+code that calls `DartPingIOS.register()` and listens to a `Ping` stream compiles
+and runs without edits. The break is purely in how the native code is
+distributed.
+
+### SPM-only distribution
+
+5.0.0 is distributed **solely as a Swift Package**. It ships **no CocoaPods
+podspec** and requires Flutter's [Swift Package Manager build
+mode](https://docs.flutter.dev/packages-and-plugins/swift-package-manager).
+An SPM-enabled Flutter app with **no `Podfile`** can add `dart_ping_ios`, build
+for iOS, and ping end-to-end. This is the whole point of the rewrite: it unblocks
+projects that have moved to SPM, for which the old `flutter_icmp_ping`-backed
+release had no path to add iOS ping support.
+
+The minimum supported iOS version is **iOS 13.0**, which matches Flutter's
+current minimum-deployment baseline (the `FlutterFramework` Swift package that
+plugins depend on targets iOS 13.0), so this package imposes no floor stricter
+than Flutter already requires.
+
+### CocoaPods consumers: stay on 4.x
+
+If your project has **not** migrated to SPM, pin `dart_ping_ios` to the `4.x`
+line. The previous `flutter_icmp_ping`-backed release remains **published and
+resolvable**, so it keeps building and pinging on CocoaPods-based projects with
+no changes. Because 5.0.0 is a new **major** version, normal `^4.x` version
+constraints will **not** pull the SPM-only rewrite in automatically — you migrate
+on your own schedule.
+
+```yaml
+# CocoaPods-based project (has a Podfile, not yet on SPM):
+dependencies:
+  dart_ping_ios: ^4.0.2
+
+# SPM-enabled project (no Podfile):
+dependencies:
+  dart_ping_ios: ^5.0.0
+```
+
+### Compatibility matrix
+
+| `dart_ping_ios` | Native distribution | Build system        | Minimum iOS |
+| --------------- | ------------------- | ------------------- | ----------- |
+| `4.x`           | CocoaPods podspec   | CocoaPods           | (4.x line)  |
+| `5.x`           | Swift Package       | Swift Package Mgr   | 13.0        |
+
+### No special entitlements or extra App Store review
+
+The native engine uses an **unprivileged `SOCK_DGRAM` / `IPPROTO_ICMP` ICMP
+socket** — no raw socket, no root, no entitlement. A consuming app therefore
+ships unchanged from an App Store packaging standpoint: you do not need to add
+any special entitlements or take extra App Store review steps to use iOS ping.
+
+Note that local-network ping does **not** trigger iOS's Local Network privacy
+prompt. That prompt applies to LAN-discovery APIs, not to ICMP echo sent to a
+routable host, so its absence here is expected and not a defect.
+
 ## Usage
 
 The key to using this package is to import it and call this method before you use dart_ping:
@@ -98,7 +160,3 @@ class _MyHomePageState extends State<MyHomePage> {
 Please file feature requests and bugs at the [issue tracker][tracker].
 
 [tracker]: https://github.com/point-source/dart_ping/issues
-
-## Credit
-
-This package contains code from [flutter_icmp_ping](https://pub.dev/packages/flutter_icmp_ping) by [zuvola](zuvola.com), used with permission.

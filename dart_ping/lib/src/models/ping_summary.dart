@@ -20,7 +20,9 @@ class PingSummary {
   /// Number of packets returned to the source from the target
   final int received;
 
-  /// Total time spent for all sent/received packets to complete a round trip (summed)
+  /// Total wall-clock duration of the ping session as reported by the OS.
+  /// On Linux/Android, this includes interval delays between pings.
+  /// On macOS and Windows, this value is null.
   final Duration? time;
 
   /// All errors that occurred during the ping process
@@ -69,7 +71,9 @@ class PingSummary {
     return transmitted.hashCode ^
         received.hashCode ^
         time.hashCode ^
-        errors.hashCode;
+        // Hash the errors element-wise so equal summaries (== compares the
+        // list element-wise via ListEquality) always share a hashCode.
+        const ListEquality().hash(errors);
   }
 
   Map<String, dynamic> toMap() {

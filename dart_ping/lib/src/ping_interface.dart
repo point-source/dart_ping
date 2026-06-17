@@ -11,7 +11,6 @@ import 'ping/windows_ping.dart';
 /// Spawns an OS ping process when the stream property is listened to
 abstract class Ping {
   /// Creates an appropriate Ping instance for the detected platform
-  // ignore: long-method
   factory Ping(
     /// Hostname, domain, or IP which you would like to ping
     String host, {

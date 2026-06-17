@@ -170,12 +170,11 @@ abstract class BasePing {
   }
 
   Future<bool> stop() async {
-    if (_process?.kill(ProcessSignal.sigint) ?? false) {
+    final killed = _process?.kill(ProcessSignal.sigint) ?? false;
+    if (_process != null && !_controller.isClosed) {
       await _controller.done;
-
-      return true;
     }
 
-    return false;
+    return killed;
   }
 }
