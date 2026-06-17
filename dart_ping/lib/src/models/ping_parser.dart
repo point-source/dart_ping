@@ -35,7 +35,6 @@ class PingParser {
   /// String(s) used to detect misc unknown error(s)
   List<RegExp> errorStrs;
 
-  // ignore: long-method
   StreamTransformer<String, PingData> get transformParser =>
       StreamTransformer<String, PingData>.fromHandlers(
         handleData: (data, sink) {

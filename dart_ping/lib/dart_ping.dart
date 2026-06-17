@@ -1,4 +1,4 @@
-library dart_ping;
+library;
 
 export 'package:dart_ping/src/models/ping_data.dart';
 export 'package:dart_ping/src/models/ping_error.dart';
