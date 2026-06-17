@@ -46,6 +46,31 @@ void main() {
       expect(ping.throwExit(1), isNull);
       expect(ping.throwExit(0), isNull);
     });
+
+    test('interface name appends -I <name>', () {
+      final named = PingLinux('host', 3, 1, 2, 64, false, interface: 'eth0');
+      expect(named.params, contains('-I eth0'));
+      expect(named.command, contains('-I eth0'));
+    });
+
+    test('interface address appends -I <address>', () {
+      final addr =
+          PingLinux('host', 3, 1, 2, 64, false, interface: '192.168.1.5');
+      expect(addr.params, contains('-I 192.168.1.5'));
+      expect(addr.command, contains('-I 192.168.1.5'));
+    });
+
+    test('omitting interface (or null) is byte-for-byte unchanged', () {
+      // Backward-compat guard: the pre-feature params/command must be
+      // identical whether `interface` is unset or explicitly null.
+      const expected = ['-O', '-n', '-W 2', '-i 1', '-t 64', '-c 3'];
+      final nullIface = PingLinux('host', 3, 1, 2, 64, false, interface: null);
+      expect(ping.params, expected);
+      expect(nullIface.params, expected);
+      expect(nullIface.params, ping.params);
+      expect(nullIface.command, ping.command);
+      expect(ping.params, isNot(anyElement(startsWith('-I'))));
+    });
   });
 
   group('PingMac', () {
@@ -75,6 +100,33 @@ void main() {
       expect(ping.throwExit(2), isA<Exception>());
       expect(ping.throwExit(68), isNull);
       expect(ping.throwExit(1), isNull);
+    });
+
+    test('interface name appends -b <name> (boundif)', () {
+      final named = PingMac('host', 3, 1, 2, 64, false, interface: 'en0');
+      expect(named.params, contains('-b en0'));
+      expect(named.command, contains('-b en0'));
+      expect(named.params, isNot(contains('-S en0')));
+    });
+
+    test('interface address appends -S <address>', () {
+      final addr =
+          PingMac('host', 3, 1, 2, 64, false, interface: '192.168.1.5');
+      expect(addr.params, contains('-S 192.168.1.5'));
+      expect(addr.command, contains('-S 192.168.1.5'));
+      expect(addr.params, isNot(contains('-b 192.168.1.5')));
+    });
+
+    test('omitting interface (or null) is byte-for-byte unchanged', () {
+      // Backward-compat guard: pre-feature params/command unchanged.
+      const expected = ['-n', '-W 2000', '-i 1', '-m 64', '-c 3'];
+      final nullIface = PingMac('host', 3, 1, 2, 64, false, interface: null);
+      expect(ping.params, expected);
+      expect(nullIface.params, expected);
+      expect(nullIface.params, ping.params);
+      expect(nullIface.command, ping.command);
+      expect(ping.params, isNot(anyElement(startsWith('-S'))));
+      expect(ping.params, isNot(anyElement(startsWith('-b'))));
     });
   });
 
@@ -107,6 +159,35 @@ void main() {
 
     test('throwExit always returns an Exception carrying the code', () {
       expect(ping.throwExit(5).toString(), contains('5'));
+    });
+
+    test('interface address appends split -S <address> args', () {
+      final addr =
+          PingWindows('host', 3, 1, 2, 64, false, interface: '192.168.1.5');
+      expect(addr.params, containsAllInOrder(['-S', '192.168.1.5']));
+      expect(addr.command, contains('-S 192.168.1.5'));
+    });
+
+    test('bare interface name appends NO interface flag', () {
+      final named = PingWindows('host', 3, 1, 2, 64, false, interface: 'eth0');
+      // Name rejection is deferred; for now a bare name emits no binding flag,
+      // so params are identical to the no-interface case.
+      expect(named.params, ping.params);
+      expect(named.params, isNot(anyElement(startsWith('-S'))));
+      expect(named.params, isNot(anyElement(startsWith('-b'))));
+      expect(named.params, isNot(anyElement(startsWith('-I'))));
+    });
+
+    test('omitting interface (or null) is byte-for-byte unchanged', () {
+      // Backward-compat guard: pre-feature params/command unchanged.
+      const expected = ['-w', '2000', '-i', '64', '-4', '-n', '3'];
+      final nullIface =
+          PingWindows('host', 3, 1, 2, 64, false, interface: null);
+      expect(ping.params, expected);
+      expect(nullIface.params, expected);
+      expect(nullIface.params, ping.params);
+      expect(nullIface.command, ping.command);
+      expect(ping.params, isNot(contains('-S')));
     });
   });
 }

@@ -1,3 +1,10 @@
+## 9.2.0
+
+- Add an optional `interface` selection to the `Ping` factory and the platform constructors (#72). Pass either a network interface name (e.g. `eth0`) or a local source IP address (e.g. `192.168.1.5`) to bind the ping to a specific interface or source address.
+- The value is mapped to each platform's native binding flag: Linux/Android uses `-I` for both a name and an address; macOS uses `-b` for an interface name and `-S` for a source address; Windows uses `-S` (source-address form) for an address only.
+- Omitting `interface` (or passing `null`) leaves the spawned command byte-for-byte unchanged, so existing usage is unaffected.
+- No public model shapes changed: `PingData`, `PingResponse`, `PingSummary`, and `PingError` are identical to 9.1.1.
+
 ## 9.1.1
 
 - Fix #76: the `Ping` stream could hang forever on two edge paths — a process-launch failure (e.g. a missing `ping` binary) and an unmapped non-zero exit code. Both now surface a catchable error through the stream's existing error channel and the stream always closes, so consumers (`await for`, `.drain()`, `.last`, `stop()`) never deadlock. A missing-binary failure reports that the ping binary could not be found.
