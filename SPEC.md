@@ -1,11 +1,14 @@
 # Specification
 
-This document covers two areas, matching REQUIREMENTS.md:
+This document covers three areas, matching REQUIREMENTS.md:
 
 1. **iOS SPM migration (#73)** — `§spec:swift-icmp-engine` …
    `§spec:ios-tests` below (implemented).
 2. **Maintenance & modernization refresh** — the `§spec:dependency-currency`
-   … `§spec:code-audit` sections at the end (not started).
+   … `§spec:code-audit` sections (complete).
+3. **`base_ping` stream lifecycle robustness (#76)** —
+   `§spec:stream-lifecycle-robustness` at the end (not started). A focused
+   follow-up to two hang paths deferred from `§spec:code-audit`.
 
 Solution-space design for issue #73 — native, Swift Package Manager
 (SPM)-compatible iOS support for `dart_ping`.
@@ -477,3 +480,91 @@ rather than hostile input.
 excludes new CI/infrastructure in this pass (§spec:test-coverage,
 §req:refresh-constraints). The deliverable is the triaged finding list and
 the applied cheap fixes; standing enforcement is out of scope.
+
+---
+
+# base_ping stream lifecycle robustness
+
+Solution-space design for issue #76 (`§req:robustness-*`), a focused
+follow-up to two medium-severity hang paths the maintenance audit surfaced
+and deferred (`§spec:code-audit`). The work is confined to the core
+`dart_ping` package and changes no public surface; it is independent of the
+#73 iOS work and the rest of the refresh.
+
+The problem (from §req:robustness-problem-statement): a consumer of the
+`Ping` stream expects it to always finish — delivering responses and a
+summary, or surfacing an error they can catch. On two edge paths the stream
+instead stays open forever, with no error and no completion, so a consumer
+awaiting it (`await for`, `.drain()`, `.last`, `stop()`) blocks
+indefinitely. Both paths arise because a failure is raised from an async
+context whose future nobody awaits — the `onDone` callback on an unmapped
+non-zero exit, and the `onListen` body before the subscription is wired up —
+so the exception is swallowed and the stream controller is never closed.
+
+## Stream always terminates and surfaces errors §spec:stream-lifecycle-robustness
+*Status: not started*
+
+The `Ping` stream terminates on every code path and routes failures through
+its error channel rather than leaving the consumer to hang. Errors surface
+through the stream's existing error channel, which consumers already handle;
+no public type or method changes (§spec:public-api-stability,
+§req:robustness-quality-attributes — compatibility).
+
+- When the ping process fails to launch, the stream shall emit an error
+  event and then close within bounded time, instead of hanging. When the
+  failure is a missing `ping` binary, the error's message shall indicate
+  that the ping binary could not be found
+  (§req:robustness-success-criteria, §req:robustness-user-stories).
+- When the process exits with a non-zero code that the platform does not
+  map to a known `PingError`, the stream shall emit an error event and then
+  close, instead of staying open forever
+  (§req:robustness-success-criteria, §req:robustness-user-stories).
+- On every path — normal zero-exit completion, a mapped error exit, an
+  unmapped exit, a launch failure, and cancel/`stop()` — the stream shall
+  close exactly once, so a consumer awaiting completion always returns and
+  never deadlocks (§req:robustness-success-criteria,
+  §req:robustness-quality-attributes — reliability).
+- For a successful run (zero exit) or a recognized error exit, the consumer
+  shall still receive the same per-probe responses, the run summary, and the
+  per-run `PingSummary.errors` list as before, and the stream shall close as
+  before (§req:robustness-success-criteria — regression guard).
+- Each diagnostic line the consumer expects shall be delivered whole; the
+  combination of the process's stderr and stdout shall not corrupt, split,
+  or drop a line (§req:robustness-success-criteria,
+  §req:robustness-quality-attributes — reliability).
+- The missing-binary launch failure, the unmapped non-zero exit, and an
+  unchanged normal completion shall each be covered by an automated test
+  under `dart test` that runs without a live network and fails if the stream
+  hangs or swallows the error (§req:robustness-success-criteria,
+  §req:refresh-success-criteria — stream-lifecycle coverage).
+
+**Why a hang is the failure to design out:** a hung stream is strictly worse
+than an error — there is nothing to catch, nothing to await, and no timeout,
+so the caller simply stalls (§req:robustness-problem-statement). The fix
+reframes both edge paths as ordinary stream errors: a failure on any path
+becomes an error event on the channel consumers already use, and the
+controller is closed on every path so completion is guaranteed. The two
+specific defects — a throw inside the `onDone` callback on an unmapped exit,
+and a throw escaping the async start-up before the subscription exists — are
+the mechanisms behind the hang, but the section's contract is the
+observable guarantee (always closes, always surfaces), which survives any
+change to how start-up and teardown are wired.
+
+**Why the line-integrity criterion rides along here:** stderr and stdout are
+merged before line-splitting, so in theory two writes could interleave and
+corrupt a diagnostic line. In practice `ping` is line-buffered on a single
+stream and this has never been observed (§req:robustness-problem-statement),
+so it is hardening rather than a known defect — but it touches the same
+stream-assembly code and the same observable surface (whole lines reaching
+the consumer), so it is closed in the same pass rather than tracked
+separately.
+
+**Why patch-level and API-frozen:** the change is internal to
+`dart_ping/lib/src/ping/base_ping.dart`; the `Ping` interface and the
+`PingData` / `PingResponse` / `PingSummary` / `PingError` shapes are
+unchanged, normal-run output is byte-for-byte equivalent, and failures
+surface through the error channel consumers already handle. It therefore
+ships as a non-breaking, patch-level release of `dart_ping` with no change
+to `dart_ping_ios` (§req:robustness-constraints). A larger redesign of the
+stream lifecycle was rejected as disproportionate to a focused robustness
+fix (§req:robustness-priorities).
