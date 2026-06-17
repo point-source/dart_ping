@@ -71,7 +71,9 @@ class PingSummary {
     return transmitted.hashCode ^
         received.hashCode ^
         time.hashCode ^
-        errors.hashCode;
+        // Hash the errors element-wise so equal summaries (== compares the
+        // list element-wise via ListEquality) always share a hashCode.
+        const ListEquality().hash(errors);
   }
 
   Map<String, dynamic> toMap() {

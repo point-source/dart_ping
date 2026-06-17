@@ -1,3 +1,11 @@
+## Unreleased
+
+- Fix `PingSummary.hashCode` so it is consistent with `==`: equality already
+  compared `errors` element-wise (`ListEquality`), but `hashCode` used the
+  list's identity hash, so two value-equal summaries could produce different
+  hash codes and misbehave as `Set`/`Map` keys. `hashCode` now hashes
+  `errors` element-wise.
+
 ## 9.1.0
 
 - Fix parser crash on macOS and Windows when a TTL-exceeded reply is received: the `seq` capture group is now read only when the platform's pattern defines it (previously force-unwrapped, throwing "Not a capture group name: seq")
