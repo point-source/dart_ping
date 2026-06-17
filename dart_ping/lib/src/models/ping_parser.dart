@@ -35,7 +35,6 @@ class PingParser {
   /// String(s) used to detect misc unknown error(s)
   List<RegExp> errorStrs;
 
-  // ignore: long-method
   StreamTransformer<String, PingData> get transformParser =>
       StreamTransformer<String, PingData>.fromHandlers(
         handleData: (data, sink) {
@@ -89,7 +88,7 @@ class PingParser {
       var tx = match.namedGroup('tx');
       var rx = match.namedGroup('rx');
       String? time;
-      if (match.groupCount > 2) {
+      if (match.groupNames.contains('time')) {
         time = match.namedGroup('time');
       }
       if (tx == null || rx == null) {
@@ -108,10 +107,13 @@ class PingParser {
     // TTL Exceeded
     match = timeToLiveRgx.firstMatch(data);
     if (match != null) {
+      var seq =
+          match.groupNames.contains('seq') ? match.namedGroup('seq') : null;
+
       return PingData(
         response: PingResponse(
           ip: match.namedGroup('ip'),
-          seq: int.tryParse(match.namedGroup('seq')!),
+          seq: seq == null ? null : int.tryParse(seq),
         ),
         error: PingError(ErrorType.timeToLiveExceeded),
       );

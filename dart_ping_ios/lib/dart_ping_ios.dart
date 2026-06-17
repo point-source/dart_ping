@@ -26,7 +26,6 @@ class DartPingIOS implements Ping {
     Ping.iosFactory = _init;
   }
 
-  // ignore: long-parameter-list
   static DartPingIOS _init(
     String host,
     int? count,

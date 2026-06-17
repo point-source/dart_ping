@@ -7,7 +7,6 @@ import 'package:dart_ping/src/ping/linux_ping.dart';
 import 'package:dart_ping/src/ping/mac_ping.dart';
 import 'package:dart_ping/src/ping/windows_ping.dart';
 
-// ignore: long-parameter-list
 Ping getPing(
   String host,
   int? count,

@@ -1,3 +1,10 @@
+## 9.1.0
+
+- Fix parser crash on macOS and Windows when a TTL-exceeded reply is received: the `seq` capture group is now read only when the platform's pattern defines it (previously force-unwrapped, throwing "Not a capture group name: seq")
+- Raise minimum Dart SDK to 3.8.0
+- Upgrade to `lints` 6 and `test` 1.31
+- Remove leftover `dart_code_metrics` analysis config (the dev dependency was dropped in 9.0.0)
+
 ## 9.0.1
 
 - Fix #49: No IP response when TTL exceeded on Android platforms
