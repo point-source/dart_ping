@@ -726,7 +726,7 @@ name-vs-address mechanism choice onto the caller, which is exactly the
 platform detail this design hides.
 
 ## Interface selection on the subprocess platforms §spec:interface-selection
-*Status: not started*
+*Status: implemented (dart_ping 9.2.0) — an optional `interface` value on the `Ping` factory and the `PingLinux`/`PingMac`/`PingWindows` constructors is classified as a name vs. a source address via `InternetAddress.tryParse` (shared `BasePing.interface` field + `interfaceIsAddress` getter) and mapped onto each tool's binding flag inside the existing `params` getter: Linux/Android `-I <value>` (either form), macOS `-b <value>` (name) / `-S <value>` (address), Windows `-S <value>` (address form only — bare-name rejection is §spec:interface-platform-rejection). Omitting `interface` leaves `params`/`command` byte-for-byte identical to 9.1.1; the iOS factory branch and the `PingData`/`PingResponse`/`PingSummary`/`PingError` shapes are unchanged. Covered by network-free `dart test` cases in `dart_ping/test/platform_test.dart` asserting the per-platform flag for name and address selections plus a backward-compat guard, all via the public `command`/`params` getters.*
 
 A `Ping` constructed with an optional `interface` value pins its probes to
 that interface or source address on the platforms whose `ping` can bind by
