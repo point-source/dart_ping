@@ -1,3 +1,6 @@
+@Tags(['live'])
+library;
+
 import 'package:dart_ping/dart_ping.dart';
 import 'package:test/test.dart';
 

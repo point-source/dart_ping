@@ -23,8 +23,8 @@ abstract class BasePing {
     _controller = StreamController<PingData>(
       onListen: _onListen,
       onCancel: _onCancel,
-      onPause: () => _sub.pause,
-      onResume: () => _sub.resume,
+      onPause: () => _sub?.pause(),
+      onResume: () => _sub?.resume(),
     );
   }
 
@@ -61,9 +61,17 @@ abstract class BasePing {
 
   late final StreamController<PingData> _controller;
   Process? _process;
-  late final StreamSubscription<PingData> _sub;
+  StreamSubscription<PingData>? _sub;
   PingData? _summaryData;
   final List<PingError> _errors = [];
+
+  /// Whether a consumer has begun listening (so [_onListen] has started). Used
+  /// by [stop] to decide whether awaiting closure could ever return.
+  bool _started = false;
+
+  /// Whether [stop] was requested before the process finished launching, so the
+  /// process can be killed as soon as it exists.
+  bool _stopRequested = false;
 
   /// Command to set english locale before running ping command
   Map<String, String> get locale;
@@ -100,6 +108,7 @@ abstract class BasePing {
           .transform<PingData>(parser.transformParser);
 
   Future<void> _onListen() async {
+    _started = true;
     try {
       // Start new ping process on host OS
       _process = await platformProcess;
@@ -117,19 +126,35 @@ abstract class BasePing {
             _summaryData = event;
           }
         },
+        // Route parser/transform errors through the stream's error channel so
+        // they reach the consumer instead of escaping as uncaught async errors;
+        // the stream still closes via onDone.
+        onError: (Object error, StackTrace stackTrace) {
+          if (!_controller.isClosed) {
+            _controller.addError(error, stackTrace);
+          }
+        },
         onDone: _cleanup,
       );
+      // A stop() that arrived while the process was still launching could not
+      // kill it yet; honor that request now that the process exists.
+      if (_stopRequested) {
+        _process!.kill(ProcessSignal.sigint);
+      }
     } catch (error, stackTrace) {
-      // The launch (or wiring) failed before a subscription was established;
-      // surface the error and close the stream so the consumer never hangs.
-      final mappedError = error.toString().contains('No such file')
-          ? Exception(
-              'Could not find ping binary on this system. Please ensure it is installed',
-            )
-          : error;
+      // The launch failed before a subscription was established; surface the
+      // error and close the stream so the consumer never hangs. If the process
+      // had already started before the failure, do not leave it running.
+      _process?.kill(ProcessSignal.sigint);
+      final mappedError =
+          (error is ProcessException && error.errorCode == 2) ||
+                  error.toString().contains('No such file')
+              ? Exception(
+                  'Could not find ping binary on this system. Please ensure it is installed',
+                )
+              : error;
       _controller.addError(mappedError, stackTrace);
       await _closeController();
-      return;
     }
   }
 
@@ -181,9 +206,9 @@ abstract class BasePing {
         _controller.add(_summaryData!);
       }
     } catch (error, stackTrace) {
-      if (!_controller.isClosed) {
-        _controller.addError(error, stackTrace);
-      }
+      // The controller is only closed in the finally below, so it is still
+      // open here and the error can always be surfaced.
+      _controller.addError(error, stackTrace);
     } finally {
       // All done! Make sure nothing else gets added
       await _closeController();
@@ -203,8 +228,13 @@ abstract class BasePing {
   }
 
   Future<bool> stop() async {
+    _stopRequested = true;
     final killed = _process?.kill(ProcessSignal.sigint) ?? false;
-    if (_process != null && !_controller.isClosed) {
+    // Await closure whenever a consumer has started listening — even if the
+    // process is still launching, since _onListen will kill it once it exists —
+    // so stop() never returns before the stream terminates. When nothing was
+    // ever started, the controller will never close, so do not await.
+    if (_started && !_controller.isClosed) {
       await _controller.done;
     }
 
