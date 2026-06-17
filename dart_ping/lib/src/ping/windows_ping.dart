@@ -14,6 +14,7 @@ class PingWindows extends BasePing implements Ping {
     PingParser? parser,
     Encoding encoding = const Utf8Codec(allowMalformed: true),
     bool forceCodepage = false,
+    String? interface,
   }) : super(
           host,
           count,
@@ -24,6 +25,7 @@ class PingWindows extends BasePing implements Ping {
           parser ?? defaultParser,
           encoding,
           forceCodepage,
+          interface,
         );
 
   static PingParser get defaultParser => PingParser(
@@ -59,6 +61,13 @@ class PingWindows extends BasePing implements Ping {
       params.add('-n');
       params.add(count.toString());
     }
+    // Windows `ping` binds ONLY by source address (split args: `-S <address>`).
+    if (interfaceIsAddress) {
+      params.add('-S');
+      params.add(interface!);
+    }
+    // Bare interface-name rejection is handled in a later batch
+    // (§spec:interface-platform-rejection).
 
     return params;
   }

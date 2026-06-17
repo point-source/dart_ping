@@ -41,6 +41,16 @@ abstract class Ping {
     /// Under the hood, this appends the ping command with the `chcp` command
     /// like so: `chcp 437 && ping {opts}`
     bool forceCodepage = false,
+
+    /// Network interface to originate pings from.
+    ///
+    /// This single value accepts EITHER an interface *name* (e.g. `eth0` /
+    /// `en0`) OR a local source *IP address* (e.g. `192.168.1.5`). It is named
+    /// for the user's mental model — "the path to ping from" — even though it
+    /// also accepts a source address; each platform maps it onto the binding
+    /// flag(s) its `ping` supports (Linux/Android: both; macOS: both; Windows:
+    /// address only). Omitting it leaves the produced command unchanged.
+    String? interface,
   }) {
     switch (Platform.operatingSystem) {
       case 'android':
@@ -55,6 +65,7 @@ abstract class Ping {
           ipv6,
           parser: parser,
           encoding: encoding,
+          interface: interface,
         );
       case 'macos':
         return PingMac(
@@ -66,6 +77,7 @@ abstract class Ping {
           ipv6,
           parser: parser,
           encoding: encoding,
+          interface: interface,
         );
       case 'windows':
         return PingWindows(
@@ -78,6 +90,7 @@ abstract class Ping {
           parser: parser,
           encoding: encoding,
           forceCodepage: forceCodepage,
+          interface: interface,
         );
       case 'ios':
         Function? ios = iosFactory;

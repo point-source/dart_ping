@@ -13,6 +13,7 @@ class PingLinux extends BasePing implements Ping {
     bool ipv6, {
     PingParser? parser,
     Encoding encoding = const Utf8Codec(),
+    String? interface,
   }) : super(
           host,
           count,
@@ -23,6 +24,7 @@ class PingLinux extends BasePing implements Ping {
           parser ?? defaultParser,
           encoding,
           false,
+          interface,
         );
 
   static PingParser get defaultParser => PingParser(
@@ -51,6 +53,9 @@ class PingLinux extends BasePing implements Ping {
   List<String> get params {
     var params = ['-O', '-n', '-W $timeout', '-i $interval', '-t $ttl'];
     if (count != null) params.add('-c $count');
+    // Linux/Android `ping -I` binds either an interface name or a source
+    // address, so the single value passes through unconditionally.
+    if (interface != null) params.add('-I $interface');
 
     return params;
   }

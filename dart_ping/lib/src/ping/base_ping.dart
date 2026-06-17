@@ -19,6 +19,7 @@ abstract class BasePing {
     this.parser,
     this.encoding,
     this.forceCodepage,
+    this.interface,
   ) {
     _controller = StreamController<PingData>(
       onListen: _onListen,
@@ -58,6 +59,21 @@ abstract class BasePing {
   /// Under the hood, this appends the ping command with the `chcp` command
   /// like so: `chcp 437 && ping {opts}`
   bool forceCodepage;
+
+  /// Network interface to originate pings from.
+  ///
+  /// This single value has a DUAL meaning: it is either an interface *name*
+  /// (e.g. `eth0` / `en0`) OR a local source *IP address* (e.g. `192.168.1.5`).
+  /// Which form was supplied is classified by [interfaceIsAddress], and each
+  /// platform maps it onto the binding flag(s) its `ping` supports. When `null`,
+  /// no interface binding is applied.
+  String? interface;
+
+  /// Whether [interface] holds a source IP address (rather than an interface
+  /// name), determined by parsing it as an IP literal via
+  /// [InternetAddress.tryParse].
+  bool get interfaceIsAddress =>
+      interface != null && InternetAddress.tryParse(interface!) != null;
 
   late final StreamController<PingData> _controller;
   Process? _process;
