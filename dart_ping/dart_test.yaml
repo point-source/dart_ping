@@ -6,3 +6,6 @@
 # as a local/manual acceptance path.
 tags:
   live:
+    # Give live tests room for slow DNS / round trips without flaking on the
+    # default per-test timeout.
+    timeout: 2x

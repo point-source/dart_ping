@@ -15,3 +15,6 @@ build/
 
 # Directory created by dartdoc
 doc/api/
+
+# Coverage output
+coverage/

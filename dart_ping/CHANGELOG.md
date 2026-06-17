@@ -5,6 +5,11 @@
 - Route parser/transform errors through the stream's error channel instead of letting them escape as uncaught async errors, completing the "always surface, always close" guarantee.
 - `stop()` now terminates the run reliably even when called during process launch, and consumer pause/resume now actually pause/resume the underlying ping output.
 - Detect a missing `ping` binary by the OS error code (not just an English message string), and never leave a launched process running when stream start-up fails.
+- Fix `PingSummary.hashCode` so it is consistent with `==`: equality already
+  compared `errors` element-wise (`ListEquality`), but `hashCode` used the
+  list's identity hash, so two value-equal summaries could produce different
+  hash codes and misbehave as `Set`/`Map` keys. `hashCode` now hashes
+  `errors` element-wise.
 
 ## 9.1.0
 

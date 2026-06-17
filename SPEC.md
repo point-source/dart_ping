@@ -1,14 +1,18 @@
 # Specification
 
-This document covers three areas, matching REQUIREMENTS.md:
+This document covers four areas, matching REQUIREMENTS.md:
 
 1. **iOS SPM migration (#73)** — `§spec:swift-icmp-engine` …
    `§spec:ios-tests` below (implemented).
 2. **Maintenance & modernization refresh** — the `§spec:dependency-currency`
    … `§spec:code-audit` sections (complete).
 3. **`base_ping` stream lifecycle robustness (#76)** —
-   `§spec:stream-lifecycle-robustness` at the end (not started). A focused
+   `§spec:stream-lifecycle-robustness` (implemented). A focused
    follow-up to two hang paths deferred from `§spec:code-audit`.
+4. **Continuous integration & coverage expansion (#74, #77)** — the
+   `§spec:ci` … `§spec:coverage-expansion` sections at the very end
+   (implemented). This is new work *beyond* the refresh's "fill gaps only"
+   scope, which had deliberately excluded CI (§spec:test-coverage).
 
 Solution-space design for issue #73 — native, Swift Package Manager
 (SPM)-compatible iOS support for `dart_ping`.
@@ -412,7 +416,9 @@ skipped cases, and previously thin areas gain coverage.
   lifecycle in `base_ping` (§req:refresh-success-criteria).
 - No continuous-integration workflow or coverage-threshold gate is
   introduced in this pass; the goal is closing obvious gaps, not
-  infrastructure (§req:refresh-constraints).
+  infrastructure (§req:refresh-constraints). *(CI and further coverage
+  were later taken up as separate work — see §spec:ci and
+  §spec:coverage-expansion.)*
 
 **Why gap-filling without CI:** the constraint is explicit — fill gaps,
 don't build infrastructure (§req:refresh-priorities). The highest-value
@@ -568,3 +574,105 @@ ships as a non-breaking, patch-level release of `dart_ping` with no change
 to `dart_ping_ios` (§req:robustness-constraints). A larger redesign of the
 stream lifecycle was rejected as disproportionate to a focused robustness
 fix (§req:robustness-priorities).
+
+---
+
+# Continuous integration & coverage expansion
+
+Closes issues #74 (no CI exists) and #77 (raise coverage; some gaps need a
+multi-OS host). These were deferred follow-ups tracked as GitHub issues,
+now taken up together: a single cross-OS CI matrix both runs the suites
+automatically (#74) and provides the multi-host environment #77 wanted,
+while the same change lifts the deterministic-seam coverage that does not
+need a special host.
+
+## Cross-OS continuous integration §spec:ci
+*Status: implemented — `.github/workflows/ci.yml`. Linux/Windows/macOS core
+matrix, the iOS Dart suite on Linux, and the iOS Swift suite on macOS run on
+every pull request to `main`. `main` is branch-protected: no direct pushes,
+changes land only through a PR whose required checks are green. The Swift
+job builds the example for the simulator to generate Flutter artifacts, then
+runs `RunnerTests` via `xcodebuild`; its first run on a macOS runner passed,
+the on-CI confirmation the §spec:ios-tests Swift suite had been pending.*
+
+The repository runs its automated suites on every pull request to `main`,
+across the host types each suite needs, and `main` cannot be changed except
+through a passing PR.
+
+- A workflow shall trigger on `pull_request` to `main` and run:
+  - the core `dart_ping` suite on **Linux, Windows and macOS** — so each
+    platform class's OS-specific code path is exercised on its native host
+    (§spec:test-coverage, #77);
+  - the `dart_ping_ios` Dart suite on Linux under `flutter test` (#74);
+  - the `dart_ping_ios` Swift `RunnerTests` suite on a macOS runner via
+    `xcodebuild test` (#74, §spec:ios-tests).
+- The required (merge-gating) checks shall be **deterministic**: live
+  ICMP round-trips to external hosts are not part of CI at all. Tests that
+  spawn the system `ping` against real hosts are tagged `live` and excluded
+  from every CI run (`dart test -x live`); hosted Linux/Windows runners block
+  unprivileged ICMP, so those tests cannot pass there regardless, and live
+  round-trips are non-deterministic everywhere. They run by default locally
+  and remain the manual acceptance path. This mirrors the existing principle
+  that live network behavior is not reproducible in CI (§spec:ios-tests).
+- `main` shall be protected so it cannot be pushed to directly; merges
+  require a pull request with the required checks passing.
+- No coverage-threshold gate shall be introduced. Coverage is reported (a
+  job summary), not enforced (decision carried over from §spec:test-coverage;
+  the ask was reporting, not a gate).
+
+**Why deterministic gate + informational live job rather than gating on
+live pings:** a required check must be reliable or it trains maintainers to
+ignore or bypass it. External `ping` results depend on the runner's network
+and intermediate routers, so gating on them would make `main` un-mergeable
+on a transient network blip. The OS-specific *logic* (`params`, `locale`,
+exit-code interpretation) is pure and is covered deterministically
+(§spec:coverage-expansion), so the gate loses no real signal by excluding
+the live round trip. Running the live suite in CI was tried and removed: it
+failed permanently on hosted Linux/Windows runners (no unprivileged ICMP),
+producing red checks on every PR that signalled nothing — so the live suite
+stays a local/manual path rather than a noisy non-gating job.
+
+## Coverage expansion §spec:coverage-expansion
+*Status: implemented — core line coverage rises from 69.9% to ~100% on the
+four model files and the three platform classes on a single host; the iOS
+channel bridge (`dart_ping_ios.dart`) goes from untested to 100%. Fixing the
+`PingSummary` hashCode/`==` inconsistency surfaced by the new model tests is
+included.*
+
+Previously thin, deterministically-testable areas gain direct coverage,
+independent of the host OS where feasible.
+
+- The model boilerplate (`toJson`/`fromJson`/`copyWith`/`toString`/equality
+  on `PingData`/`PingResponse`/`PingSummary`/`PingError`) shall be covered
+  by direct unit tests, including the `toString` branches, `fromMap`
+  defaults, and the non-list `errors` path (#77, model serialization).
+- The OS-specific getters of `PingLinux`/`PingMac`/`PingWindows` (`params`
+  with and without `count`, the Windows IPv6 `UnimplementedError`, `locale`,
+  `command`, `interpretExitCode`, `throwExit`) shall be covered by tests
+  that **instantiate each platform class directly**, so they run on any host
+  — not only the one matching `Platform.operatingSystem` (#77). The CI
+  matrix additionally runs these on each native host.
+- The iOS channel bridge (`DartPingIOS`) shall be covered by tests that mock
+  the `MethodChannel`/`EventChannel`, asserting the `start`/`stop`
+  invocations, id-based event demultiplexing, summary-terminated stream
+  close, and the cancel-stops-native-run contract (#77, iOS bridge).
+- `PingSummary` shall satisfy the `a == b ⟹ a.hashCode == b.hashCode`
+  contract: because `==` compares `errors` element-wise (`ListEquality`),
+  `hashCode` shall hash `errors` element-wise too (it previously used the
+  list's identity hash, so equal summaries could differ in hashCode).
+
+**Why direct instantiation rather than relying on the CI matrix for the
+platform getters:** routing through the `Ping()` factory only ever builds
+the class for the current OS, so on any single runner two of the three
+platform classes' getters stay unreached. Instantiating each class directly
+makes that coverage host-independent and deterministic; the matrix then
+adds genuine native execution on top, but the coverage no longer *depends*
+on it. The getters are pure functions of the instance's fields, so this is
+sound, not a workaround.
+
+**Why fix the hashCode bug here:** the new equality tests are exactly what
+surfaced it — `PingSummary` used `ListEquality` for `==` but the list's
+identity hash for `hashCode`, so two value-equal summaries (e.g. a
+deserialized one vs. its original) could land in different hash buckets,
+silently breaking `Set`/`Map` membership. The fix is small and clearly
+correct, the kind of latent defect the §spec:code-audit pass targets.
