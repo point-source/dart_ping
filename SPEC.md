@@ -526,8 +526,8 @@ through a passing PR.
 - `main` shall be protected so it cannot be pushed to directly; merges
   require a pull request with the required checks passing.
 - No coverage-threshold gate shall be introduced. Coverage is reported (a
-  build artifact + a job summary), not enforced (decision carried over from
-  §spec:test-coverage; the ask was reporting, not a gate).
+  job summary), not enforced (decision carried over from §spec:test-coverage;
+  the ask was reporting, not a gate).
 
 **Why deterministic gate + informational live job rather than gating on
 live pings:** a required check must be reliable or it trains maintainers to

@@ -134,14 +134,6 @@ jobs:
             echo "- **dart_ping**: $(summarize dart_ping/coverage/lcov.info)"
             echo "- **dart_ping_ios**: $(summarize dart_ping_ios/coverage/lcov.info)"
           } >> "$GITHUB_STEP_SUMMARY"
-      - name: Upload lcov
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-lcov
-          path: |
-            dart_ping/coverage/lcov.info
-            dart_ping_ios/coverage/lcov.info
-          if-no-files-found: warn
 
   # NOTE: the live-network suite (`dart test -t live` — real `ping` to external
   # hosts) is intentionally NOT run in CI. Hosted Linux/Windows runners block
