@@ -64,5 +64,23 @@ void main() {
 
       expect(() => parser.parse('XYZ'), throwsA(isA<Exception>()));
     });
+
+    test('a summary with a non-time third group does not throw', () {
+      // A custom parser may define a third capturing group that is not
+      // `time`; reading the time field must be guarded by group NAME, not by
+      // group count, or it throws "Not a capture group name: time".
+      final parser = PingParser(
+        responseRgx: RegExp(r'response (?<seq>\d+)'),
+        summaryRgx: RegExp(r'tx=(?<tx>\d+) rx=(?<rx>\d+) loss=(?<loss>\d+)'),
+        timeoutRgx: RegExp(r'timeout'),
+        timeToLiveRgx: RegExp(r'ttl'),
+        unknownHostStr: RegExp(r'unknown host'),
+      );
+
+      final res = parser.parse('tx=4 rx=3 loss=1');
+      expect(res?.summary?.transmitted, 4);
+      expect(res?.summary?.received, 3);
+      expect(res?.summary?.time, isNull);
+    });
   });
 }

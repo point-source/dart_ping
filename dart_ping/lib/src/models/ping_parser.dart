@@ -88,7 +88,7 @@ class PingParser {
       var tx = match.namedGroup('tx');
       var rx = match.namedGroup('rx');
       String? time;
-      if (match.groupCount > 2) {
+      if (match.groupNames.contains('time')) {
         time = match.namedGroup('time');
       }
       if (tx == null || rx == null) {
