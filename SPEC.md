@@ -1,6 +1,6 @@
 # Specification
 
-This document covers four areas, matching REQUIREMENTS.md:
+This document covers five areas, matching REQUIREMENTS.md:
 
 1. **iOS SPM migration (#73)** — `§spec:swift-icmp-engine` …
    `§spec:ios-tests` below (implemented).
@@ -10,9 +10,14 @@ This document covers four areas, matching REQUIREMENTS.md:
    `§spec:stream-lifecycle-robustness` (implemented). A focused
    follow-up to two hang paths deferred from `§spec:code-audit`.
 4. **Continuous integration & coverage expansion (#74, #77)** — the
-   `§spec:ci` … `§spec:coverage-expansion` sections at the very end
-   (implemented). This is new work *beyond* the refresh's "fill gaps only"
-   scope, which had deliberately excluded CI (§spec:test-coverage).
+   `§spec:ci` … `§spec:coverage-expansion` sections. This is new work
+   *beyond* the refresh's "fill gaps only" scope, which had deliberately
+   excluded CI (§spec:test-coverage) (implemented).
+5. **IPv6 / address-family error clarity (#69)** — the
+   `§spec:ipv6-address-family-selector` …
+   `§spec:address-family-error-tests` sections at the very end (not
+   started). A correctness-of-errors fix so address-family and routing
+   failures stop masquerading as "Unknown Host" on IPv6-enabled networks.
 
 Solution-space design for issue #73 — native, Swift Package Manager
 (SPM)-compatible iOS support for `dart_ping`.
@@ -676,3 +681,221 @@ identity hash for `hashCode`, so two value-equal summaries (e.g. a
 deserialized one vs. its original) could land in different hash buckets,
 silently breaking `Set`/`Map` membership. The fix is small and clearly
 correct, the kind of latent defect the §spec:code-audit pass targets.
+
+---
+
+# IPv6 / address-family error clarity
+
+Solution-space design for issue #69 (`§req:ipfamily-*`), a
+correctness-of-errors fix in `dart_ping`'s address-family handling. On
+IPv6-enabled networks — most visibly mobile data — pinging a literal IP
+can fail with a misleading "Unknown Host" error even though no name was
+being resolved, while the same target by hostname succeeds. The work is
+confined to error correctness; it changes no transport mechanism and adds
+no IPv6 capability where a platform lacks it.
+
+The problem (from §req:ipfamily-problem-statement): native ping selects
+its address family **exclusively** — the IPv4 tool refuses an IPv6 target
+and vice-versa — and `dart_ping` already inherits that by running `ping6`
+when `ipv6:true` and `ping` otherwise (and `-4`/`-6` on Windows). But the
+library never named `ipv6` as an exclusive selector, never validated that
+a literal target's family matches the flag, and never normalized the
+resulting native failure. So a family/flag mismatch, a missing route for
+the selected family, or an adapter without that family enabled all surface
+as whatever generic message the platform emits — frequently "unknown
+host," which sends developers chasing a name-resolution problem that does
+not exist. The "hostname works but the bare IP fails" signature on
+IPv6-only mobile networks (DNS64 synthesizes a routable IPv6 address for a
+name; a bare IPv4 literal has no such path) is the tell.
+
+This area resolves the platform-scope open decision deferred from
+discovery (§req:ipfamily-open-decisions). Three decisions structure the
+fix: (1) the family/flag-mismatch check on **literals** is
+platform-agnostic and lands once in the shared Dart factory, so the error
+is identical on every platform by construction; (2) hostnames are never
+touched — the library still does no DNS of its own; (3) honest mapping of
+routing/family failures lands per-engine (the core `dart_ping` subprocess
+parsers and the `dart_ping_ios` Swift engine), where the native error
+originates. The public Dart API shape is preserved; any new `ErrorType`
+value is additive (§req:ipfamily-constraints).
+
+## IPv6 as an exclusive address-family selector §spec:ipv6-address-family-selector
+*Status: not started*
+
+The `ipv6` flag is an **exclusive** address-family selector on every
+platform: `ipv6:true` means IPv6-only and `ipv6:false` means IPv4-only,
+matching the native `ping`/`ping6` (`-4`/`-6`) semantics the library
+already relies on. This contract is documented on the public `ipv6`
+parameter.
+
+- The system shall treat `ipv6:true` as IPv6-only and `ipv6:false` as
+  IPv4-only, consistently across iOS, Android, macOS, Linux, and Windows,
+  with no dual-stack or "prefer one family" behavior
+  (§req:ipfamily-success-criteria, §req:ipfamily-constraints).
+- The public dartdoc for `ipv6` shall describe it as an exclusive
+  address-family selector (not merely an "IPv6 mode"), so a reader
+  understands that `ipv6:false` excludes IPv6 rather than preferring IPv4
+  (§req:ipfamily-success-criteria, §req:ipfamily-priorities — documentation).
+- Where a platform cannot serve the requested family at all, the system
+  shall surface an honest, explicit error rather than silently serving the
+  other family. Windows IPv6 remains unsupported and continues to fail
+  with an explicit "unsupported" error, not a misleading one
+  (§req:ipfamily-constraints — no new capability;
+  §spec:address-family-error-honesty).
+
+**Why name an existing mechanism as a contract:** the library already
+selects family exclusively (`base_ping` runs `ping6` vs `ping`; Windows
+passes `-4`/`-6`), but this was never stated or documented, so callers
+reasonably read `ipv6:false` as "prefer IPv4 / dual-stack." Naming the
+exclusivity is the framing that makes mismatch validation
+(§spec:address-family-mismatch-validation) coherent and makes the
+"hostname works, IP fails" surprise explicable.
+
+**Why not a dual-stack / auto-select model (rejected alternative):**
+letting the OS pick the family would require the library to resolve the
+host itself and choose — exactly the DNS work the library deliberately
+does not do (§req:ipfamily-constraints — thinness). Native `ping`/`ping6`
+are single-family tools; an auto-select layer on top would be a
+translation layer the spec explicitly avoids. The exclusive selector keeps
+the library thin and faithful to native behavior.
+
+## Address-family mismatch fails fast §spec:address-family-mismatch-validation
+*Status: not started*
+
+When the target is a **literal IP address** whose family contradicts the
+`ipv6` flag, the call fails immediately with a single, consistent,
+catchable error — before any ping stream starts — that names an
+address-family mismatch. Hostnames are never rejected this way.
+
+- When `ipv6:false` is given with an IPv6 literal, **or** `ipv6:true` with
+  an IPv4 literal, the system shall throw an `ArgumentError` before the
+  ping stream starts, identical in shape across all platforms, whose
+  message names an address-family mismatch (not "Unknown Host", not a
+  hang) (§req:ipfamily-success-criteria, §req:ipfamily-user-stories).
+- The mismatch check shall apply only to targets that parse as literal IP
+  addresses, whose family is determinable without resolution; a target
+  that is not an IP literal (a hostname) shall be passed through unchanged,
+  with no DNS performed by the library
+  (§req:ipfamily-constraints, §req:ipfamily-quality-attributes — thinness).
+- A literal whose family **matches** the flag (e.g. `ipv6:false` with an
+  IPv4 literal) and any hostname shall start the ping exactly as they do
+  today (§req:ipfamily-success-criteria — regression guards).
+- This validation shall be exercised by automated tests that require no
+  live network — a literal target plus a flag is pure input
+  (§req:ipfamily-success-criteria, §req:ipfamily-priorities — tests;
+  §spec:address-family-error-tests).
+
+**Why a synchronous `ArgumentError` rather than a stream error event:** a
+flag that contradicts a literal target is a programming error in the
+*call*, knowable before any process launches and detectable without a
+network. Surfacing it as a thrown `ArgumentError` lets the caller catch it
+at the call site and keeps it distinct from runtime network failures,
+which belong on the stream's error channel
+(§spec:address-family-error-honesty). The library throws no `ArgumentError`
+today, so this is additive.
+
+**Why in the shared Dart factory, not per-engine:** placing the check once
+at the `Ping(...)` boundary makes the error identical on every platform by
+construction — the must-have cross-platform-consistency criterion
+(§req:ipfamily-quality-attributes — consistency) — and pre-empts the
+divergent native mislabeling a mismatched literal would otherwise produce
+(macOS's IPv4 `ping` echoes a mismatched IPv6 literal as "Unknown host";
+Linux reports an address-family error). Per-engine checks were rejected:
+they would duplicate logic and re-introduce the cross-platform divergence
+this fix exists to remove.
+
+**Why literals only, both directions:** a literal's family is decidable by
+parsing alone (no resolution), so validating it honors the no-DNS
+thinness constraint; a hostname's family is not knowable without the
+resolution the library refuses to do, so hostnames are left to the
+platform. The requirement is symmetric — both `ipv6:false`+IPv6-literal
+and `ipv6:true`+IPv4-literal are caller errors — so both are rejected.
+"Auto-correcting" the flag to match the literal was rejected: it would
+hide a caller bug and could silently ping a different family than intended.
+
+## Errors name the real failure §spec:address-family-error-honesty
+*Status: not started*
+
+`unknownHost` is reserved for genuine name-resolution failures. Routing
+and address-family failures surface as their own honest, typed errors so a
+consumer can tell "that host does not exist" apart from "this network has
+no route for the family you asked for."
+
+- The system shall emit `ErrorType.unknownHost` / "Unknown Host" only for a
+  genuine name-resolution failure of a real hostname — never for an IP
+  literal, and never for a routing or address-family failure
+  (§req:ipfamily-success-criteria — "Unknown host means what it says").
+- When the network or adapter cannot route the selected family (IPv6
+  disabled, no route, network unreachable), the consumer shall receive the
+  platform's real failure, and recognizable cases shall be reported as a
+  typed `PingError` distinct from `unknownHost` and the catch-all
+  `unknown`, so cross-platform code can branch on them
+  (§req:ipfamily-success-criteria — "real failures surface faithfully",
+  §req:ipfamily-priorities — high).
+- Any new typed error introduced for these cases shall be **additive** to
+  `ErrorType` / `PingError`; existing values keep their current meaning and
+  the public model shapes are unchanged
+  (§req:ipfamily-constraints, §req:ipfamily-quality-attributes —
+  compatibility).
+- On iOS, the native engine shall stop collapsing every host-resolution
+  failure into `unknownHost`: a genuine name-resolution failure maps to
+  `unknownHost`, while an address-family / no-route condition maps to its
+  honest typed error. The engine shall resolve and send for the family the
+  `ipv6` flag selects, or — where it cannot serve that family — surface an
+  honest error rather than silently resolving the other family
+  (§req:ipfamily-success-criteria, §req:ipfamily-problem-statement).
+- A hostname ping that works today — including one that resolves to a
+  DNS64-synthesized address on an IPv6-only network — shall continue to
+  work unchanged (§req:ipfamily-success-criteria — regression guard).
+
+**Why this is the core of #69:** the reported signature is "hostname
+works, bare IP fails with Unknown Host." That happens because the failure
+is an address-family / routing problem mislabeled as name resolution. The
+core subprocess parsers already have the seam to keep `unknownHost` honest
+(a dedicated `unknownHostStr` pattern, separate `errorStrs`, and
+exit-code interpretation); the gap is that routing failures land in the
+catch-all `unknown` instead of a branchable typed error, and that iOS
+maps *all* `getaddrinfo` failures — including address-family and no-route
+errors — to `unknownHost`. Distinguishing the resolution error code on iOS
+and giving routing/family failures a typed category restores error honesty
+(§req:ipfamily-quality-attributes — error honesty).
+
+**Scope boundary — honesty, not new capability:** this section guarantees
+the error tells the truth; it does **not** promise IPv6 reachability where
+a platform or network cannot provide it (§req:ipfamily-constraints). On an
+IPv6-only mobile network, an IPv4 literal ping legitimately has no route —
+the deliverable is that the consumer learns "no route for this family,"
+not a phantom "unknown host." Windows IPv6 stays an explicit unsupported
+error (§spec:ipv6-address-family-selector).
+
+**Why keep the library thin here too:** the library normalizes only at the
+Dart boundary — reserving `unknownHost`, mapping recognizable native
+errors to typed values — and otherwise passes the platform's real failure
+through. It adds no DNS, no retries, and no family fallback
+(§req:ipfamily-quality-attributes — thinness / native fidelity).
+
+## Address-family error tests §spec:address-family-error-tests
+*Status: not started*
+
+The mismatch validation and the error mapping are covered by automated
+tests that do not require a live IPv6-only network.
+
+- Literal-vs-flag validation shall be covered by deterministic tests over
+  pure input: an IPv6 literal with `ipv6:false` and an IPv4 literal with
+  `ipv6:true` each throw `ArgumentError`; a matching literal and a hostname
+  each do not (§req:ipfamily-success-criteria,
+  §req:ipfamily-priorities — high; §spec:address-family-mismatch-validation).
+- The error mapping shall be covered by feeding representative native
+  outputs (address-family / no-route messages, and a genuine
+  unknown-host message) through the parser/mapper and asserting the
+  resulting `ErrorType`, with no live process required
+  (§req:ipfamily-success-criteria — automated tests;
+  §spec:address-family-error-honesty).
+
+**Why deterministic seams only:** the live failure modes (#69's actual
+IPv6-only-mobile-data conditions) cannot be reproduced in CI — hosted
+runners block unprivileged ICMP and have no IPv6-only network
+(§spec:ci). The testable surface is the pure logic: literal/flag
+validation (string + bool in → throw-or-not) and native-string → typed
+error mapping. This mirrors the existing principle that live network
+behavior is a manual acceptance path, not a CI gate (§spec:ios-tests).
