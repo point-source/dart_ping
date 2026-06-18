@@ -58,8 +58,7 @@ abstract class Ping {
         'host',
         'Address family mismatch: the target is an '
             '${literalFamily == IpVersion.ipv6 ? 'IPv6' : 'IPv4'} literal but '
-            'ipVersion is '
-            '${ipVersion == IpVersion.ipv6 ? 'IpVersion.ipv6' : 'IpVersion.ipv4'}. '
+            'ipVersion is $ipVersion. '
             'A literal IP address must match the selected IP version',
       );
     }
