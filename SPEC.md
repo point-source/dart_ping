@@ -1,6 +1,6 @@
 # Specification
 
-This document covers five areas, matching REQUIREMENTS.md:
+This document covers six areas, matching REQUIREMENTS.md:
 
 1. **iOS SPM migration (#73)** — `§spec:swift-icmp-engine` …
    `§spec:ios-tests` below (implemented).
@@ -18,6 +18,9 @@ This document covers five areas, matching REQUIREMENTS.md:
    to pin pings to a chosen network interface or source address on the
    subprocess platforms, with a helper to enumerate the host's interfaces.
    Additive on top of the existing `Ping` API.
+6. **Concurrent-ping isolation (#70)** — `§spec:concurrent-isolation`
+   at the very end (implemented). A reported cross-contamination defect
+   between simultaneously-running `Ping` instances.
 
 Solution-space design for issue #73 — native, Swift Package Manager
 (SPM)-compatible iOS support for `dart_ping`.
@@ -880,3 +883,113 @@ that what it returns can be fed back into `interface`.
 name can use the feature without the listing helper. It is therefore
 prioritized below the selection and its rejections (§req:interface-priorities)
 and can ship in the same or a later slice without blocking them.
+
+---
+
+# Concurrent-ping isolation
+
+Solution-space design for issue #70 (`§req:concurrent-*`): a reported
+correctness defect where two or more `Ping` instances running at the same
+time report the same round-trip results instead of each host's own. First
+observed on Android. The work is confined to the existing packages and
+changes no public surface; it is independent of the #73 iOS work and the
+rest of the refresh.
+
+The problem (from §req:concurrent-problem-statement): a developer pinging
+several hosts at once — one `Ping` per host, awaited together — reports
+that the concurrent results are cross-contaminated. Each response carries
+the correct destination IP, but the round-trip time is identical across
+hosts; pinging the same hosts one at a time returns the correct, distinct
+times. The failure is silent and plausible — no error, valid shape, right
+IPs — so callers that pick the "fastest" host or chart latency act on
+fabricated numbers (§req:concurrent-user-stories).
+
+## Concurrent ping isolation §spec:concurrent-isolation
+*Status: complete (both halves) — confirm-then-decide gate ran on each engine and required no production change. Core/subprocess: the offline guard `dart_ping/test/concurrent_isolation_test.dart` overlaps concurrent `Ping` runs with canned interleaved per-host output and asserts no field bleeds; it passes against the current source, confirming the design-level isolation invariant (no shared mutable state in `BasePing`). iOS bridge: `dart_ping_ios/test/concurrent_isolation_test.dart` overlaps two `DartPingIOS` runs over the single shared broadcast `EventChannel`, recovers each run's id from its `start` call, pushes INTERLEAVED distinctly-id'd events (responses, an error, and a summary per run), and asserts each run's stream receives only its own id's events (own seq/ttl/time/ip; own summary transmitted/received/time + errors) and never a sibling's, and that each stream still closes on its own summary — confirming the id-demux is isolation-correct (each `_onListen` filters the shared stream by its own unique per-run `_id`). Both tests stand as permanent offline regression guards.*
+
+Concurrent `Ping` instances are fully independent: when several runs to
+distinct hosts overlap in time, every event a stream emits — response,
+error, and summary — carries only its own host's data, identical to what
+that host returns when pinged alone. No field is ever copied from a
+sibling run. A network-free automated test holds this invariant so the
+class of bug cannot quietly return.
+
+- When N `Ping` instances to distinct hosts run at the same time, each
+  stream's responses shall carry that host's own `seq`, `ttl`, `time`,
+  and `ip`, matching what the same host returns when pinged sequentially;
+  no field shall be copied from a concurrently-running sibling
+  (§req:concurrent-success-criteria, §req:concurrent-quality-attributes —
+  correctness).
+- Each concurrent run's `PingSummary` (`transmitted`/`received`/`time`)
+  and its `PingSummary.errors` list shall reflect only that run; an error
+  or count from one ping shall not appear in another's summary
+  (§req:concurrent-success-criteria).
+- Sequential pinging — one host at a time — shall return the same correct,
+  distinct results as before; this fix changes nothing for sequential
+  callers (§req:concurrent-success-criteria — regression guard,
+  §req:concurrent-user-stories).
+- The isolation guarantee shall hold wherever `dart_ping` runs — Android,
+  Linux, macOS, and Windows (the shared subprocess engine) and iOS
+  (§req:concurrent-success-criteria, §req:concurrent-quality-attributes —
+  cross-platform consistency).
+- An automated test runnable under `dart test` shall overlap multiple ping
+  streams without a live network and **fail if results cross-contaminate**,
+  so a regression is caught offline rather than only on a device
+  (§req:concurrent-success-criteria,
+  §req:concurrent-quality-attributes — testability).
+- The public Dart API is unchanged: the `Ping` interface and the
+  `PingData` / `PingResponse` / `PingSummary` / `PingError` shapes keep
+  their current form, and existing concurrent and sequential call sites
+  keep working without edits (§req:concurrent-constraints,
+  §spec:public-api-stability).
+
+**Why isolation holds by construction (the technical finding):** each
+`Ping` instance owns only instance-local state. In the core subprocess
+path (`§spec:public-api-stability` → `BasePing`) every run has its own OS
+process — hence its own `stdout`/`stderr` pipes — its own
+`StreamController`, its own parser instance (`defaultParser` is a per-call
+factory, not a shared singleton), and its own `_errors`/`_summaryData`
+accumulators. There is no `static` or otherwise shared mutable state in
+that path, in either the current code or the pre-#76 code the report
+predates. On iOS the bridge shares a single broadcast `EventChannel`
+across instances but demultiplexes by a unique per-run id, delivering each
+controller only the events whose `id` matches its own run
+(§spec:ios-ping-behavior). Because no library state is shared between
+runs, results cannot bleed through it — the invariant above is a property
+of the design, and this section's job is to make it explicit and guarded.
+
+**Why confirm-then-decide rather than "fix the bug" directly
+(§req:concurrent-priorities — first gate):** the root cause is not
+established and the report predates the #76 stream-lifecycle and
+stream-assembly rework, so it is not yet known whether the defect still
+reproduces. Since no shared mutable state is evident, the most plausible
+outcome is that the current release is already isolated. The first step is
+therefore an offline regression test that overlaps streams and asserts
+isolation: it either reproduces a real residual defect — in which case the
+source is fixed before the test is allowed to pass — or it confirms the
+invariant and stands as the permanent guard. The durable deliverable is
+the test and the documented invariant; new production code is contingent
+on the test actually reproducing a defect, not assumed up front.
+
+**Why a network-free test rather than a live multi-host integration test:**
+live ICMP round-trips are non-deterministic — they depend on the network
+and intermediate routers — and unprivileged ICMP is blocked on hosted CI
+runners, so a live test could not gate `main` reliably (§spec:ci,
+§spec:ios-tests). The deterministic seam is each instance's
+output-assembly-and-parse path: driving two or more runs with canned,
+distinct per-host output and interleaving them exercises exactly the
+per-instance accumulation (`_errors`, `_summaryData`, the response stream)
+where cross-contamination would surface, and fails offline if any run's
+data appears in another's stream.
+
+**Scope and tradeoffs:** this is a correctness fix, not a feature — the
+public API stays frozen and no built-in multi-host helper is introduced
+(§req:concurrent-constraints). Two alternatives were rejected. Closing the
+issue as "already fixed" without a test was rejected: it leaves a
+high-impact, silent class of bug unguarded against future refactors that
+might introduce shared state. Gating on a live multi-host ping was
+rejected as non-deterministic and CI-hostile, for the reasons above. The
+isolation guarantee is the normative contract; the specific mechanism by
+which each run stays independent (separate processes today, the iOS id
+demux) is implementation detail that may change without invalidating this
+section.
