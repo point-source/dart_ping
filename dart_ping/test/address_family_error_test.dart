@@ -35,6 +35,27 @@ void main() {
       );
       expect(res!.error!.error, ErrorType.noRoute);
     });
+
+    test('Windows destination net unreachable', () {
+      final res = PingWindows.defaultParser.parse(
+        'Reply from 10.0.0.1: Destination net unreachable.',
+      );
+      expect(res!.error!.error, ErrorType.noRoute);
+    });
+
+    test('macOS address family not supported', () {
+      final res = PingMac.defaultParser.parse(
+        'ping: cannot resolve foo: Address family for hostname not supported',
+      );
+      expect(res!.error!.error, ErrorType.noRoute);
+    });
+  });
+
+  group('Host-liveness failures are not mislabelled noRoute: ', () {
+    test('macOS host is down stays unknown', () {
+      final res = PingMac.defaultParser.parse('ping: sendto: Host is down');
+      expect(res!.error!.error, ErrorType.unknown);
+    });
   });
 
   group('Genuine name-resolution failures stay ErrorType.unknownHost: ', () {

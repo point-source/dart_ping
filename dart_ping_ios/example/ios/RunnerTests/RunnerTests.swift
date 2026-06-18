@@ -411,6 +411,12 @@ class RunnerTests: XCTestCase {
     XCTAssertEqual(PingEngine.errorKind(forGetaddrinfoStatus: EAI_ADDRFAMILY), .noRoute)
   }
 
+  /// EAI_NODATA — the name resolves but has no record of the selected family —
+  /// is an address-family failure (.noRoute), not a name miss (#69).
+  func testGetaddrinfoNoDataMapsToNoRoute() {
+    XCTAssertEqual(PingEngine.errorKind(forGetaddrinfoStatus: EAI_NODATA), .noRoute)
+  }
+
   // MARK: errorKind(forSendErrno:)
 
   /// ENETUNREACH on send (no route for this family) maps to .noRoute, the honest

@@ -181,14 +181,18 @@ public class DartPingIosPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
 
         switch event {
         case let .response(seq, ttl, timeMs, ip):
-            map = [
+            var responseMap: [String: Any] = [
                 "id": id,
                 "type": "response",
                 "seq": seq,
-                "ttl": ttl,
                 "time": timeMs,
                 "ip": ip,
             ]
+            // Include `ttl` only when the reply's hop limit is known. A v6 reply
+            // with no IPV6_HOPLIMIT cmsg leaves it nil; omitting the key lets the
+            // Dart mapper produce a null ttl rather than a misleading 0.
+            if let ttl = ttl { responseMap["ttl"] = ttl }
+            map = responseMap
         case let .error(kind, seq, ip):
             var errorMap: [String: Any] = [
                 "id": id,

@@ -37,8 +37,16 @@ class PingMac extends BasePing implements Ping {
         unknownHostStr: RegExp(r'Unknown host'),
         noRouteStrs: [
           RegExp(r'[Nn]o route to host'),
-          RegExp(r'[Hh]ost is down'),
           RegExp(r'[Nn]etwork is unreachable'),
+          // Family-unavailable failures, matching the Linux parser's coverage
+          // so cross-platform code can branch on noRoute consistently (#69).
+          RegExp(r'[Aa]ddress family .*not supported'),
+        ],
+        // "Host is down" (EHOSTDOWN) is a host-liveness condition, not a
+        // routing/address-family failure, so it is NOT a noRoute; it falls
+        // through to the catch-all unknown rather than being mislabelled.
+        errorStrs: [
+          RegExp(r'[Hh]ost is down'),
         ],
       );
 
@@ -47,6 +55,19 @@ class PingMac extends BasePing implements Ping {
 
   @override
   List<String> get params {
+    // macOS IPv6 is not supported on the subprocess path: the IPv4-only
+    // `/sbin/ping` rejects an IPv6 target, while the legacy `ping6` binary
+    // takes different flags (no `-W`/`-m`) and emits a different output format
+    // (`hlim=` rather than `ttl=`) that this parser does not handle. Surface an
+    // explicit, honest error rather than a misleading generic process failure
+    // (§spec:address-family-error-honesty). iOS IPv6 is served by the native
+    // Swift engine in dart_ping_ios.
+    if (ipVersion == IpVersion.ipv6) {
+      throw UnimplementedError(
+        'IPv6 is not supported on macOS via dart_ping; use a hostname over '
+        'IPv4, or dart_ping_ios for native iOS IPv6',
+      );
+    }
     var params = ['-n', '-W ${timeout * 1000}', '-i $interval', '-m $ttl'];
     if (count != null) params.add('-c $count');
 

@@ -4,6 +4,16 @@
   `DartPingIOS` now takes an `IpVersion` in place of the `ipv6` boolean, and the
   selected address family is sent to the native engine as `ipVersion` (the enum
   name) over the method channel. Requires `dart_ping` ^10.0.0.
+- The literal/address-family mismatch guard now also fires on direct
+  `DartPingIOS` construction (an IPv4 literal with `IpVersion.ipv6`, or the
+  reverse, throws `ArgumentError`), matching the `Ping(...)` factory.
+- Error honesty: the native engine now maps `EAI_NODATA` (a name that resolves
+  but has no address of the selected family) to `noRoute` rather than
+  `unknownHost`, so the "hostname has no record of this family" case is no
+  longer mislabelled. `EAI_NONAME` stays `unknownHost` (Darwin cannot
+  distinguish it from a true name miss).
+- An IPv6 reply whose hop limit cannot be recovered (no `IPV6_HOPLIMIT`
+  control message) now reports a null `ttl` instead of a misleading `0`.
 
 ## 5.1.0
 

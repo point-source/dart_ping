@@ -55,10 +55,11 @@ void main() {
       expect(res?.error?.error, ErrorType.noRoute);
     });
 
-    test('Host is down', () async {
+    test('Host is down maps to unknown (host liveness, not a routing failure)',
+        () async {
       final res = parser.parse('ping: sendto: Host is down');
       expect(res, isA<PingData>());
-      expect(res?.error?.error, ErrorType.noRoute);
+      expect(res?.error?.error, ErrorType.unknown);
     });
 
     test('Network is unreachable (macOS)', () async {

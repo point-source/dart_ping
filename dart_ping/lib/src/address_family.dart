@@ -19,3 +19,25 @@ IpVersion? ipLiteralFamily(String host) {
       return null; // unix socket / other — not an IP literal family
   }
 }
+
+/// Throws an [ArgumentError] when [host] is a literal IP address whose family
+/// contradicts the selected [ipVersion] (both directions). A hostname or a
+/// matching literal returns normally — no DNS is performed
+/// (§spec:address-family-mismatch-validation).
+///
+/// Centralised here so every entry point — the [Ping] factory, the core
+/// platform classes (via `BasePing`), and the iOS `DartPingIOS` bridge — fails
+/// fast with the identical error, instead of the guard living only in the
+/// factory and being bypassed by direct construction.
+void validateAddressFamily(String host, IpVersion ipVersion) {
+  final literalFamily = ipLiteralFamily(host);
+  if (literalFamily != null && literalFamily != ipVersion) {
+    throw ArgumentError.value(
+      host,
+      'host',
+      'Address family mismatch: the target is an ${literalFamily.label} '
+          'literal but ipVersion is $ipVersion. '
+          'A literal IP address must match the selected IP version',
+    );
+  }
+}

@@ -37,6 +37,10 @@ class PingWindows extends BasePing implements Ping {
         unknownHostStr: RegExp(r'could not find host'),
         noRouteStrs: [
           RegExp(r'Destination host unreachable'),
+          // Windows reports an unrouteable network as "Destination net
+          // unreachable"; map it to noRoute too so the family/route-failure
+          // signal is branchable on Windows, not just Linux/macOS (#69).
+          RegExp(r'Destination net unreachable'),
         ],
         errorStrs: [
           RegExp(r'General failure'),

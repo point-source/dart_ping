@@ -30,7 +30,19 @@ enum IpVersion {
   /// native `ping6`/`ping -6` semantics), and the operation fails rather
   /// than falling back to IPv4.
   ///
-  /// Note: IPv6 is not supported on Windows, which surfaces an explicit
-  /// error rather than silently falling back.
+  /// Note: IPv6 is not supported on Windows or on the macOS subprocess path,
+  /// both of which surface an explicit error rather than silently falling back.
+  /// (iOS IPv6 is served by the native Swift engine in `dart_ping_ios`.)
   ipv6,
+}
+
+/// Convenience accessors so the family→string/flag mapping lives in one place
+/// rather than being re-derived with ad-hoc ternaries at each call site.
+extension IpVersionInfo on IpVersion {
+  /// Human-readable label, e.g. for error messages: `'IPv4'` / `'IPv6'`.
+  String get label => this == IpVersion.ipv6 ? 'IPv6' : 'IPv4';
+
+  /// The native `ping`/`ping6` family flag (`-4` / `-6`) for platforms whose
+  /// unified `ping` binary selects the family by flag (Linux/Android, Windows).
+  String get flag => this == IpVersion.ipv6 ? '-6' : '-4';
 }

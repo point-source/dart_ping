@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:async/async.dart';
+import 'package:dart_ping/src/address_family.dart';
 import 'package:dart_ping/src/ip_version.dart';
 import 'package:dart_ping/src/models/ping_data.dart';
 import 'package:dart_ping/src/models/ping_error.dart';
@@ -21,6 +22,10 @@ abstract class BasePing {
     this.encoding,
     this.forceCodepage,
   ) {
+    // Enforce the literal/family guard on EVERY construction path, not only the
+    // `Ping(...)` factory — direct construction of a platform class must fail
+    // fast the same way (§spec:address-family-mismatch-validation).
+    validateAddressFamily(host, ipVersion);
     _controller = StreamController<PingData>(
       onListen: _onListen,
       onCancel: _onCancel,
@@ -84,9 +89,18 @@ abstract class BasePing {
   /// The command that will be run on the host OS
   String get command => 'ping ${params.join(' ')} $host';
 
+  /// The executable used to launch the ping process for the selected
+  /// [ipVersion]. The default uses the legacy `ping6` binary for IPv6, which
+  /// macOS still relies on. Platforms whose unified `ping` selects the family
+  /// by flag instead (Linux/Android pass `-4`/`-6` in [params]) override this
+  /// to always use `ping`, so the family is forced explicitly rather than left
+  /// to the resolver's default (which can pick the other family on a
+  /// dual-stack host).
+  String get executable => ipVersion == IpVersion.ipv6 ? 'ping6' : 'ping';
+
   /// Starts a ping process on the host OS
   Future<Process> get platformProcess async {
-    final ping = ipVersion == IpVersion.ipv6 ? 'ping6' : 'ping';
+    final ping = executable;
 
     return await Process.start(
       forceCodepage ? 'chcp' : ping,
@@ -194,9 +208,13 @@ abstract class BasePing {
               ),
             );
           }
-        } else {
-          // Unmapped non-zero exit: surface the exception rather than
-          // discarding it, so the consumer can catch it.
+        } else if (_errors.isEmpty) {
+          // Unmapped non-zero exit AND no typed error already surfaced during
+          // the run: surface the exception rather than discarding it, so the
+          // consumer can catch it. When a typed error did surface (e.g. a
+          // `noRoute` line that also makes the process exit non-zero), the
+          // consumer already has a catchable signal, so the raw exit Exception
+          // would only be a redundant second signal for the same failure.
           final ex = throwExit(exitCode);
           if (ex != null) {
             _controller.addError(ex);

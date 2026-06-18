@@ -191,6 +191,29 @@ void main() {
       expect(summary.errors, isEmpty);
     });
 
+    test('(b2) a typed error event suppresses the redundant exit exception',
+        () async {
+      // A noRoute line surfaces a typed PingData(error: noRoute) AND makes the
+      // process exit non-zero (2, unmapped). The consumer should get the single
+      // typed error, NOT also a raw "exited with code: 2" exception on the error
+      // channel — one failure, one signal.
+      final ping = TestPing(
+        process: FakeProcess(
+          stderrLines: const ['connect: Network is unreachable'],
+          exit: 2,
+        ),
+      );
+
+      final result = await _drain(ping);
+
+      expect(result.errors, isEmpty,
+          reason: 'no raw exit exception when a typed error already surfaced');
+      final errorData = result.data.where((d) => d.error != null).toList();
+      expect(errorData, hasLength(1));
+      expect(errorData.single.error!.error, ErrorType.noRoute);
+      expect(result.doneCount, 1, reason: 'stream must close exactly once');
+    });
+
     group('(d) close-exactly-once across terminal paths', () {
       test('normal completion closes once', () async {
         final ping = TestPing(

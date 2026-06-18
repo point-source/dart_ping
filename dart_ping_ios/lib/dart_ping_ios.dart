@@ -18,7 +18,13 @@ class DartPingIOS implements Ping {
     this._timeout,
     this._ttl,
     this._ipVersion,
-  ) : _id = _generateId();
+  ) : _id = _generateId() {
+    // Enforce the literal/family guard on direct construction too, not only via
+    // the `Ping(...)` factory, so a mismatched literal fails fast with the same
+    // ArgumentError on iOS as on every other platform
+    // (§spec:address-family-mismatch-validation).
+    validateAddressFamily(_host, _ipVersion);
+  }
 
   /// Installs the iOS factory on [Ping.iosFactory]. Documented entry point
   /// for enabling iOS support (§spec:public-api-stability).

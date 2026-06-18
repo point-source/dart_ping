@@ -49,9 +49,24 @@ class PingLinux extends BasePing implements Ping {
   @override
   Map<String, String> get locale => {'LC_ALL': 'C'};
 
+  // The unified iputils/toybox `ping` selects the family by flag, so use it for
+  // both families (rather than the deprecated `ping6` binary) and pass an
+  // explicit `-4`/`-6`. Relying on the binary name alone left `IpVersion.ipv4`
+  // unforced: plain `ping <host>` on a dual-stack host could resolve to IPv6,
+  // violating the exclusive-family contract.
+  @override
+  String get executable => 'ping';
+
   @override
   List<String> get params {
-    var params = ['-O', '-n', '-W $timeout', '-i $interval', '-t $ttl'];
+    var params = [
+      ipVersion.flag,
+      '-O',
+      '-n',
+      '-W $timeout',
+      '-i $interval',
+      '-t $ttl',
+    ];
     if (count != null) params.add('-c $count');
 
     return params;

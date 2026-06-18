@@ -1,5 +1,4 @@
 import 'package:dart_ping/dart_ping.dart';
-import 'package:dart_ping/src/address_family.dart';
 import 'package:test/test.dart';
 
 void main() {

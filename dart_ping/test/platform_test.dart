@@ -15,11 +15,21 @@ void main() {
   group('PingLinux', () {
     final ping = PingLinux('host', 3, 1, 2, 64, IpVersion.ipv4);
 
-    test('params include the standard flags and the count', () {
+    test('params force IPv4 with -4 and include the standard flags + count', () {
       expect(
         ping.params,
-        ['-O', '-n', '-W 2', '-i 1', '-t 64', '-c 3'],
+        ['-4', '-O', '-n', '-W 2', '-i 1', '-t 64', '-c 3'],
       );
+    });
+
+    test('params force IPv6 with -6', () {
+      final v6 = PingLinux('host', 3, 1, 2, 64, IpVersion.ipv6);
+      expect(v6.params.first, '-6');
+    });
+
+    test('executable is the unified ping for both families (not ping6)', () {
+      expect(ping.executable, 'ping');
+      expect(PingLinux('host', 3, 1, 2, 64, IpVersion.ipv6).executable, 'ping');
     });
 
     test('params omit -c when count is null', () {
@@ -59,6 +69,11 @@ void main() {
     test('params omit -c when count is null', () {
       final unbounded = PingMac('host', null, 1, 2, 64, IpVersion.ipv4);
       expect(unbounded.params, isNot(anyElement(startsWith('-c'))));
+    });
+
+    test('params throw for IpVersion.ipv6 (unsupported on the macOS path)', () {
+      final ipv6 = PingMac('host', 1, 1, 2, 64, IpVersion.ipv6);
+      expect(() => ipv6.params, throwsUnimplementedError);
     });
 
     test('locale forces the C locale', () {
@@ -124,6 +139,31 @@ void main() {
       // The factory builds the class for the current host; every core platform
       // class extends BasePing, which exposes the resolved family.
       expect((Ping('host') as BasePing).ipVersion, IpVersion.ipv4);
+    });
+  });
+
+  group('Direct construction enforces the address-family guard', () {
+    // The literal/family mismatch guard must fire on direct platform-class
+    // construction too, not only via the Ping(...) factory (#69).
+    test('PingLinux with an IPv6 literal + ipv4 throws ArgumentError', () {
+      expect(
+        () => PingLinux('::1', 1, 1, 2, 64, IpVersion.ipv4),
+        throwsArgumentError,
+      );
+    });
+
+    test('PingMac with an IPv4 literal + ipv6 throws ArgumentError', () {
+      expect(
+        () => PingMac('1.2.3.4', 1, 1, 2, 64, IpVersion.ipv6),
+        throwsArgumentError,
+      );
+    });
+
+    test('a matching literal constructs normally', () {
+      expect(
+        () => PingLinux('127.0.0.1', 1, 1, 2, 64, IpVersion.ipv4),
+        returnsNormally,
+      );
     });
   });
 }

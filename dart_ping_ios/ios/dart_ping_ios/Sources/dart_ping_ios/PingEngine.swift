@@ -85,7 +85,10 @@ public final class PingEngine {
     }
 
     public enum Event {
-        case response(seq: Int, ttl: Int, timeMs: Int, ip: String)
+        // `ttl` is optional: the v4 path always recovers it (cmsg or stripped IP
+        // header), but a v6 reply has no IP-header fallback, so an absent
+        // IPV6_HOPLIMIT cmsg yields nil ("unknown") rather than a misleading 0.
+        case response(seq: Int, ttl: Int?, timeMs: Int, ip: String)
         case error(kind: PingErrorKind, seq: Int?, ip: String?)
         case summary(transmitted: Int, received: Int, timeMs: Int, errors: [PingErrorKind])
     }
@@ -308,18 +311,22 @@ public final class PingEngine {
     ///
     /// Pure/static so it can be unit-tested without the network. Mapping
     /// (§spec:address-family-error-honesty):
-    ///   - EAI_NONAME / EAI_NODATA / EAI_FAIL / EAI_AGAIN -> .unknownHost
-    ///     (genuine name resolution: no such name, no data, permanent/temporary
-    ///     resolver failure).
-    ///   - EAI_ADDRFAMILY / EAI_FAMILY -> .noRoute (the requested address family
-    ///     is unavailable for this host/network).
+    ///   - EAI_NONAME / EAI_FAIL / EAI_AGAIN -> .unknownHost (genuine name
+    ///     resolution: no such name, permanent/temporary resolver failure).
+    ///     EAI_NONAME stays here because Darwin folds "no such name" and "name
+    ///     exists but has no record of the selected family" into the same code,
+    ///     so it cannot be attributed to the family without guessing.
+    ///   - EAI_NODATA / EAI_ADDRFAMILY / EAI_FAMILY -> .noRoute: the name
+    ///     resolves but has no address of the requested family (EAI_NODATA), or
+    ///     the family is unavailable for this host/network — the honest
+    ///     address-family failure #69 targets, not a name miss.
     ///   - any other non-zero status -> .unknownHost (conservative default for a
     ///     resolution failure).
     public static func errorKind(forGetaddrinfoStatus status: Int32) -> PingErrorKind {
         switch status {
-        case EAI_NONAME, EAI_NODATA, EAI_FAIL, EAI_AGAIN:
+        case EAI_NONAME, EAI_FAIL, EAI_AGAIN:
             return .unknownHost
-        case EAI_ADDRFAMILY, EAI_FAMILY:
+        case EAI_NODATA, EAI_ADDRFAMILY, EAI_FAMILY:
             return .noRoute
         default:
             return .unknownHost
@@ -493,7 +500,7 @@ public final class PingEngine {
             if received == 0 { continue }
 
             let packet: Data
-            let ttl: Int
+            let ttl: Int?
             switch family {
             case .v4:
                 // Darwin's SOCK_DGRAM/IPPROTO_ICMP socket delivers the FULL IPv4
@@ -509,9 +516,10 @@ public final class PingEngine {
                 // The SOCK_DGRAM/IPPROTO_ICMPV6 socket does NOT prepend an IPv6
                 // header: the datagram starts at the ICMPv6 message (offset 0).
                 // There is no IP-header TTL fallback for v6, so an absent cmsg
-                // reports hop limit 0.
+                // leaves the hop limit unknown (nil) rather than reporting a
+                // misleading 0.
                 packet = Data(buffer[0..<received])
-                ttl = Self.extractHopLimit(from: &msg, family: family) ?? 0
+                ttl = Self.extractHopLimit(from: &msg, family: family)
             }
 
             let sourceIP = Self.sourceIPString(from: &sourceAddr) ?? ""
@@ -527,8 +535,9 @@ public final class PingEngine {
     }
 
     /// Match a received ICMP(v6) message to a pending probe and emit a response.
-    /// Runs on stateQueue.
-    private func handleReceivedLocked(packet: Data, ttl: Int, sourceIP: String) {
+    /// Runs on stateQueue. `ttl` is nil when the reply's hop limit could not be
+    /// recovered (v6 with no IPV6_HOPLIMIT cmsg).
+    private func handleReceivedLocked(packet: Data, ttl: Int?, sourceIP: String) {
         guard !summaryEmitted else { return }
 
         // ICMP(v6) Time Exceeded from an intermediate hop: the outgoing hop limit
