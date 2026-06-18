@@ -130,23 +130,17 @@ class PingParser {
       );
     }
 
-    // Routing / address-family failure
-    for (final regx in noRouteStrs) {
-      final hasMatch = regx.hasMatch(data);
-      if (hasMatch) {
-        return PingData(
-          error: PingError(ErrorType.noRoute, message: data),
-        );
-      }
-    }
-
-    // Other error
-    for (final regx in errorStrs) {
-      final hasMatch = regx.hasMatch(data);
-      if (hasMatch) {
-        return PingData(
-          error: PingError(ErrorType.unknown, message: data),
-        );
+    // Routing / address-family failures are classified before the generic
+    // `errorStrs` so a recognized "no route for this family" line surfaces the
+    // typed `noRoute` rather than the catch-all `unknown`.
+    for (final (regexes, type) in [
+      (noRouteStrs, ErrorType.noRoute),
+      (errorStrs, ErrorType.unknown),
+    ]) {
+      for (final regx in regexes) {
+        if (regx.hasMatch(data)) {
+          return PingData(error: PingError(type, message: data));
+        }
       }
     }
 
