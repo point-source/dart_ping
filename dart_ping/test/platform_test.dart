@@ -168,14 +168,23 @@ void main() {
       expect(addr.command, contains('-S 192.168.1.5'));
     });
 
-    test('bare interface name appends NO interface flag', () {
+    test('bare interface name is rejected with a catchable error', () {
       final named = PingWindows('host', 3, 1, 2, 64, false, interface: 'eth0');
-      // Name rejection is deferred; for now a bare name emits no binding flag,
-      // so params are identical to the no-interface case.
-      expect(named.params, ping.params);
-      expect(named.params, isNot(anyElement(startsWith('-S'))));
-      expect(named.params, isNot(anyElement(startsWith('-b'))));
-      expect(named.params, isNot(anyElement(startsWith('-I'))));
+      // Windows `ping` binds only by source address (`-S <address>`), never by
+      // interface name, so a bare name must fail loudly rather than silently
+      // ping the default route. Reading `.params`/`.command` throws.
+      expect(() => named.params, throwsA(isA<UnimplementedError>()));
+      expect(() => named.command, throwsA(isA<UnimplementedError>()));
+      expect(
+        () => named.params,
+        throwsA(
+          isA<UnimplementedError>().having(
+            (e) => e.toString(),
+            'message',
+            allOf(contains('source address'), contains('interface name')),
+          ),
+        ),
+      );
     });
 
     test('omitting interface (or null) is byte-for-byte unchanged', () {
