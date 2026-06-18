@@ -65,9 +65,15 @@ class PingWindows extends BasePing implements Ping {
     if (interfaceIsAddress) {
       params.add('-S');
       params.add(interface!);
+    } else if (interface != null) {
+      // A bare interface name cannot be honored: Windows `ping` binds only by
+      // source address (`-S <address>`), never by interface name. Fail loudly
+      // so the caller can pass a source IP address instead of a name.
+      throw UnimplementedError(
+        'Windows ping binds only by source address, not by interface name: '
+        'pass a source IP address instead of the interface name "$interface".',
+      );
     }
-    // Bare interface-name rejection is handled in a later batch
-    // (§spec:interface-platform-rejection).
 
     return params;
   }

@@ -7,6 +7,21 @@ import 'ping/linux_ping.dart';
 import 'ping/mac_ping.dart';
 import 'ping/windows_ping.dart';
 
+/// Rejects any interface selection on iOS.
+///
+/// The iOS native engine exposes no interface binding, so selecting one (by
+/// interface name OR source address) cannot be honored. Throws an explicit
+/// [UnimplementedError] when [interface] is non-null; otherwise a no-op.
+///
+/// Extracted as a top-level function so the rejection can be unit-tested on
+/// any host, since the `Ping()` factory's `'ios'` branch is unreachable off
+/// iOS.
+void throwIfInterfaceUnsupportedOnIos(String? interface) {
+  if (interface != null) {
+    throw UnimplementedError('Interface selection is not supported on iOS');
+  }
+}
+
 /// Ping class used to instantiate a ping instance.
 /// Spawns an OS ping process when the stream property is listened to
 abstract class Ping {
@@ -93,6 +108,7 @@ abstract class Ping {
           interface: interface,
         );
       case 'ios':
+        throwIfInterfaceUnsupportedOnIos(interface);
         Function? ios = iosFactory;
         if (iosFactory != null) {
           return ios!(
