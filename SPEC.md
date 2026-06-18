@@ -859,7 +859,24 @@ and `IpVersion.ipv6`+IPv4-literal are caller errors — so both are rejected.
 hide a caller bug and could silently ping a different family than intended.
 
 ## Errors name the real failure §spec:address-family-error-honesty
-*Status: not started*
+*Status: implemented (Batch #69-3) — added the additive `ErrorType.noRoute`
+('No Route'), distinct from `unknownHost` and the catch-all `unknown`. The core
+Linux/Mac/Windows parsers now reclassify native routing / address-family messages
+(network unreachable, no route to host, destination host unreachable, address
+family unavailable) from `unknown` into `noRoute` via a new additive
+`PingParser.noRouteStrs` list checked after `unknownHostStr` and before the
+generic `errorStrs`, so `unknownHost`/`unknownHostStr` stay reserved for genuine
+name resolution and Windows IPv6 keeps its explicit `UnimplementedError`. On iOS
+the Swift engine resolves and sends for the selected `IpVersion` family (full
+native ICMPv6 echo path added — never silently resolving the other family) and
+maps `getaddrinfo` status + `sendto` errno honestly (`EAI_NONAME`/`NODATA`/`FAIL`/
+`AGAIN` → `unknownHost`; `EAI_ADDRFAMILY`/`FAMILY` and
+`ENETUNREACH`/`EHOSTUNREACH`/`EAFNOSUPPORT`/`EADDRNOTAVAIL` → `noRoute`) instead of
+collapsing every failure to `unknownHost`. A working hostname ping (incl. a
+DNS64-synthesized address) is unchanged. Covered by network-free tests on the core
+parser seam and both iOS seams. Swift is hand-verified on the Linux host (macOS CI
+compiles it). The literal-vs-selection `ArgumentError`
+(§spec:address-family-mismatch-validation) is separate (#69-2).*
 
 `unknownHost` is reserved for genuine name-resolution failures. Routing
 and address-family failures surface as their own honest, typed errors so a
@@ -920,15 +937,19 @@ through. It adds no DNS, no retries, and no family fallback
 (§req:ipfamily-quality-attributes — thinness / native fidelity).
 
 ## Address-family error tests §spec:address-family-error-tests
-*Status: partially implemented — the literal-vs-selection validation bullet
-landed in Batch #69-2 (`dart_ping/test/address_family_validation_test.dart`):
+*Status: implemented — both bullets land. The literal-vs-selection validation
+bullet landed in Batch #69-2 (`dart_ping/test/address_family_validation_test.dart`):
 deterministic, network-free cases asserting an IPv6 literal with
 `IpVersion.ipv4` and an IPv4 literal with `IpVersion.ipv6` each throw
 `ArgumentError` (including the `IpVersion.ipv4` default), while a matching
-literal and a hostname each construct without throwing. The error-mapping
-bullet (native address-family / no-route / unknown-host strings →
-`ErrorType`) is owned by Batch #69-3 (§spec:address-family-error-honesty) and
-remains pending.*
+literal and a hostname each construct without throwing. The error-mapping bullet
+landed in Batch #69-3 (`dart_ping/test/address_family_error_test.dart`): native
+outputs fed through each platform parser (routing / no-route lines → `noRoute`; a
+genuine unknown-host line → `unknownHost`; an ambiguous line → `unknown`), with the
+iOS seams covered by `dart_ping_ios/test/ping_event_mapper_test.dart` (a
+`'No Route'` error/summary event → `ErrorType.noRoute`) plus the Swift
+`RunnerTests` (`errorKind(forGetaddrinfoStatus:)` / `errorKind(forSendErrno:)`
+mapping and ICMPv6 framing vectors, network-free, run by macOS CI).*
 
 The mismatch validation and the error mapping are covered by automated
 tests that do not require a live IPv6-only network.

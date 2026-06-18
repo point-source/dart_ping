@@ -38,9 +38,11 @@ class PingLinux extends BasePing implements Ping {
         ),
         unknownHostStr:
             RegExp(r'unknown host|service not known|failure in name'),
-        errorStrs: [
+        noRouteStrs: [
           RegExp(r'[Nn]etwork is unreachable'),
           RegExp(r'[Dd]estination [Hh]ost [Uu]nreachable'),
+          RegExp(r'[Nn]o route to host'),
+          RegExp(r'[Aa]ddress family for hostname not supported'),
         ],
       );
 

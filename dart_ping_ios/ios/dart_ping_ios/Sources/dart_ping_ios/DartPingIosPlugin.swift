@@ -19,7 +19,11 @@
 //                 errors:[{error:<message>, message:NSNull}]`
 //    `<message>` is one of the exact literals the Dart `ErrorType.fromMessage`
 //    matches: "Time To Live Exceeded", "Request Timed Out", "Unknown Host",
-//    "No Reply", "Unknown Error".
+//    "No Reply", "No Route", "Unknown Error".
+//  - `start` arguments (besides `id`/`host`/`count`/`interval`/`timeout`/`ttl`):
+//      ipVersion: a string, the selected address family — "ipv4" or "ipv6"
+//                 (the `IpVersion` enum name). Anything other than "ipv6" maps
+//                 to IPv4. The engine resolves AND sends for this family only.
 //
 //  Threading: `FlutterEventSink` must be invoked on the platform/main thread,
 //  but `PingEngine` delivers events on a background queue, so every sink call
@@ -125,7 +129,10 @@ public class DartPingIosPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         let interval = TimeInterval((args["interval"] as? Int) ?? 1)
         let timeout = TimeInterval((args["timeout"] as? Int) ?? 1)
         let ttl = (args["ttl"] as? Int) ?? 255
-        let ipv6 = (args["ipv6"] as? Bool) ?? false
+        // The Dart bridge sends the selected family as the IpVersion enum name
+        // ("ipv4" / "ipv6"); default to IPv4 for any absent/unexpected value.
+        let ipVersion = (args["ipVersion"] as? String) ?? "ipv4"
+        let family: IPFamily = (ipVersion == "ipv6") ? .v6 : .v4
 
         let config = PingEngine.Config(
             host: host,
@@ -133,7 +140,7 @@ public class DartPingIosPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             interval: interval,
             timeout: timeout,
             ttl: ttl,
-            ipv6: ipv6
+            family: family
         )
 
         let engine = PingEngine(config: config) { [weak self] event in
@@ -234,6 +241,8 @@ public class DartPingIosPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             return "No Reply"
         case .unknownHost:
             return "Unknown Host"
+        case .noRoute:
+            return "No Route"
         case .unknown:
             return "Unknown Error"
         }
