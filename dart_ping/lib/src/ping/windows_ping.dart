@@ -10,7 +10,7 @@ class PingWindows extends BasePing implements Ping {
     int interval,
     int timeout,
     int ttl,
-    bool ipv6, {
+    IpVersion ipVersion, {
     PingParser? parser,
     Encoding encoding = const Utf8Codec(allowMalformed: true),
     bool forceCodepage = false,
@@ -20,7 +20,7 @@ class PingWindows extends BasePing implements Ping {
           interval,
           timeout,
           ttl,
-          ipv6,
+          ipVersion,
           parser ?? defaultParser,
           encoding,
           forceCodepage,
@@ -46,13 +46,13 @@ class PingWindows extends BasePing implements Ping {
 
   @override
   List<String> get params {
-    if (ipv6) throw UnimplementedError('IPv6 not implemented for windows');
-    var params = ['-w', (timeout * 1000).toString(), '-i', ttl.toString()];
-    if (ipv6) {
-      params.add('-6');
-    } else {
-      params.add('-4');
+    // Windows IPv6 is not supported: surface an explicit, honest error rather
+    // than silently pinging IPv4 (§spec:ipv6-address-family-selector).
+    if (ipVersion == IpVersion.ipv6) {
+      throw UnimplementedError('IPv6 not implemented for windows');
     }
+    var params = ['-w', (timeout * 1000).toString(), '-i', ttl.toString()];
+    params.add('-4');
     if (count == null) {
       params.add('-t');
     } else {

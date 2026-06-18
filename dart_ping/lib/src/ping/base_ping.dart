@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:async/async.dart';
+import 'package:dart_ping/src/ip_version.dart';
 import 'package:dart_ping/src/models/ping_data.dart';
 import 'package:dart_ping/src/models/ping_error.dart';
 import 'package:dart_ping/src/models/ping_summary.dart';
@@ -15,7 +16,7 @@ abstract class BasePing {
     this.interval,
     this.timeout,
     this.ttl,
-    this.ipv6,
+    this.ipVersion,
     this.parser,
     this.encoding,
     this.forceCodepage,
@@ -43,8 +44,9 @@ abstract class BasePing {
   /// How many network hops the packet should travel before expiring
   int ttl;
 
-  /// IPv6 Mode (Not supported on Windows)
-  bool ipv6;
+  /// The IP address family to ping with — an explicit, exclusive selection
+  /// (see [IpVersion]). [IpVersion.ipv6] is not supported on Windows.
+  IpVersion ipVersion;
 
   /// Custom parser to interpret ping process output
   /// Useful for non-english based platforms
@@ -84,7 +86,7 @@ abstract class BasePing {
 
   /// Starts a ping process on the host OS
   Future<Process> get platformProcess async {
-    final ping = ipv6 ? 'ping6' : 'ping';
+    final ping = ipVersion == IpVersion.ipv6 ? 'ping6' : 'ping';
 
     return await Process.start(
       forceCodepage ? 'chcp' : ping,

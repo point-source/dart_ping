@@ -10,7 +10,7 @@ class PingLinux extends BasePing implements Ping {
     int interval,
     int timeout,
     int ttl,
-    bool ipv6, {
+    IpVersion ipVersion, {
     PingParser? parser,
     Encoding encoding = const Utf8Codec(),
   }) : super(
@@ -19,7 +19,7 @@ class PingLinux extends BasePing implements Ping {
           interval,
           timeout,
           ttl,
-          ipv6,
+          ipVersion,
           parser ?? defaultParser,
           encoding,
           false,

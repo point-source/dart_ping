@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:dart_ping/src/ip_version.dart';
 import 'package:dart_ping/src/ping_interface.dart';
 import 'package:dart_ping/src/models/ping_parser.dart';
 import 'package:dart_ping/src/ping/linux_ping.dart';
@@ -13,7 +14,7 @@ Ping getPing(
   int interval,
   int timeout,
   int ttl,
-  bool ipv6,
+  IpVersion ipVersion,
   PingParser? parser,
   Encoding encoding,
   bool forceCodepage,
@@ -28,7 +29,7 @@ Ping getPing(
         interval,
         timeout,
         ttl,
-        ipv6,
+        ipVersion,
         parser: parser,
         encoding: encoding,
       );
@@ -39,7 +40,7 @@ Ping getPing(
         interval,
         timeout,
         ttl,
-        ipv6,
+        ipVersion,
         parser: parser,
         encoding: encoding,
       );
@@ -50,7 +51,7 @@ Ping getPing(
         interval,
         timeout,
         ttl,
-        ipv6,
+        ipVersion,
         parser: parser,
         encoding: encoding,
         forceCodepage: forceCodepage,

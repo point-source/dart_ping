@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'ip_version.dart';
 import 'models/ping_data.dart';
 import 'models/ping_parser.dart';
 import 'ping/linux_ping.dart';
@@ -26,8 +27,10 @@ abstract class Ping {
     /// How many network hops the packet should travel before expiring
     int ttl = 255,
 
-    /// IPv6 Mode (Not supported on Windows)
-    bool ipv6 = false,
+    /// The IP address family to ping with — an explicit, exclusive selection
+    /// (see [IpVersion]). Defaults to [IpVersion.ipv4] (IPv4 only). IPv6 is
+    /// not supported on Windows.
+    IpVersion ipVersion = IpVersion.ipv4,
 
     /// Custom parser to interpret ping process output
     /// Useful for non-english based platforms
@@ -52,7 +55,7 @@ abstract class Ping {
           interval,
           timeout,
           ttl,
-          ipv6,
+          ipVersion,
           parser: parser,
           encoding: encoding,
         );
@@ -63,7 +66,7 @@ abstract class Ping {
           interval,
           timeout,
           ttl,
-          ipv6,
+          ipVersion,
           parser: parser,
           encoding: encoding,
         );
@@ -74,7 +77,7 @@ abstract class Ping {
           interval,
           timeout,
           ttl,
-          ipv6,
+          ipVersion,
           parser: parser,
           encoding: encoding,
           forceCodepage: forceCodepage,
@@ -88,7 +91,7 @@ abstract class Ping {
             interval,
             timeout,
             ttl,
-            ipv6,
+            ipVersion,
             parser,
             encoding,
           );
@@ -107,7 +110,7 @@ abstract class Ping {
     int interval,
     int timeout,
     int ttl,
-    bool ipv6,
+    IpVersion ipVersion,
     PingParser? parser,
     Encoding encoding,
   )? iosFactory;
