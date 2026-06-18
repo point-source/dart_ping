@@ -22,10 +22,8 @@ const _hardTimeout = Duration(seconds: 5);
 class FakeProcess implements Process {
   FakeProcess({
     List<String> stdoutLines = const [],
-    List<String> stderrLines = const [],
     required int exit,
   })  : _stdout = _interleaved(stdoutLines),
-        _stderr = _interleaved(stderrLines),
         _exitCode = Future<int>.value(exit);
 
   /// Emits each line on a separate async tick so the merged line stream's
@@ -40,14 +38,13 @@ class FakeProcess implements Process {
   }
 
   final Stream<List<int>> _stdout;
-  final Stream<List<int>> _stderr;
   final Future<int> _exitCode;
 
   @override
   Stream<List<int>> get stdout => _stdout;
 
   @override
-  Stream<List<int>> get stderr => _stderr;
+  Stream<List<int>> get stderr => const Stream.empty();
 
   @override
   Future<int> get exitCode => _exitCode;
@@ -86,7 +83,6 @@ class TestPing extends PingLinux {
 class _HostFixture {
   _HostFixture({
     required this.host,
-    required this.ip,
     required this.lines,
     required this.expectedResponses,
     required this.expectedTransmitted,
@@ -96,7 +92,6 @@ class _HostFixture {
   });
 
   final String host;
-  final String ip;
   final List<String> lines;
   final List<PingResponse> expectedResponses;
   final int expectedTransmitted;
@@ -112,7 +107,6 @@ void main() {
     // runs, host B's summary would wrongly carry this error too.
     final hostA = _HostFixture(
       host: 'a.example',
-      ip: '154.16.146.45',
       lines: const [
         '64 bytes from 154.16.146.45: icmp_seq=1 ttl=57 time=170.0 ms',
         'no answer yet for icmp_seq=2',
@@ -139,7 +133,6 @@ void main() {
     // so its summary's error list must stay empty.
     final hostB = _HostFixture(
       host: 'b.example',
-      ip: '187.188.169.169',
       lines: const [
         '64 bytes from 187.188.169.169: icmp_seq=1 ttl=53 time=236.0 ms',
         '64 bytes from 187.188.169.169: icmp_seq=2 ttl=53 time=240.0 ms',
