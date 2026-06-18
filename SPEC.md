@@ -905,7 +905,7 @@ IPs — so callers that pick the "fastest" host or chart latency act on
 fabricated numbers (§req:concurrent-user-stories).
 
 ## Concurrent ping isolation §spec:concurrent-isolation
-*Status: not started*
+*Status: implemented (core/subprocess engine) — confirm-then-decide gate ran: the offline guard `dart_ping/test/concurrent_isolation_test.dart` overlaps concurrent `Ping` runs with canned interleaved per-host output and asserts no field bleeds; it passes against the current source, confirming the design-level isolation invariant (no shared mutable state in `BasePing`). No production change was required. iOS bridge half tracked separately.*
 
 Concurrent `Ping` instances are fully independent: when several runs to
 distinct hosts overlap in time, every event a stream emits — response,
