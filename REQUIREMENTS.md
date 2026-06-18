@@ -1,6 +1,6 @@
 # Requirements
 
-This document tracks three areas of work:
+This document tracks four areas of work:
 
 1. **iOS SPM migration (#73)** — *shipped in `dart_ping_ios` 5.0.0.*
    Replace the `flutter_icmp_ping` dependency with a native Swift ICMP
@@ -21,6 +21,11 @@ This document tracks three areas of work:
    originate from, on the desktop platforms (Linux/Android, macOS,
    Windows), with a nice-to-have helper to enumerate the available
    interfaces. Captured in the `§req:interface-*` sections at the end.
+5. **Concurrent-ping isolation (#70)** — a reported defect where two or
+   more `Ping` instances run at the same time report the same round-trip
+   results instead of each host's own, first seen on Android. Fix so that
+   concurrent `Ping` instances are fully independent. Captured in the
+   `§req:concurrent-*` sections at the end.
 
 ---
 
@@ -590,3 +595,138 @@ Observable, end-to-end outcomes a tester can demonstrate:
   tests for the produced command and the rejection/error paths.
 - **Nice-to-have:** the helper that enumerates the host's available
   network interfaces for use in a picker or for input validation.
+
+---
+
+# Concurrent-ping isolation (#70)
+
+A reported correctness defect: when several `Ping` instances run at the
+same time, they report the same round-trip result instead of each host's
+own. First observed on Android, but the requirement is to guarantee
+isolation on every platform.
+
+## Concurrent pings — problem statement §req:concurrent-problem-statement
+
+The target users are developers who ping **several hosts at once** —
+typically by creating one `Ping` per host and awaiting them together, the
+canonical pattern for latency dashboards, server pickers, "fastest
+mirror" selection, and connectivity sweeps:
+
+```dart
+var domains = ['154.16.146.45', '187.188.169.169'];
+var pings = domains.map((e) => Ping(e, count: 1).stream.first).toList();
+var results = await Future.wait(pings);
+```
+
+A user (issue #70, on Android) reports that the concurrent results are
+**cross-contaminated**: each response carries the correct destination IP,
+but the round-trip time is identical across hosts —
+`time:176.0 ms` for both `154.16.146.45` and `187.188.169.169`. Pinging
+the same hosts **one at a time** returns the correct, distinct
+times (`170.0 ms` and `236.0 ms`). So the data is right when pings run
+sequentially and wrong when they overlap.
+
+Current behavior fails these users because the failure is **silent and
+plausible**: no error is thrown, the shape of the result is valid, and the
+IPs look right — so the caller has no signal that the timings (and
+possibly TTL) are wrong. Code that picks the "fastest" host, charts
+latency, or gates on a threshold then acts on fabricated numbers. Anyone
+pinging more than one host concurrently is exposed, and concurrent
+multi-host pinging is a common, expected use of the library rather than an
+exotic edge case.
+
+The root cause is not yet established — each `Ping` instance already owns
+its own OS process and stream, so there is no obvious shared state — and
+identifying it is left to `/plan`. It is also not yet confirmed whether the
+defect still reproduces on the current release (the report predates recent
+internal changes). This document captures the **observable problem** the
+user experiences; the cause and the platforms actually affected are
+solution-space questions for `/plan`.
+
+## Concurrent pings — success criteria §req:concurrent-success-criteria
+
+Observable, verifiable outcomes a tester can demonstrate against the
+public API:
+
+- **The defect is first reproduced (or shown already fixed).** A
+  test/repro that overlaps multiple `Ping` streams demonstrates the
+  cross-contamination against the current release — or establishes that it
+  no longer occurs. This gate sets the priority of the remaining
+  criteria. *(must-have — the confirm-then-decide step)*
+- **Concurrent pings return each host's own results.** When N `Ping`
+  instances to distinct hosts run at the same time, each stream's
+  responses carry that host's own round-trip time, TTL, and sequence —
+  matching what the same host returns when pinged alone. No field is
+  copied from a sibling ping. *(must-have)*
+- **Isolation holds on every platform.** The guarantee applies wherever
+  `dart_ping` runs — Android, Linux, macOS, and Windows (which share the
+  process-based engine) — and on iOS. Concurrent `Ping` instances are
+  fully independent everywhere. *(must-have)*
+- **Per-host summaries and error lists stay separate.** Each concurrent
+  run's summary (transmitted/received/time) and per-run error list reflect
+  only that run; errors or counts from one ping never appear in another's
+  summary. *(high)*
+- **Sequential behavior is unchanged.** Pinging hosts one at a time still
+  returns the same correct, distinct results as today. *(must-have —
+  regression guard)*
+- **An automated test guards isolation, with no live network.** A test
+  runnable under `dart test` overlaps multiple ping streams and **fails
+  if results cross-contaminate**, so a future regression is caught
+  offline rather than only on a device. *(must-have)*
+
+## Concurrent pings — user stories §req:concurrent-user-stories
+
+- As a developer pinging a list of hosts at once to find the fastest, I
+  want each result to reflect its own host's latency so that I pick the
+  genuinely closest server instead of one chosen from duplicated numbers.
+- As a developer building a latency dashboard, I want concurrent pings to
+  report independent round-trip times so that my chart shows real
+  per-host values rather than one value smeared across every row.
+- As a developer running a connectivity sweep, I want each host's
+  reachability and timing to be its own so that a single slow or failing
+  host does not silently mask or impersonate the others.
+- As an existing user who pings hosts one at a time, I want that path to
+  keep returning the same correct results so that this fix changes nothing
+  for sequential callers.
+- As a maintainer, I want an automated test that fails when concurrent
+  results bleed together so that this class of bug cannot quietly return.
+
+## Concurrent pings — quality attributes §req:concurrent-quality-attributes
+
+- **Correctness:** concurrent `Ping` instances are fully independent;
+  no response, timing, TTL, summary, or error from one ping appears in
+  another. This is the core guarantee.
+- **Compatibility:** the public API is unchanged — the `Ping` interface
+  and the `PingData` / `PingResponse` / `PingSummary` / `PingError`
+  shapes stay the same. Existing concurrent and sequential call sites keep
+  working without edits; correct code simply starts returning correct
+  data.
+- **Cross-platform consistency:** the isolation guarantee is uniform
+  across Android, Linux, macOS, Windows, and iOS.
+- **Testability:** isolation is verifiable by an automated test that
+  fails on cross-contamination and runs without a live network.
+
+## Concurrent pings — constraints §req:concurrent-constraints
+
+- The public Dart API stays unchanged; this is a correctness fix, not a
+  feature.
+- Scope is the cross-contamination defect and the guarantee that
+  concurrent `Ping` instances are independent — not new concurrency
+  features (e.g. no built-in multi-host helper is required).
+- The fix and its test must not depend on a live network or a physical
+  device to validate the isolation logic.
+- Surfaced by, and traceable to, issue #70; relates to the core
+  process-based engine (`§spec:` to be assigned in `/plan`).
+
+## Concurrent pings — priorities §req:concurrent-priorities
+
+- **First gate (confirm-then-decide):** reproduce the defect on the
+  current release, or establish that it is already fixed. The outcome sets
+  how urgent the rest is.
+- **Must-have (if it reproduces):** concurrent `Ping` instances return
+  each host's own results on every platform, sequential behavior is
+  unchanged, and an offline automated test guards against regression.
+- **High priority:** keep per-host summaries and error lists separate
+  under concurrency.
+- **Nice-to-have:** none beyond the above — this is a focused correctness
+  fix.
