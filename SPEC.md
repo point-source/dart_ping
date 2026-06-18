@@ -724,7 +724,16 @@ change accepted to remove the ambiguity behind #69
 (§req:ipfamily-constraints, §req:ipfamily-quality-attributes).
 
 ## Address family is an explicit `IpVersion` selection §spec:ipv6-address-family-selector
-*Status: not started*
+*Status: implemented (Batch #69-1) — the `bool ipv6` selector was replaced by a
+two-value `IpVersion` enum (`ipv4`/`ipv6`, no auto/dual-stack), exported from
+`dart_ping` and accepted as `Ping(ipVersion:)` defaulting to `IpVersion.ipv4`.
+The selector threads through `base_ping` (`ping6` vs `ping`), the Linux/Mac/Windows
+classes (Windows passes `-4` and still raises an explicit `UnimplementedError` for
+`IpVersion.ipv6`), and the `dart_ping_ios` bridge (sent as the enum name over the
+method channel; native family-faithful resolution lands in Batch #69-3). dartdoc
+documents the exclusive-selection model. Shipped as `dart_ping` 10.0.0 /
+`dart_ping_ios` 6.0.0 with CHANGELOG migration notes. Covered by network-free
+platform/bridge tests (family threading + the `IpVersion.ipv4` default).*
 
 The address family is chosen through an explicit, **exclusive**
 `IpVersion` enum — `IpVersion.ipv4` or `IpVersion.ipv6` — replacing the
