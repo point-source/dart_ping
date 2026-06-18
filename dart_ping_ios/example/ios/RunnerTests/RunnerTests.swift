@@ -391,4 +391,105 @@ class RunnerTests: XCTestCase {
     XCTAssertEqual(stripped.flatMap { ICMPPacket.parseEchoReply($0.icmpMessage) }?.sequence, 0x99AA)
   }
 
+  // MARK: - §spec:address-family-error-honesty (#69-3)
+
+  // The honest error classification and ICMPv6 framing/parsing are the wire
+  // contract for IPv6 support, so each test pins the exact bytes/offsets and the
+  // exact getaddrinfo/errno -> PingErrorKind mapping. These run network-free.
+
+  // MARK: errorKind(forGetaddrinfoStatus:)
+
+  /// A genuine name-resolution miss (EAI_NONAME) is an Unknown Host, NOT a route
+  /// problem — the honesty boundary the spec draws.
+  func testGetaddrinfoNoNameMapsToUnknownHost() {
+    XCTAssertEqual(PingEngine.errorKind(forGetaddrinfoStatus: EAI_NONAME), .unknownHost)
+  }
+
+  /// An address-family mismatch (EAI_ADDRFAMILY) — the host has no address of
+  /// the selected family — is the route/family failure, surfaced as .noRoute.
+  func testGetaddrinfoAddrFamilyMapsToNoRoute() {
+    XCTAssertEqual(PingEngine.errorKind(forGetaddrinfoStatus: EAI_ADDRFAMILY), .noRoute)
+  }
+
+  // MARK: errorKind(forSendErrno:)
+
+  /// ENETUNREACH on send (no route for this family) maps to .noRoute, the honest
+  /// "the selected family can't be reached here" signal.
+  func testSendErrnoNetUnreachMapsToNoRoute() {
+    XCTAssertEqual(PingEngine.errorKind(forSendErrno: ENETUNREACH), .noRoute)
+  }
+
+  /// An unrelated errno (EPERM) is NOT a route problem and stays the catch-all
+  /// .unknown, so we don't over-claim "No Route".
+  func testSendErrnoArbitraryMapsToUnknown() {
+    XCTAssertEqual(PingEngine.errorKind(forSendErrno: EPERM), .unknown)
+  }
+
+  // MARK: ICMPv6 framing/parsing
+
+  /// The ICMPv6 Echo Request first byte is type 128 (RFC 4443), the identifier
+  /// and sequence are big-endian at the shared offsets 4..5 / 6..7, and the
+  /// checksum field (bytes 2..3) is left ZERO (the kernel fills it on the
+  /// SOCK_DGRAM path).
+  func testEchoRequestV6FramingTypeAndZeroChecksum() {
+    let packet = ICMPPacket.echoRequestV6(identifier: 0xABCD,
+                                          sequence: 0x1234,
+                                          sendTimeMicros: 0x0102_0304_0506_0708)
+
+    // 8-byte ICMPv6 echo header + 8-byte payload = 16.
+    XCTAssertEqual(packet.count, 16)
+
+    // byte 0: type = 128 (ICMPv6 echo request); byte 1: code = 0.
+    XCTAssertEqual(packet[0], 128)
+    XCTAssertEqual(packet[1], 0)
+
+    // bytes 2..3: checksum left zero (kernel computes it over the pseudo-header).
+    XCTAssertEqual(packet[2], 0x00)
+    XCTAssertEqual(packet[3], 0x00)
+
+    // bytes 4..5: identifier big-endian; bytes 6..7: sequence big-endian.
+    XCTAssertEqual(packet[4], 0xAB)
+    XCTAssertEqual(packet[5], 0xCD)
+    XCTAssertEqual(packet[6], 0x12)
+    XCTAssertEqual(packet[7], 0x34)
+
+    // bytes 8..15: timestamp big-endian (most-significant byte first).
+    XCTAssertEqual(packet[8], 0x01)
+    XCTAssertEqual(packet[15], 0x08)
+  }
+
+  /// A type-129 ICMPv6 Echo Reply parses identifier/sequence big-endian, and a
+  /// type-128 request does NOT parse as a reply (type discrimination).
+  func testParseEchoReplyV6RecoversSequence() {
+    // type=129, code=0, csum=0x0000, id=0x1122, seq=0x3344
+    let data = Data([0x81, 0x00, 0x00, 0x00, 0x11, 0x22, 0x33, 0x44])
+    let reply = ICMPPacket.parseEchoReplyV6(data)
+    XCTAssertNotNil(reply)
+    XCTAssertEqual(reply?.identifier, 0x1122)
+    XCTAssertEqual(reply?.sequence, 0x3344)
+
+    // A type-128 request must NOT parse as a v6 reply.
+    let request = ICMPPacket.echoRequestV6(identifier: 0, sequence: 0, sendTimeMicros: 0)
+    XCTAssertNil(ICMPPacket.parseEchoReplyV6(request))
+  }
+
+  /// A type-3 ICMPv6 Time Exceeded message quotes a FIXED 40-byte IPv6 header
+  /// then the original echo; the original sequence lives at offset 8 + 40 + 6.
+  func testParseTimeExceededV6RecoversOriginalSequence() {
+    var data = Data()
+    // type-3 ICMPv6 header: type=3, code=0, checksum=0x0000, 4 unused bytes.
+    data.append(contentsOf: [0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+    // Quoted original IPv6 header: a fixed 40 bytes (contents irrelevant here).
+    data.append(Data(repeating: 0xAA, count: 40))
+    // Quoted original ICMPv6 Echo header: type=128, code=0, csum=0, id=0,
+    // sequence=0x2A2B big-endian at offset +6.
+    data.append(contentsOf: [0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2A, 0x2B])
+
+    XCTAssertEqual(ICMPPacket.parseTimeExceededOriginalSequenceV6(data), 0x2A2B)
+
+    // Truncated before the quoted echo's sequence field -> nil.
+    let truncated = data.prefix(8 + 40 + 6)
+    XCTAssertNil(ICMPPacket.parseTimeExceededOriginalSequenceV6(truncated))
+  }
+
 }

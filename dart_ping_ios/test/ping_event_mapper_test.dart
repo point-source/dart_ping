@@ -187,6 +187,42 @@ void main() {
       expect(data.response, isNull);
     });
 
+    // --- §spec:address-family-error-honesty: the noRoute typed error (#69-3) ---
+
+    test('maps a standalone noRoute error event without a response', () {
+      // The native engine emits 'No Route' when resolution or send for the
+      // SELECTED family is impossible (e.g. an IPv4 literal on an IPv6-only
+      // network). It must land as ErrorType.noRoute, distinct from unknownHost.
+      final data = mapNativeEvent({
+        'id': 'run-1',
+        'type': 'error',
+        'error': 'No Route',
+      });
+
+      expect(data, isNotNull);
+      expect(data!.error!.error, ErrorType.noRoute);
+      // Family/route failures carry no per-probe context, so no response.
+      expect(data.response, isNull);
+    });
+
+    test('maps a summary event carrying a noRoute error', () {
+      final data = mapNativeEvent({
+        'id': 'run-1',
+        'type': 'summary',
+        'transmitted': 0,
+        'received': 0,
+        'time': null,
+        'errors': [
+          {'error': 'No Route', 'message': null},
+        ],
+      });
+
+      expect(data, isNotNull);
+      final summary = data!.summary!;
+      expect(summary.errors, hasLength(1));
+      expect(summary.errors.first.error, ErrorType.noRoute);
+    });
+
     test('carries the native message string through to PingError.message', () {
       // The mapper delegates to PingError.fromMap, which preserves `message`.
       final data = mapNativeEvent({
