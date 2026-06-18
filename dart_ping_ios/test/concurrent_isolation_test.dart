@@ -77,11 +77,6 @@ void main() {
     );
   });
 
-  /// One run's canned, distinct native input plus the values it should yield.
-  ///
-  /// Builds the native event Maps lazily once the run's `id` has been recovered
-  /// from its captured `start` MethodCall, so the same fixture can stamp every
-  /// event with the correct id.
   group('concurrent-isolation (§spec:concurrent-isolation)', () {
     /// Recovers a run's `id` from the shared methodCalls list by matching on
     /// the `host` argument of its `start` call. The two starts both land in the
@@ -96,6 +91,11 @@ void main() {
       );
       return (start.arguments as Map)['id'] as String;
     }
+
+    /// All response payloads a run collected, in order. Used to assert a run
+    /// saw only its own id's responses, never a sibling's.
+    List<PingResponse> responsesOf(List<PingData> data) =>
+        data.where((d) => d.response != null).map((d) => d.response!).toList();
 
     test(
         'two concurrent runs over the shared event channel stay fully isolated',
@@ -186,10 +186,7 @@ void main() {
       );
 
       // --- Run A reflects ONLY its own id's events ---
-      final responsesA = receivedA
-          .where((d) => d.response != null)
-          .map((d) => d.response!)
-          .toList();
+      final responsesA = responsesOf(receivedA);
       expect(
         responsesA,
         const [
@@ -220,10 +217,7 @@ void main() {
       );
 
       // --- Run B reflects ONLY its own id's events ---
-      final responsesB = receivedB
-          .where((d) => d.response != null)
-          .map((d) => d.response!)
-          .toList();
+      final responsesB = responsesOf(receivedB);
       expect(
         responsesB,
         const [
@@ -303,8 +297,7 @@ void main() {
             fail('a concurrent stream did not close within $hardTimeout'),
       );
 
-      final responsesA =
-          receivedA.where((d) => d.response != null).map((d) => d.response!);
+      final responsesA = responsesOf(receivedA);
       expect(responsesA, hasLength(1));
       expect(responsesA.single.seq, 1);
       expect(responsesA.single.ttl, 99,
