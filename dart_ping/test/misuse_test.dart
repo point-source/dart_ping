@@ -11,30 +11,22 @@ void main() {
   });
 
   group('iOS interface rejection: ', () {
+    // Same rejection regardless of the selection's form (name or address), so
+    // both throwing cases share one matcher.
+    final rejected = throwsA(
+      isA<UnimplementedError>().having(
+        (e) => e.toString(),
+        'message',
+        allOf(contains('iOS'), contains('not supported')),
+      ),
+    );
+
     test('rejects a bare interface name', () {
-      expect(
-        () => throwIfInterfaceUnsupportedOnIos('en0'),
-        throwsA(
-          isA<UnimplementedError>().having(
-            (e) => e.toString(),
-            'message',
-            allOf(contains('iOS'), contains('not supported')),
-          ),
-        ),
-      );
+      expect(() => throwIfInterfaceUnsupportedOnIos('en0'), rejected);
     });
 
     test('rejects a source address', () {
-      expect(
-        () => throwIfInterfaceUnsupportedOnIos('192.168.1.5'),
-        throwsA(
-          isA<UnimplementedError>().having(
-            (e) => e.toString(),
-            'message',
-            allOf(contains('iOS'), contains('not supported')),
-          ),
-        ),
-      );
+      expect(() => throwIfInterfaceUnsupportedOnIos('192.168.1.5'), rejected);
     });
 
     test('null interface is a no-op', () {

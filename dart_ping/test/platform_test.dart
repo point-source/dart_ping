@@ -172,19 +172,17 @@ void main() {
       final named = PingWindows('host', 3, 1, 2, 64, false, interface: 'eth0');
       // Windows `ping` binds only by source address (`-S <address>`), never by
       // interface name, so a bare name must fail loudly rather than silently
-      // ping the default route. Reading `.params`/`.command` throws.
-      expect(() => named.params, throwsA(isA<UnimplementedError>()));
-      expect(() => named.command, throwsA(isA<UnimplementedError>()));
-      expect(
-        () => named.params,
-        throwsA(
-          isA<UnimplementedError>().having(
-            (e) => e.toString(),
-            'message',
-            allOf(contains('source address'), contains('interface name')),
-          ),
+      // ping the default route. Both `.params` and `.command` throw with a
+      // message naming the limitation.
+      final rejected = throwsA(
+        isA<UnimplementedError>().having(
+          (e) => e.toString(),
+          'message',
+          allOf(contains('source address'), contains('interface name')),
         ),
       );
+      expect(() => named.params, rejected);
+      expect(() => named.command, rejected);
     });
 
     test('omitting interface (or null) is byte-for-byte unchanged', () {
