@@ -1,4 +1,5 @@
 import 'package:dart_ping/dart_ping.dart';
+import 'package:dart_ping/src/ping/base_ping.dart';
 import 'package:dart_ping/src/ping/linux_ping.dart';
 import 'package:dart_ping/src/ping/mac_ping.dart';
 import 'package:dart_ping/src/ping/windows_ping.dart';
@@ -12,7 +13,7 @@ import 'package:test/test.dart';
 /// platforms' getters unreached on a single-OS test run (#77).
 void main() {
   group('PingLinux', () {
-    final ping = PingLinux('host', 3, 1, 2, 64, false);
+    final ping = PingLinux('host', 3, 1, 2, 64, IpVersion.ipv4);
 
     test('params include the standard flags and the count', () {
       expect(
@@ -22,7 +23,7 @@ void main() {
     });
 
     test('params omit -c when count is null', () {
-      final unbounded = PingLinux('host', null, 1, 2, 64, false);
+      final unbounded = PingLinux('host', null, 1, 2, 64, IpVersion.ipv4);
       expect(unbounded.params, isNot(contains('-c null')));
       expect(unbounded.params, isNot(anyElement(startsWith('-c'))));
     });
@@ -49,14 +50,14 @@ void main() {
   });
 
   group('PingMac', () {
-    final ping = PingMac('host', 3, 1, 2, 64, false);
+    final ping = PingMac('host', 3, 1, 2, 64, IpVersion.ipv4);
 
     test('params scale the timeout to milliseconds and include the count', () {
       expect(ping.params, ['-n', '-W 2000', '-i 1', '-m 64', '-c 3']);
     });
 
     test('params omit -c when count is null', () {
-      final unbounded = PingMac('host', null, 1, 2, 64, false);
+      final unbounded = PingMac('host', null, 1, 2, 64, IpVersion.ipv4);
       expect(unbounded.params, isNot(anyElement(startsWith('-c'))));
     });
 
@@ -79,19 +80,19 @@ void main() {
   });
 
   group('PingWindows', () {
-    final ping = PingWindows('host', 3, 1, 2, 64, false);
+    final ping = PingWindows('host', 3, 1, 2, 64, IpVersion.ipv4);
 
     test('params for a bounded IPv4 run use -n with the count', () {
       expect(ping.params, ['-w', '2000', '-i', '64', '-4', '-n', '3']);
     });
 
     test('params for an unbounded run use -t', () {
-      final unbounded = PingWindows('host', null, 1, 2, 64, false);
+      final unbounded = PingWindows('host', null, 1, 2, 64, IpVersion.ipv4);
       expect(unbounded.params, ['-w', '2000', '-i', '64', '-4', '-t']);
     });
 
-    test('params throw for IPv6 (unsupported on Windows)', () {
-      final ipv6 = PingWindows('host', 1, 1, 2, 64, true);
+    test('params throw for IpVersion.ipv6 (unsupported on Windows)', () {
+      final ipv6 = PingWindows('host', 1, 1, 2, 64, IpVersion.ipv6);
       expect(() => ipv6.params, throwsUnimplementedError);
     });
 
@@ -107,6 +108,22 @@ void main() {
 
     test('throwExit always returns an Exception carrying the code', () {
       expect(ping.throwExit(5).toString(), contains('5'));
+    });
+  });
+
+  group('IpVersion selection', () {
+    test('the selected family is threaded through each platform class', () {
+      for (final v in IpVersion.values) {
+        expect(PingLinux('host', 1, 1, 2, 64, v).ipVersion, v);
+        expect(PingMac('host', 1, 1, 2, 64, v).ipVersion, v);
+        expect(PingWindows('host', 1, 1, 2, 64, v).ipVersion, v);
+      }
+    });
+
+    test('the Ping factory defaults to IpVersion.ipv4', () {
+      // The factory builds the class for the current host; every core platform
+      // class extends BasePing, which exposes the resolved family.
+      expect((Ping('host') as BasePing).ipVersion, IpVersion.ipv4);
     });
   });
 }

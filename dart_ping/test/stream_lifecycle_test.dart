@@ -62,7 +62,7 @@ class TestPing extends PingLinux {
     Object? launchError,
   })  : _process = process,
         _launchError = launchError,
-        super('1.1.1.1', 5, 1000, 1000, 255, false);
+        super('1.1.1.1', 5, 1000, 1000, 255, IpVersion.ipv4);
 
   final FakeProcess? _process;
   final Object? _launchError;
