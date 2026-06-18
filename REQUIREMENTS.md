@@ -15,7 +15,15 @@ This document tracks three areas of work:
    instead of seeing an error: an unmapped non-zero exit code, and a
    failed process launch (e.g. a missing `ping` binary). Surfaced by the
    Dart code audit (`§spec:code-audit`). Captured in the
-   `§req:robustness-*` sections at the end.
+   `§req:robustness-*` sections.
+4. **IPv6 / address-family error clarity (#69)** — on IPv6-enabled
+   networks (notably mobile data), pinging an IP can fail with a
+   misleading "Unknown Host" error when the `ipv6` flag and the target's
+   address family disagree, or when the network/adapter cannot route the
+   selected family. Treat `ipv6` as an exclusive address-family selector,
+   validate obvious literal mismatches up front, and surface honest,
+   consistent errors instead of mislabeling them. Captured in the
+   `§req:ipfamily-*` sections at the end.
 
 ---
 
@@ -414,3 +422,175 @@ Observable, end-to-end outcomes a tester can demonstrate against the
   integrity so diagnostic lines arrive intact.
 - **Nice-to-have:** none beyond the above — this is a focused robustness
   fix.
+
+---
+
+# IPv6 / address-family error clarity (#69)
+
+A correctness-of-errors fix in `dart_ping`'s address-family handling.
+On IPv6-enabled networks — most visibly mobile data — pinging an IP can
+fail with a misleading "Unknown Host" error even though nothing about a
+name was being resolved. The driver is GitHub issue #69.
+
+## IPv6 — problem statement §req:ipfamily-problem-statement
+
+The target users are Flutter/Dart developers using `dart_ping` for ping
+diagnostics, especially those whose apps run on mobile devices. Cellular
+carriers increasingly provide IPv6-only connectivity (464XLAT / NAT64
+with DNS64), so a growing share of app sessions run on networks where
+IPv4 and IPv6 behave differently.
+
+The reported problem (#69): on a mobile-data connection with IPv6 enabled
+but the `ipv6` parameter left `false`, pinging a literal IP address fails
+with an "Unknown Host" error, while pinging the same target by hostname
+succeeds. "Unknown host" is a name-resolution failure — but a literal IP
+needs no resolution, so the error is misleading and sends developers down
+the wrong debugging path.
+
+Underneath, native ping selects its address family **exclusively**: the
+IPv4 tool refuses an IPv6 target and the IPv6 tool refuses an IPv4 target.
+On macOS the IPv4 `ping` even reports a mismatched IPv6 literal verbatim
+as "Unknown host"; on Linux the unified `ping` reports an address-family
+error for the same mismatch. `dart_ping` runs `ping6` when `ipv6:true` and
+`ping` otherwise, so its `ipv6` flag is already, in effect, an exclusive
+family selector — but the library neither validates that the target's
+family matches the flag nor normalizes the resulting failure. It passes
+the mismatched target through (or forces a family during the iOS engine's
+resolution) and then surfaces whatever generic error comes back — often
+"unknown host" — masking the real cause: a wrong family, no route for the
+selected family, or an adapter without that family enabled.
+
+The "hostname works but the IP fails" signature is the tell. On an
+IPv6-only mobile network, DNS64 hands back a synthesized IPv6 address for
+a hostname, which the engine can route, while a bare IPv4 literal has no
+such path — and the failure is then reported as an unrelated "unknown
+host." Current behavior fails these users because the error names the
+wrong problem: developers cannot distinguish "that host does not exist"
+from "you asked for a family this network/flag can't serve."
+
+The problem is **growing** (carriers keep moving to IPv6-only cores),
+**intermittent** (only on certain networks), and therefore **expensive to
+diagnose** — it is hard to reproduce on a developer's Wi-Fi and easy to
+misattribute to the wrong layer.
+
+## IPv6 — success criteria §req:ipfamily-success-criteria
+
+Observable, verifiable outcomes:
+
+- **`ipv6` is an exclusive family selector.** Across all supported
+  platforms, `ipv6:true` means IPv6-only and `ipv6:false` means
+  IPv4-only, matching the native `ping`/`ping6` (`-4`/`-6`) semantics the
+  library already relies on. This is documented. *(must-have)*
+- **Family/flag mismatch on a literal fails fast, clearly, and
+  consistently.** Pinging a literal IP whose family contradicts the
+  `ipv6` flag is rejected **in both directions** — `ipv6:false` with an
+  IPv6 literal *and* `ipv6:true` with an IPv4 literal — with a single,
+  consistent, catchable error (a thrown `ArgumentError` before the stream
+  starts) that names the actual problem (an address-family mismatch),
+  identical in shape across platforms. Never a misleading "Unknown Host",
+  never a hang. *(must-have)*
+- **"Unknown host" means what it says.** `unknownHost` / "Unknown Host"
+  is emitted only for genuine name-resolution failures (a real hostname
+  that cannot be resolved), never for IP literals or routing failures.
+  *(must-have)*
+- **Real failures surface faithfully.** For failures that are not
+  fail-fast — the network or adapter cannot route the selected family
+  (IPv6 disabled, no route, network unreachable) — the consumer receives
+  the platform's real error, and common recognizable cases are mapped to
+  typed `PingError`s so cross-platform code can branch on them. *(high)*
+- **Hostnames are unchanged.** The library performs no DNS of its own;
+  hostnames are handed to the platform, which resolves them (including
+  DNS64-synthesized addresses on IPv6-only networks). A hostname ping that
+  works today still works. *(regression guard)*
+- **Cross-platform error consistency.** The same invalid input yields the
+  same Dart-side error on iOS, Android, macOS, Linux, and Windows, even
+  though the underlying native ping messages differ. *(must-have)*
+- **Existing valid usage is unaffected.** A matching flag/target — e.g.
+  `ipv6:false` with an IPv4 literal or a hostname — pings exactly as it
+  does today. *(regression guard)*
+- **The behavior is covered by automated tests** that do not require a
+  live IPv6-only network (literal-vs-flag validation; error mapping for
+  representative native outputs). *(high)*
+
+## IPv6 — user stories §req:ipfamily-user-stories
+
+- As a developer whose app runs on IPv6-only mobile data, I want pinging a
+  host to behave the same as it does on Wi-Fi so that my diagnostics don't
+  silently break on cellular.
+- As a developer who set `ipv6:false` and passed an IPv6 literal (or
+  `ipv6:true` with an IPv4 literal), I want an immediate, clear error that
+  tells me the flag and the address disagree so that I fix my call instead
+  of chasing a phantom "unknown host."
+- As a cross-platform developer, I want the same error for the same
+  mistake on every platform so that my shared error handling works
+  everywhere despite differing native ping messages.
+- As a developer diagnosing a real failure (IPv6 unavailable on the
+  adapter, no route), I want an error that reflects the true cause so that
+  I can tell "this network has no route for that family" apart from "that
+  hostname doesn't exist."
+- As an existing user, I want hostname pings and correctly-matched IP
+  pings to work exactly as they do today so that this fix doesn't change
+  working code.
+
+## IPv6 — quality attributes §req:ipfamily-quality-attributes
+
+- **Error honesty:** errors reflect the true failure mode; "unknown host"
+  is reserved for real name-resolution failures.
+- **Cross-platform consistency:** the same invalid input yields the same
+  Dart-side error across all platforms; the library normalizes at the
+  Dart boundary while staying thin underneath.
+- **Thinness / native fidelity:** the library stays as close to native
+  ping behavior as possible — no DNS of its own, no translation layer,
+  valid targets passed straight through. Intervention is limited to
+  up-front validation of incoherent combinations and faithful
+  surfacing/mapping of native errors.
+- **Compatibility:** the public Dart API shape (`Ping`,
+  `PingData` / `PingResponse` / `PingSummary` / `PingError`) is
+  preserved; the `ipv6` parameter keeps its name and `false` default. Any
+  new error type is additive.
+- **Testability:** mismatch and mislabeling behavior is verifiable via
+  automated tests that do not depend on a live IPv6-only network.
+
+## IPv6 — constraints §req:ipfamily-constraints
+
+- `ipv6` is treated as an **exclusive** address-family selector
+  (`true` = IPv6-only, `false` = IPv4-only), matching the native
+  `ping`/`ping6` (`-4`/`-6`) semantics the library already uses.
+- The library does **no DNS resolution of its own**; hostnames are handed
+  to the platform. Up-front validation applies only to **literal IP**
+  targets, whose family is determinable without resolution, and rejects a
+  literal/flag mismatch in **both directions**.
+- This work clarifies errors; it does **not** commit to adding IPv6
+  support where a platform lacks it today (Windows IPv6 remains
+  unsupported — the goal there is an honest error, not new capability).
+- Any new typed error is **additive** to `PingError` / `ErrorType`;
+  existing values keep their meaning. The change aims to be non-breaking
+  to existing valid usage.
+- Traceable to issue #69; relates to the refresh's error-mapping /
+  parser-coverage goals (`§req:refresh-success-criteria`).
+
+## IPv6 — priorities §req:ipfamily-priorities
+
+- **Must-have:** stop mislabeling address-family and routing failures as
+  "Unknown Host"; treat `ipv6` as an exclusive selector and fail fast with
+  a clear, consistent, catchable error when a literal IP's family
+  contradicts the flag; reserve `unknownHost` for genuine name-resolution
+  failures.
+- **High priority:** map common recognizable native failures (network
+  unreachable / no route / family unavailable) to typed `PingError`s for
+  cross-platform branching; automated tests for validation and error
+  mapping.
+- **Nice-to-have:** documentation of the exclusive-selector model and the
+  IPv6-only-mobile-network (DNS64 / NAT64) behavior, so developers
+  understand why hostnames can succeed where IP literals fail.
+
+## IPv6 — open decisions §req:ipfamily-open-decisions
+
+These surfaced during discovery and are deliberately deferred to `/plan`,
+where mechanism is decided:
+
+- **Platform scope.** #69 was reported on mobile data, so the iOS native
+  Swift engine and/or Android are implicated, but the mislabeling
+  principle applies to every engine (the core `dart_ping` process engine
+  and `dart_ping_ios`). Which platforms actually exhibit the bug, and
+  where each fix lands, is a design task. *(Was: "unsure / investigate".)*
