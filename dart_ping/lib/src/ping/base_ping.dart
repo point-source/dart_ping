@@ -89,14 +89,13 @@ abstract class BasePing {
   /// The command that will be run on the host OS
   String get command => 'ping ${params.join(' ')} $host';
 
-  /// The executable used to launch the ping process for the selected
-  /// [ipVersion]. The default uses the legacy `ping6` binary for IPv6, which
-  /// macOS still relies on. Platforms whose unified `ping` selects the family
-  /// by flag instead (Linux/Android pass `-4`/`-6` in [params]) override this
-  /// to always use `ping`, so the family is forced explicitly rather than left
-  /// to the resolver's default (which can pick the other family on a
-  /// dual-stack host).
-  String get executable => ipVersion == IpVersion.ipv6 ? 'ping6' : 'ping';
+  /// The executable used to launch the ping process. Every supported core
+  /// platform uses the unified `ping` binary: Linux/Android force the family
+  /// with an explicit `-4`/`-6` in [params], while macOS and Windows only run
+  /// `ping` for IPv4 (both reject IPv6 in [params] before launch). No platform
+  /// dispatches to the legacy `ping6` binary. Kept as a getter so a platform
+  /// can still override the executable if needed.
+  String get executable => 'ping';
 
   /// Starts a ping process on the host OS
   Future<Process> get platformProcess async {
@@ -208,13 +207,16 @@ abstract class BasePing {
               ),
             );
           }
-        } else if (_errors.isEmpty) {
-          // Unmapped non-zero exit AND no typed error already surfaced during
-          // the run: surface the exception rather than discarding it, so the
-          // consumer can catch it. When a typed error did surface (e.g. a
-          // `noRoute` line that also makes the process exit non-zero), the
-          // consumer already has a catchable signal, so the raw exit Exception
-          // would only be a redundant second signal for the same failure.
+        } else {
+          // Unmapped non-zero exit: surface the exception rather than
+          // discarding it, so the consumer can catch it. This fires even when
+          // a typed error (e.g. a `noRoute` line) already surfaced during the
+          // run: the two are independent layers (parsed output vs. process exit
+          // code), and suppressing the exit exception whenever any error
+          // occurred would also hide a genuinely distinct unmapped exit after
+          // unrelated per-probe timeouts, weakening the
+          // §spec:stream-lifecycle-robustness guarantee. A noRoute line plus the
+          // generic exit exception is a tolerable minor redundancy by contrast.
           final ex = throwExit(exitCode);
           if (ex != null) {
             _controller.addError(ex);

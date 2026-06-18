@@ -191,12 +191,13 @@ void main() {
       expect(summary.errors, isEmpty);
     });
 
-    test('(b2) a typed error event suppresses the redundant exit exception',
+    test('(b2) a typed noRoute event AND the unmapped-exit error both surface',
         () async {
-      // A noRoute line surfaces a typed PingData(error: noRoute) AND makes the
-      // process exit non-zero (2, unmapped). The consumer should get the single
-      // typed error, NOT also a raw "exited with code: 2" exception on the error
-      // channel — one failure, one signal.
+      // A noRoute line surfaces a typed PingData(error: noRoute) and the process
+      // also exits non-zero (2, unmapped). The unmapped-exit error is still
+      // surfaced — the exit code is an independent signal from the parsed line,
+      // so it is NOT suppressed (suppressing it would also hide a distinct exit
+      // after unrelated timeouts). The stream still closes exactly once.
       final ping = TestPing(
         process: FakeProcess(
           stderrLines: const ['connect: Network is unreachable'],
@@ -206,11 +207,14 @@ void main() {
 
       final result = await _drain(ping);
 
-      expect(result.errors, isEmpty,
-          reason: 'no raw exit exception when a typed error already surfaced');
       final errorData = result.data.where((d) => d.error != null).toList();
       expect(errorData, hasLength(1));
-      expect(errorData.single.error!.error, ErrorType.noRoute);
+      expect(errorData.single.error!.error, ErrorType.noRoute,
+          reason: 'the routing failure surfaces as a typed PingData event');
+      expect(result.errors, hasLength(1),
+          reason: 'the unmapped exit still surfaces a catchable error');
+      expect(result.errors.single.toString(),
+          contains('Ping process exited with code: 2'));
       expect(result.doneCount, 1, reason: 'stream must close exactly once');
     });
 

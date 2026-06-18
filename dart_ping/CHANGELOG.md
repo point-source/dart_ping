@@ -33,8 +33,6 @@ Additional #69 error-honesty refinements:
   `unknown` rather than being mislabelled `noRoute`.
 - The literal/family mismatch guard now fires on direct platform-class /
   `DartPingIOS` construction too, not only via the `Ping(...)` factory.
-- When a typed error already surfaced during a run, an unmapped non-zero exit
-  no longer adds a redundant raw exception — one failure yields one signal.
 
 ## 9.1.1
 
