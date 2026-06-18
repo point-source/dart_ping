@@ -16,6 +16,11 @@ This document tracks three areas of work:
    failed process launch (e.g. a missing `ping` binary). Surfaced by the
    Dart code audit (`§spec:code-audit`). Captured in the
    `§req:robustness-*` sections at the end.
+4. **Interface selection (#72)** — let a developer choose which network
+   interface (by interface name or by local source address) pings
+   originate from, on the desktop platforms (Linux/Android, macOS,
+   Windows), with a nice-to-have helper to enumerate the available
+   interfaces. Captured in the `§req:interface-*` sections at the end.
 
 ---
 
@@ -414,3 +419,174 @@ Observable, end-to-end outcomes a tester can demonstrate against the
   integrity so diagnostic lines arrive intact.
 - **Nice-to-have:** none beyond the above — this is a focused robustness
   fix.
+
+---
+
+# Interface selection (#72)
+
+Add an optional way to control which network interface a ping originates
+from. Driven by GitHub issue #72: a consumer wants to pick an interface
+(the issue cites Linux's `ping -I`) and, ideally, discover which
+interfaces are available. Additive feature on top of the existing
+multi-platform `Ping` API.
+
+## Interface — problem statement §req:interface-problem-statement
+
+The target users are developers using `dart_ping` on machines with more
+than one network path — a laptop on Wi-Fi and Ethernet at once, a device
+with a VPN or tunnel interface alongside a physical one, or an embedded /
+mobile system with both cellular and Wi-Fi radios.
+
+Today `dart_ping` always pings over whatever interface the operating
+system's default route selects. There is no way to say "send these pings
+out of *this* interface" or "use *this* local source address." A
+developer who needs to confirm reachability over a specific path cannot
+do it through this package, even though the underlying system `ping`
+binaries support it (e.g. `ping -I` on Linux). They are forced to drop
+out of `dart_ping` and shell out to `ping` themselves, or change the
+host's routing — both heavier than the task warrants.
+
+This blocks several concrete needs the maintainer and issue reporter
+called out, all variations of the same gap:
+
+- **Multi-homed selection** — the device has several interfaces and the
+  caller must pin pings to one specific NIC rather than accept the OS
+  default.
+- **Route / VPN verification** — confirm a host is reachable over (or
+  explicitly bypassing) a VPN or tunnel by pinging from that interface.
+- **Cellular vs. Wi-Fi** — on mobile/embedded hardware, test
+  connectivity on a chosen radio independent of the current default
+  route.
+- **Diagnostics parity** — general network diagnostics that want the
+  same `-I`-style control the system `ping` already offers.
+
+A secondary part of the gap: even when a developer wants to pick an
+interface, they often don't know the exact names/addresses available on
+the current host, and those names differ per platform. So discovering the
+candidate interfaces is part of the same problem, though a lesser part.
+
+The problem is bounded to the desktop platforms `dart_ping` drives via a
+native `ping` subprocess (Linux/Android, macOS, Windows). The iOS native
+Swift engine does not expose interface binding today; pinning to an
+interface there is a separate, larger piece of work and is explicitly
+out of scope for this change.
+
+## Interface — success criteria §req:interface-success-criteria
+
+Observable, end-to-end outcomes a tester can demonstrate:
+
+- **A ping can be pinned to an interface.** On Linux/Android and macOS, a
+  developer can construct a `Ping` that specifies a network interface and
+  observe — via the spawned command and the responses — that probes
+  originate from the chosen interface rather than the OS default.
+  *(must-have)*
+- **Interface accepts a name or a source address.** The selection can be
+  given either as an interface name (e.g. `eth0`, `en0`) or as a local
+  source IP address (e.g. `192.168.1.5`), and both forms work where the
+  platform supports them. *(must-have)*
+- **Windows honors the source-address form.** On Windows, specifying a
+  source IP address binds the ping to it. Passing a bare interface *name*
+  on Windows — which the OS `ping` cannot bind by — produces a clear,
+  catchable error rather than silently ignoring the request.
+  *(must-have)*
+- **Unsupported platforms fail loudly.** On iOS, supplying an interface
+  or source selection throws an explicit "interface selection not
+  supported" error, so a developer is never misled into thinking a
+  selection took effect when it did not. *(must-have — mirrors how
+  Windows rejects IPv6 today.)*
+- **A bad interface surfaces an error, then closes.** If the chosen
+  interface or source address does not exist or has no connectivity, the
+  consumer receives a catchable error event on the stream and the stream
+  then closes within bounded time — no hang. *(must-have — consistent
+  with the #76 stream-lifecycle robustness work,
+  `§req:robustness-success-criteria`.)*
+- **Omitting the selection changes nothing.** When no interface/source is
+  specified, behavior is byte-for-byte identical to today's: pings go out
+  the OS default route and existing consumer code is unaffected.
+  *(must-have — backward-compatibility guard.)*
+- **Available interfaces can be listed.** A developer can call a helper
+  that returns the network interfaces available on the current host
+  (enough to identify and pass one back into a `Ping`), so an app can
+  present a chooser or validate input. *(nice-to-have.)*
+
+## Interface — user stories §req:interface-user-stories
+
+- As a developer on a multi-homed machine, I want to tell `dart_ping`
+  which interface to ping from so that I can verify reachability over a
+  specific NIC instead of whatever the OS default route picks.
+- As a developer validating a VPN or tunnel, I want to originate pings
+  from that interface (or its source address) so that I can confirm a
+  host is reachable over the intended path.
+- As a developer on mobile/embedded hardware, I want to choose between
+  cellular and Wi-Fi when pinging so that I can test each radio
+  independently of the current default route.
+- As a cross-platform developer, I want to pass either an interface name
+  or a source address and have it work the same way on Linux/Android and
+  macOS so that my shared code is predictable.
+- As a Windows developer, I want a clear error when I pass an interface
+  name that Windows can't bind by, so that I switch to a source address
+  instead of silently pinging the wrong interface.
+- As an iOS developer, I want a clear "not supported" error if I try to
+  select an interface so that I'm not misled into thinking it worked.
+- As a developer who doesn't know the host's interfaces, I want to list
+  the available ones so that I can show a picker or validate the value I
+  pass in.
+- As an existing `dart_ping` user, I want pings without an interface
+  argument to behave exactly as they do today so that this addition is
+  invisible to my working code.
+
+## Interface — quality attributes §req:interface-quality-attributes
+
+- **Compatibility:** the feature is additive and optional — the existing
+  public `Ping` API and the `PingData` / `PingResponse` / `PingSummary` /
+  `PingError` shapes are unchanged for callers who don't use it. A
+  non-breaking, minor-version addition to `dart_ping`.
+- **Cross-platform predictability:** the same selection value behaves the
+  same way across the supported desktop platforms wherever the platform
+  allows it; where a platform genuinely cannot (Windows + interface name,
+  iOS entirely), the difference surfaces as a clear error rather than
+  silent divergence.
+- **Reliability:** a selection that can't be honored never leaves the
+  stream hanging — it surfaces a catchable error and the stream closes,
+  consistent with the broader stream-lifecycle guarantees.
+- **Discoverability:** error messages name the problem in the user's
+  terms (e.g. interface name vs. source address, platform not supported)
+  so a developer can correct the call without reading the source.
+- **Testability:** the command produced for a given selection, the
+  per-platform rejections, and the bad-interface error path are
+  verifiable via automated tests where feasible (e.g. asserting the
+  spawned command), without requiring specific live hardware.
+
+## Interface — constraints §req:interface-constraints
+
+- Scope is the desktop platforms `dart_ping` drives via a native `ping`
+  subprocess: **Linux/Android, macOS, and Windows**. **iOS is out of
+  scope** and rejects the selection with a clear error.
+- Selection accepts **either an interface name or a local source
+  address**. On platforms whose `ping` cannot bind by name (Windows,
+  which binds only by source address), the name form is rejected with a
+  clear error rather than approximated.
+- The change is **additive and backward-compatible**: a new optional
+  parameter (plus the optional listing helper). Omitting it preserves
+  current behavior. Ships as a **minor version** of `dart_ping`.
+- The exact parameter name/shape, the per-platform `ping` flags (Linux
+  `-I`, macOS `-b` / `-S`, Windows `-S`), name↔address resolution, and
+  the listing helper's signature are **design decisions for
+  `/symphonize:plan`**, not fixed here.
+- Bad-interface handling reuses the stream error channel and termination
+  guarantees from `§req:robustness-*`; this feature does not introduce a
+  new failure-reporting mechanism.
+
+## Interface — priorities §req:interface-priorities
+
+- **Must-have:** an optional interface/source selection on Linux/Android
+  and macOS, accepting a name or a source address; Windows honoring the
+  source-address form and clearly rejecting bare names; iOS clearly
+  rejecting the selection; a bad selection surfacing a catchable error
+  and closing the stream; and no change to behavior when the selection is
+  omitted.
+- **High priority:** consistent, well-worded errors across the platform
+  differences so cross-platform callers can react predictably; automated
+  tests for the produced command and the rejection/error paths.
+- **Nice-to-have:** the helper that enumerates the host's available
+  network interfaces for use in a picker or for input validation.

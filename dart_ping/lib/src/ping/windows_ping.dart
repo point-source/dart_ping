@@ -14,6 +14,7 @@ class PingWindows extends BasePing implements Ping {
     PingParser? parser,
     Encoding encoding = const Utf8Codec(allowMalformed: true),
     bool forceCodepage = false,
+    String? interface,
   }) : super(
           host,
           count,
@@ -24,7 +25,19 @@ class PingWindows extends BasePing implements Ping {
           parser ?? defaultParser,
           encoding,
           forceCodepage,
-        );
+          interface,
+        ) {
+    // Windows `ping` binds ONLY by source address, never by interface name.
+    // Reject a bare name once, up front at construction (consistent with the
+    // iOS rejection), rather than throwing lazily from the `command`/`params`
+    // getters — a caller inspecting `command` should never get an exception.
+    if (hasInterface && !interfaceIsAddress) {
+      throw UnimplementedError(
+        'Windows ping binds only by source address, not by interface name: '
+        'pass a source IP address instead of the interface name "$interface".',
+      );
+    }
+  }
 
   static PingParser get defaultParser => PingParser(
         responseRgx: RegExp(
@@ -58,6 +71,13 @@ class PingWindows extends BasePing implements Ping {
     } else {
       params.add('-n');
       params.add(count.toString());
+    }
+    // Windows `ping` binds ONLY by source address (split args: `-S <address>`).
+    // A bare interface name is rejected at construction, so by the time this
+    // getter runs a non-empty selection is guaranteed to be an address.
+    if (hasInterface) {
+      params.add('-S');
+      params.add(interface!);
     }
 
     return params;

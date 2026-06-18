@@ -13,6 +13,7 @@ class PingMac extends BasePing implements Ping {
     bool ipv6, {
     PingParser? parser,
     Encoding encoding = const Utf8Codec(),
+    String? interface,
   }) : super(
           host,
           count,
@@ -23,6 +24,7 @@ class PingMac extends BasePing implements Ping {
           parser ?? defaultParser,
           encoding,
           false,
+          interface,
         );
 
   static PingParser get defaultParser => PingParser(
@@ -49,6 +51,15 @@ class PingMac extends BasePing implements Ping {
   List<String> get params {
     var params = ['-n', '-W ${timeout * 1000}', '-i $interval', '-m $ttl'];
     if (count != null) params.add('-c $count');
+    // macOS binds a source address with `-S` and an interface name with `-b`
+    // (boundif), so pick the flag from the value's classified form. The flag
+    // and value are SEPARATE argv tokens — `Process.start` runs without a
+    // shell, so a glued `'-S $interface'` token would reach ping as one
+    // argument whose value carries a leading space and fail to bind.
+    if (hasInterface) {
+      params.add(interfaceIsAddress ? '-S' : '-b');
+      params.add(interface!);
+    }
 
     return params;
   }

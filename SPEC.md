@@ -1,6 +1,6 @@
 # Specification
 
-This document covers four areas, matching REQUIREMENTS.md:
+This document covers five areas, matching REQUIREMENTS.md:
 
 1. **iOS SPM migration (#73)** — `§spec:swift-icmp-engine` …
    `§spec:ios-tests` below (implemented).
@@ -10,9 +10,14 @@ This document covers four areas, matching REQUIREMENTS.md:
    `§spec:stream-lifecycle-robustness` (implemented). A focused
    follow-up to two hang paths deferred from `§spec:code-audit`.
 4. **Continuous integration & coverage expansion (#74, #77)** — the
-   `§spec:ci` … `§spec:coverage-expansion` sections at the very end
-   (implemented). This is new work *beyond* the refresh's "fill gaps only"
-   scope, which had deliberately excluded CI (§spec:test-coverage).
+   `§spec:ci` … `§spec:coverage-expansion` sections (implemented). This is
+   new work *beyond* the refresh's "fill gaps only" scope, which had
+   deliberately excluded CI (§spec:test-coverage).
+5. **Interface selection (#72)** — `§spec:interface-selection` …
+   `§spec:interface-listing` at the very end (not started). An optional way
+   to pin pings to a chosen network interface or source address on the
+   subprocess platforms, with a helper to enumerate the host's interfaces.
+   Additive on top of the existing `Ping` API.
 
 Solution-space design for issue #73 — native, Swift Package Manager
 (SPM)-compatible iOS support for `dart_ping`.
@@ -676,3 +681,202 @@ identity hash for `hashCode`, so two value-equal summaries (e.g. a
 deserialized one vs. its original) could land in different hash buckets,
 silently breaking `Set`/`Map` membership. The fix is small and clearly
 correct, the kind of latent defect the §spec:code-audit pass targets.
+
+---
+
+# Interface selection
+
+Solution-space design for issue #72 (`§req:interface-*`): let a consumer
+choose which network interface — or which local source address — pings
+originate from, instead of always taking the OS default route. The work is
+confined to the core `dart_ping` package's subprocess platforms
+(Linux/Android, macOS, Windows) plus an explicit iOS rejection; it adds an
+optional parameter and a listing helper and changes no existing behavior.
+
+The problem (from §req:interface-problem-statement): on a multi-homed host —
+Wi-Fi and Ethernet at once, a VPN/tunnel alongside a physical NIC, cellular
+vs. Wi-Fi on mobile/embedded — `dart_ping` offers no way to say "send these
+pings out of *this* interface," even though the system `ping` binaries it
+drives already support it (Linux's `-I`). A developer who needs to verify
+reachability over a specific path must shell out to `ping` themselves or
+re-route the host. A secondary gap: developers often don't know the exact
+interface names/addresses on the current host, and those differ per platform.
+
+The design adds one optional `interface` selection to the `Ping` factory,
+threaded through to each platform class, where it maps onto that platform's
+native binding flag. The single value accepts **either** an interface name
+**or** a local source IP address; each platform honors the form(s) its
+`ping` can bind by and rejects — loudly — the form(s) it cannot. A
+nice-to-have static helper enumerates the host's interfaces. The selection
+reuses the existing per-platform `params`/`command` assembly and the
+stream-error/termination guarantees of §spec:stream-lifecycle-robustness;
+it introduces no new public model types and no new failure-reporting
+mechanism.
+
+**Why one `interface` parameter that takes a name or an address** rather
+than two parameters (`interface` + `sourceAddress`): the underlying tools
+blur the distinction — Linux `ping -I` accepts a name or an address in the
+same flag — and the user thinks in terms of "the path to ping from," not
+"which of two binding mechanisms." A single value classified by whether it
+parses as an IP literal (`InternetAddress.tryParse`) lets each platform pick
+the flag it supports from one input, keeping the cross-platform call
+identical (§req:interface-quality-attributes — cross-platform
+predictability; §req:interface-constraints). Two parameters would push the
+name-vs-address mechanism choice onto the caller, which is exactly the
+platform detail this design hides.
+
+## Interface selection on the subprocess platforms §spec:interface-selection
+*Status: implemented (dart_ping 9.2.0) — an optional `interface` value on the `Ping` factory and the `PingLinux`/`PingMac`/`PingWindows` constructors is classified as a name vs. a source address via `InternetAddress.tryParse` (shared `BasePing.interface` field + `interfaceIsAddress` getter) and mapped onto each tool's binding flag inside the existing `params` getter: Linux/Android `-I <value>` (either form), macOS `-b <value>` (name) / `-S <value>` (address), Windows `-S <value>` (address form only — bare-name rejection is §spec:interface-platform-rejection). Omitting `interface` leaves `params`/`command` byte-for-byte identical to 9.1.1; the iOS factory branch and the `PingData`/`PingResponse`/`PingSummary`/`PingError` shapes are unchanged. Covered by network-free `dart test` cases in `dart_ping/test/platform_test.dart` asserting the per-platform flag for name and address selections plus a backward-compat guard, all via the public `command`/`params` getters.*
+
+A `Ping` constructed with an optional `interface` value pins its probes to
+that interface or source address on the platforms whose `ping` can bind by
+the supplied form. The value is a single string holding either an interface
+name (e.g. `eth0`, `en0`) or a local source IP (e.g. `192.168.1.5`),
+classified by whether it parses as an IP literal. Omitting it reproduces
+today's behavior exactly.
+
+- When a caller supplies an `interface` value, the spawned ping command
+  shall carry the platform's interface-binding flag for that value, so
+  probes originate from the chosen interface/source rather than the OS
+  default route (§req:interface-success-criteria,
+  §req:interface-user-stories):
+  - **Linux/Android** binds either form with `-I <value>` (the platform's
+    `ping -I` accepts a name or an address).
+  - **macOS** binds an interface name with `-b <value>` (boundif) and a
+    source address with `-S <value>`.
+  - **Windows** binds a source address with `-S <value>`; the name form is
+    not supported here and is rejected (§spec:interface-platform-rejection).
+- The selection accepts a name or a source address, and both forms work
+  wherever the platform supports them (Linux/Android: both; macOS: both;
+  Windows: address only) (§req:interface-success-criteria — must-have).
+- When no `interface` is supplied, the produced command and the stream's
+  behavior shall be byte-for-byte identical to the current release, so
+  existing consumer code is unaffected (§req:interface-success-criteria —
+  backward-compatibility guard; §req:interface-quality-attributes —
+  compatibility).
+- The addition shall be a new **optional** parameter on the `Ping` factory
+  and the platform constructors; the `Ping` interface and the
+  `PingData` / `PingResponse` / `PingSummary` / `PingError` shapes are
+  otherwise unchanged, and the feature ships as a **minor** version of
+  `dart_ping` (§req:interface-constraints, §req:interface-quality-attributes
+  — compatibility, §spec:public-api-stability).
+- The command produced for a given selection shall be assertable via the
+  public `command` getter without a live network, so each platform's flag
+  mapping is unit-testable (§req:interface-quality-attributes — testability).
+
+**Why map onto each platform's native flag rather than a portable
+abstraction:** `dart_ping` is a thin driver over the system `ping`; the
+binding is whatever that binary offers. Reusing the existing per-platform
+`params` getter (where `-O`/`-W`/`-i`/`-t` etc. already live) keeps the
+interface flag beside the flags it sits next to and makes it testable the
+same way (§spec:coverage-expansion asserts `params`/`command` directly). The
+flag choices — Linux `-I`, macOS `-b`/`-S`, Windows `-S` — are the project's
+mapping decision from the one `interface` value onto each tool, recorded
+here so the *why* survives even if a flag spelling changes upstream.
+
+**Why classify name vs. address by parsing the value** rather than asking
+the caller to declare which it is: it removes a decision the caller would
+otherwise have to make per platform, and the classification is cheap and
+unambiguous (an IP literal parses; a name does not). It also lets one shared
+call site work across Linux, macOS, and Windows, with only Windows narrowing
+to the address form — the cross-platform-predictability goal
+(§req:interface-quality-attributes).
+
+**Tradeoff:** `interface` is named for the user's mental model even though it
+also accepts a source address, because "interface" is the issue's and the
+domain's term (#72) and the address form is the less common path. The
+doc comment states both forms explicitly so the dual meaning is discoverable
+at the call site.
+
+## Loud rejection of unsupported selections §spec:interface-platform-rejection
+*Status: implemented (dart_ping 9.2.0) — a selection a platform cannot honor now fails loudly through a catchable error rather than a silent no-op. On Windows, `PingWindows.params` throws an `UnimplementedError` for a bare interface *name* (any non-null `interface` that is not an IP address) naming the limitation — Windows `ping` binds only by source address — while the `-S <address>` source form stays honored (§spec:interface-selection); because `params` is evaluated inside `BasePing._onListen`'s try/catch, the throw surfaces on the stream's error channel and the stream still closes (mirrors the existing IPv6 `UnimplementedError` precedent). On iOS, a new top-level `throwIfInterfaceUnsupportedOnIos(interface)` guard — called as the first statement of the `Ping` factory's `'ios'` branch, before delegating to `Ping.iosFactory` — throws `UnimplementedError('Interface selection is not supported on iOS')` for any non-null selection, so the `dart_ping_ios` factory signature and the native engine need no edit. A bad/non-existent interface (OS `ping` refusing the bind / non-zero exit) reuses the §spec:stream-lifecycle-robustness error-channel + bounded-time close with no new failure-reporting mechanism. Covered by network-free `dart test` cases: the Windows name rejection in `dart_ping/test/platform_test.dart`, the iOS guard (name, address, and null no-op) in `dart_ping/test/misuse_test.dart`, and the bad-interface error-then-close path in `dart_ping/test/stream_lifecycle_test.dart`.*
+
+A selection a platform genuinely cannot honor produces a clear, catchable
+error and the stream terminates — never a silent no-op that misleads the
+caller into thinking a binding took effect.
+
+- On **Windows**, supplying a bare interface *name* (a value that is not an
+  IP address) shall produce an explicit, catchable error naming the
+  limitation — Windows `ping` binds only by source address — rather than
+  silently ignoring the request or pinging the default route
+  (§req:interface-success-criteria — must-have;
+  §req:interface-quality-attributes — discoverability). The source-address
+  form is honored (§spec:interface-selection).
+- On **iOS**, supplying any `interface` selection shall produce an explicit
+  "interface selection not supported" error, so a developer is never misled
+  into thinking a selection took effect on a platform whose engine cannot
+  bind one (§req:interface-success-criteria — must-have). This mirrors how
+  Windows rejects IPv6 today.
+- When the chosen interface or source address does not exist or has no
+  connectivity, the consumer shall receive a catchable error event on the
+  stream and the stream shall then close within bounded time — no hang —
+  reusing the termination and error-channel guarantees of
+  §spec:stream-lifecycle-robustness (§req:interface-success-criteria;
+  §req:robustness-success-criteria).
+- The per-platform rejections and the bad-interface error path shall be
+  covered by automated tests that do not require specific live hardware
+  (e.g. asserting the rejection for a Windows name selection and an iOS
+  selection) (§req:interface-quality-attributes — testability).
+
+**Why fail loudly instead of approximating or ignoring:** a silently dropped
+selection is the worst outcome — the developer believes pings traverse the
+chosen path when they take the default route, defeating the diagnostic the
+feature exists for (§req:interface-problem-statement). Rejecting the
+unsupported form is consistent with the package's existing stance on
+capabilities a platform lacks: `PingWindows.params` already throws
+`UnimplementedError` for IPv6 rather than emitting a wrong command. The
+unsupported-selection rejection follows that precedent and surfaces through
+the same stream error channel, so §spec:stream-lifecycle-robustness
+guarantees it is catchable and the stream still closes.
+
+**Why reject iOS at the factory boundary:** the iOS engine
+(§spec:swift-icmp-engine) exposes no interface binding, and pinning one
+there is separately out of scope (§req:interface-constraints). Rejecting the
+selection in the `Ping` factory's iOS branch — before delegating to
+`Ping.iosFactory` — keeps the `dart_ping_ios` factory signature and the
+native engine unchanged, so the iOS package needs no edit to stay correct
+(§spec:public-api-stability). A future iOS implementation can lift the
+rejection without a breaking change.
+
+**Why "does not exist / no connectivity" rides the existing error path:**
+that failure is the OS `ping` refusing the bind or exiting non-zero, which
+is already routed through the stream's error channel and bounded-time
+closure by §spec:stream-lifecycle-robustness. The feature deliberately adds
+no new failure-reporting mechanism (§req:interface-constraints).
+
+## Enumerating available interfaces §spec:interface-listing
+*Status: implemented (dart_ping 9.2.0) — a top-level `listNetworkInterfaces({includeLoopback, includeLinkLocal, type})` helper in `dart_ping/lib/src/interface_listing.dart`, exported from `dart_ping/lib/dart_ping.dart`, returns the host's `dart:io` `NetworkInterface`s via `NetworkInterface.list()` (no `ifconfig`/`ip`/`ipconfig` parsing). Each returned interface exposes a `name` and `addresses`, either of which feeds straight back into a `Ping`'s `interface` value; the entrypoint re-exports `NetworkInterface`/`InternetAddress`/`InternetAddressType` so the return type is nameable without importing `dart:io`. No new public model type is introduced. The helper is a thin pass-through with no `try/catch`, so an enumeration failure propagates to the caller as a rejected future rather than being swallowed; that failure path is made testable network-free via an internal `networkInterfaceLister` seam (typedef + mutable top-level default, reachable from `package:dart_ping/src/interface_listing.dart` but not from the public entrypoint). Covered by network-free `dart test` cases in `dart_ping/test/interface_listing_test.dart` (exported surface/shape, round-trip of a returned name/address into `Ping(host, interface: ...)`, and the not-swallowed-failure contract via the seam). Documented in the README ("Selecting a network interface") and the 9.2.0 CHANGELOG entry.*
+
+A developer can discover the network interfaces available on the current
+host — enough to identify one and pass it back into a `Ping` — so an app can
+present a chooser or validate caller input.
+
+- The package shall expose a helper that returns the host's available
+  network interfaces, each identified well enough (name and/or addresses) to
+  be supplied as the `interface` value of a `Ping`
+  (§req:interface-success-criteria — nice-to-have;
+  §req:interface-user-stories).
+- The helper shall surface no new public model coupling beyond what
+  enumeration requires, and a failure to enumerate shall be reported to the
+  caller rather than swallowed (§req:interface-quality-attributes —
+  reliability, discoverability).
+
+**Why a listing helper at all:** selecting an interface is only useful if
+the developer knows which names/addresses exist, and those differ per
+platform (§req:interface-problem-statement). The helper closes the loop
+between "I want to pick an interface" and "I don't know what's available."
+
+**Why build on `dart:io`'s `NetworkInterface.list()` rather than parse
+`ifconfig`/`ip`/`ipconfig` output:** the Dart SDK already enumerates
+interfaces and their addresses portably across the desktop platforms,
+returning structured data, so reusing it avoids a second per-platform
+text-parsing surface (the kind §spec:ttl-exceeded-parse showed is
+error-prone) and stays consistent regardless of locale. The helper's exact
+return shape is an implementation choice; the normative contract is only
+that what it returns can be fed back into `interface`.
+
+**Why nice-to-have, not must-have:** the core value is the selection itself
+(§spec:interface-selection); a developer who already knows their interface
+name can use the feature without the listing helper. It is therefore
+prioritized below the selection and its rejections (§req:interface-priorities)
+and can ship in the same or a later slice without blocking them.

@@ -7,6 +7,22 @@ import 'ping/linux_ping.dart';
 import 'ping/mac_ping.dart';
 import 'ping/windows_ping.dart';
 
+/// Rejects any interface selection on iOS.
+///
+/// The iOS native engine exposes no interface binding, so selecting one (by
+/// interface name OR source address) cannot be honored. Throws an explicit
+/// [UnimplementedError] when [interface] is a non-empty selection; a null or
+/// empty value means "no selection" and is a no-op.
+///
+/// Extracted as a top-level function so the rejection can be unit-tested on
+/// any host, since the `Ping()` factory's `'ios'` branch is unreachable off
+/// iOS.
+void throwIfInterfaceUnsupportedOnIos(String? interface) {
+  if (interface != null && interface.isNotEmpty) {
+    throw UnimplementedError('Interface selection is not supported on iOS');
+  }
+}
+
 /// Ping class used to instantiate a ping instance.
 /// Spawns an OS ping process when the stream property is listened to
 abstract class Ping {
@@ -41,6 +57,16 @@ abstract class Ping {
     /// Under the hood, this appends the ping command with the `chcp` command
     /// like so: `chcp 437 && ping {opts}`
     bool forceCodepage = false,
+
+    /// Network interface to originate pings from.
+    ///
+    /// This single value accepts EITHER an interface *name* (e.g. `eth0` /
+    /// `en0`) OR a local source *IP address* (e.g. `192.168.1.5`). It is named
+    /// for the user's mental model — "the path to ping from" — even though it
+    /// also accepts a source address; each platform maps it onto the binding
+    /// flag(s) its `ping` supports (Linux/Android: both; macOS: both; Windows:
+    /// address only). Omitting it leaves the produced command unchanged.
+    String? interface,
   }) {
     switch (Platform.operatingSystem) {
       case 'android':
@@ -55,6 +81,7 @@ abstract class Ping {
           ipv6,
           parser: parser,
           encoding: encoding,
+          interface: interface,
         );
       case 'macos':
         return PingMac(
@@ -66,6 +93,7 @@ abstract class Ping {
           ipv6,
           parser: parser,
           encoding: encoding,
+          interface: interface,
         );
       case 'windows':
         return PingWindows(
@@ -78,8 +106,10 @@ abstract class Ping {
           parser: parser,
           encoding: encoding,
           forceCodepage: forceCodepage,
+          interface: interface,
         );
       case 'ios':
+        throwIfInterfaceUnsupportedOnIos(interface);
         Function? ios = iosFactory;
         if (iosFactory != null) {
           return ios!(
