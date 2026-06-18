@@ -261,11 +261,14 @@ void main() {
       );
     });
 
-    test('a third run on the shared channel is unaffected by sibling traffic',
-        () async {
-      // Regression-style guard: a run whose events are deliberately drowned in
-      // a sibling's interleaved traffic still collects only its own and closes
-      // on its own summary.
+    test(
+        'a low-traffic run drowned in a sibling\'s traffic stays isolated '
+        '(both directions)', () async {
+      // Regression-style guard: when one run (A) carries a single event buried
+      // in a sibling's (B's) interleaved burst, EACH run must collect only its
+      // own events and close on its own summary. We assert BOTH directions:
+      // A's lone event must not be lost in B's noise, AND A's event must not
+      // bleed into B.
       final pingA = DartPingIOS('a.example', 1, 1, 5, 64, false);
       final receivedA = <PingData>[];
       final doneA = Completer<void>();
@@ -281,9 +284,13 @@ void main() {
       final idA = idForHost('a.example');
       final idB = idForHost('b.example');
 
-      // Bombard B with traffic, slip one A event in, then close both.
-      emitNativeEvent({'id': idB, 'type': 'response', 'seq': 1, 'ttl': 50});
-      emitNativeEvent({'id': idB, 'type': 'response', 'seq': 2, 'ttl': 50});
+      // Bombard B with traffic, slip one A event in, then close both. Every
+      // field of A's lone event (ttl 99, ip 9.9.9.9) is distinct from B's
+      // (ttl 50, ip 8.8.8.8) so a bleed in EITHER direction flips an assertion.
+      emitNativeEvent(
+          {'id': idB, 'type': 'response', 'seq': 1, 'ttl': 50, 'ip': '8.8.8.8'});
+      emitNativeEvent(
+          {'id': idB, 'type': 'response', 'seq': 2, 'ttl': 50, 'ip': '8.8.8.8'});
       emitNativeEvent(
           {'id': idA, 'type': 'response', 'seq': 1, 'ttl': 99, 'ip': '9.9.9.9'});
       emitNativeEvent(
@@ -297,8 +304,10 @@ void main() {
             fail('a concurrent stream did not close within $hardTimeout'),
       );
 
+      // --- Run A: its lone event survived B's burst, nothing else leaked in ---
       final responsesA = responsesOf(receivedA);
-      expect(responsesA, hasLength(1));
+      expect(responsesA, hasLength(1),
+          reason: "a.example must collect only its own single response");
       expect(responsesA.single.seq, 1);
       expect(responsesA.single.ttl, 99,
           reason: "a.example's ttl must not be the sibling's 50");
@@ -308,6 +317,23 @@ void main() {
           receivedA.firstWhere((d) => d.summary != null).summary!;
       expect(summaryA.transmitted, 1);
       expect(summaryA.received, 1);
+
+      // --- Run B: collected only its own two responses; A's slipped-in event
+      // (ttl 99 / ip 9.9.9.9) must NOT appear in B's stream ---
+      final responsesB = responsesOf(receivedB);
+      expect(
+        responsesB,
+        const [
+          PingResponse(seq: 1, ttl: 50, ip: '8.8.8.8'),
+          PingResponse(seq: 2, ttl: 50, ip: '8.8.8.8'),
+        ],
+        reason: "b.example must collect only its own responses; a.example's "
+            'slipped-in event must not bleed across the shared channel',
+      );
+      final summaryB =
+          receivedB.firstWhere((d) => d.summary != null).summary!;
+      expect(summaryB.transmitted, 2);
+      expect(summaryB.received, 2);
     });
   });
 }
