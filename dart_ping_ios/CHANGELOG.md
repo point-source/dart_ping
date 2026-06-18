@@ -1,3 +1,10 @@
+## 6.0.0
+
+- **Breaking change (#69):** track `dart_ping` 10.0.0's `IpVersion` selector.
+  `DartPingIOS` now takes an `IpVersion` in place of the `ipv6` boolean, and the
+  selected address family is sent to the native engine as `ipVersion` (the enum
+  name) over the method channel. Requires `dart_ping` ^10.0.0.
+
 ## 5.1.0
 
 - Raise minimum Dart SDK to 3.8.0

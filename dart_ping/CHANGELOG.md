@@ -1,3 +1,22 @@
+## 10.0.0
+
+**Breaking change (#69):** the ambiguous `ipv6` boolean parameter on `Ping`
+has been replaced by an explicit, exclusive `IpVersion` enum. A boolean `false`
+was reasonably misread as "prefer IPv4 / dual-stack"; the library has always
+selected a single address family exclusively (`ping6` vs `ping`, `-4`/`-6` on
+Windows), and `IpVersion` makes that explicit and self-documenting. `IpVersion`
+has exactly two values, `ipv4` and `ipv6` — there is no dual-stack/auto value,
+and `IpVersion.ipv4` *excludes* IPv6 rather than preferring it.
+
+Migration:
+
+- `Ping(host, ipv6: true)` → `Ping(host, ipVersion: IpVersion.ipv6)`
+- `Ping(host, ipv6: false)` or omitting it → `Ping(host, ipVersion: IpVersion.ipv4)` (the default)
+
+The ping behavior for an equivalent, matched call is unchanged; only the
+selector parameter changes shape. IPv6 remains unsupported on Windows and
+continues to surface an explicit error.
+
 ## 9.1.1
 
 - Fix #76: the `Ping` stream could hang forever on two edge paths — a process-launch failure (e.g. a missing `ping` binary) and an unmapped non-zero exit code. Both now surface a catchable error through the stream's existing error channel and the stream always closes, so consumers (`await for`, `.drain()`, `.last`, `stop()`) never deadlock. A missing-binary failure reports that the ping binary could not be found.
