@@ -11,13 +11,14 @@ import 'ping/windows_ping.dart';
 ///
 /// The iOS native engine exposes no interface binding, so selecting one (by
 /// interface name OR source address) cannot be honored. Throws an explicit
-/// [UnimplementedError] when [interface] is non-null; otherwise a no-op.
+/// [UnimplementedError] when [interface] is a non-empty selection; a null or
+/// empty value means "no selection" and is a no-op.
 ///
 /// Extracted as a top-level function so the rejection can be unit-tested on
 /// any host, since the `Ping()` factory's `'ios'` branch is unreachable off
 /// iOS.
 void throwIfInterfaceUnsupportedOnIos(String? interface) {
-  if (interface != null) {
+  if (interface != null && interface.isNotEmpty) {
     throw UnimplementedError('Interface selection is not supported on iOS');
   }
 }

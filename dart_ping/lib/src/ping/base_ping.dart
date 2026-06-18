@@ -69,11 +69,21 @@ abstract class BasePing {
   /// no interface binding is applied.
   String? interface;
 
+  /// Whether an interface selection that should actually be applied was
+  /// supplied. An empty string is treated the same as `null` (no selection),
+  /// so it never produces a dangling binding flag.
+  bool get hasInterface => interface != null && interface!.isNotEmpty;
+
   /// Whether [interface] holds a source IP address (rather than an interface
   /// name), determined by parsing it as an IP literal via
   /// [InternetAddress.tryParse].
+  ///
+  /// An IPv6 zone id (e.g. `fe80::1%eth0`) is stripped before parsing because
+  /// [InternetAddress.tryParse] rejects the `%zone` suffix; without this a
+  /// zone-scoped source address would be misclassified as an interface name.
   bool get interfaceIsAddress =>
-      interface != null && InternetAddress.tryParse(interface!) != null;
+      hasInterface &&
+      InternetAddress.tryParse(interface!.split('%').first) != null;
 
   late final StreamController<PingData> _controller;
   Process? _process;

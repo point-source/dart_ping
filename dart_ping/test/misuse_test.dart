@@ -32,5 +32,9 @@ void main() {
     test('null interface is a no-op', () {
       expect(() => throwIfInterfaceUnsupportedOnIos(null), returnsNormally);
     });
+
+    test('empty interface is a no-op', () {
+      expect(() => throwIfInterfaceUnsupportedOnIos(''), returnsNormally);
+    });
   });
 }
