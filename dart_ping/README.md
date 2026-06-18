@@ -49,6 +49,19 @@ To prematurely halt the process:
 await ping.stop()
 ```
 
+### Selecting a network interface
+
+`Ping(host, interface: ...)` binds the ping to a specific interface, accepting either an interface name (e.g. `eth0`) or a local source IP address (e.g. `192.168.1.5`). To discover the host's available interfaces, use `listNetworkInterfaces()` and feed one back into a `Ping`:
+
+```dart
+final interfaces = await listNetworkInterfaces();
+// Pick one — by name or by a source address — then bind a ping to it.
+final ping = Ping('dart.dev', interface: interfaces.first.name);
+await for (final event in ping.stream) {
+  print(event);
+}
+```
+
 ### Non-English Language Support
 
 To support OS languages other than English, you can override the parser (Portuguese shown here):
