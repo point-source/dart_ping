@@ -697,10 +697,11 @@ no IPv6 capability where a platform lacks it.
 The problem (from §req:ipfamily-problem-statement): native ping selects
 its address family **exclusively** — the IPv4 tool refuses an IPv6 target
 and vice-versa — and `dart_ping` already inherits that by running `ping6`
-when `ipv6:true` and `ping` otherwise (and `-4`/`-6` on Windows). But the
-library never named `ipv6` as an exclusive selector, never validated that
-a literal target's family matches the flag, and never normalized the
-resulting native failure. So a family/flag mismatch, a missing route for
+for an IPv6 selection and `ping` for IPv4 (and `-4`/`-6` on Windows). But
+the library exposed the selection as an ambiguous `ipv6` boolean, never
+named it an exclusive selector, never validated that a literal target's
+family matches the selection, and never normalized the resulting native
+failure. So a family/flag mismatch, a missing route for
 the selected family, or an adapter without that family enabled all surface
 as whatever generic message the platform emits — frequently "unknown
 host," which sends developers chasing a name-resolution problem that does
@@ -716,25 +717,34 @@ is identical on every platform by construction; (2) hostnames are never
 touched — the library still does no DNS of its own; (3) honest mapping of
 routing/family failures lands per-engine (the core `dart_ping` subprocess
 parsers and the `dart_ping_ios` Swift engine), where the native error
-originates. The public Dart API shape is preserved; any new `ErrorType`
-value is additive (§req:ipfamily-constraints).
+originates. The error model is preserved and any new `ErrorType` value is
+additive; the address-family selector itself is deliberately redesigned —
+the ambiguous `ipv6` boolean becomes an `IpVersion` enum — a breaking
+change accepted to remove the ambiguity behind #69
+(§req:ipfamily-constraints, §req:ipfamily-quality-attributes).
 
-## IPv6 as an exclusive address-family selector §spec:ipv6-address-family-selector
+## Address family is an explicit `IpVersion` selection §spec:ipv6-address-family-selector
 *Status: not started*
 
-The `ipv6` flag is an **exclusive** address-family selector on every
-platform: `ipv6:true` means IPv6-only and `ipv6:false` means IPv4-only,
+The address family is chosen through an explicit, **exclusive**
+`IpVersion` enum — `IpVersion.ipv4` or `IpVersion.ipv6` — replacing the
+former `ipv6` boolean. The selection is single-family on every platform,
 matching the native `ping`/`ping6` (`-4`/`-6`) semantics the library
-already relies on. This contract is documented on the public `ipv6`
-parameter.
+already relies on. It defaults to `IpVersion.ipv4` (the behavior of the
+former `ipv6: false` default).
 
-- The system shall treat `ipv6:true` as IPv6-only and `ipv6:false` as
-  IPv4-only, consistently across iOS, Android, macOS, Linux, and Windows,
-  with no dual-stack or "prefer one family" behavior
+- The public selector shall be an `IpVersion` enum with exactly two
+  values, `ipv4` and `ipv6`; the `Ping` constructor shall accept it
+  (parameter `ipVersion`, default `IpVersion.ipv4`) in place of the
+  `bool ipv6` parameter
+  (§req:ipfamily-success-criteria, §req:ipfamily-quality-attributes).
+- The system shall treat `IpVersion.ipv6` as IPv6-only and
+  `IpVersion.ipv4` as IPv4-only, consistently across iOS, Android, macOS,
+  Linux, and Windows, with no dual-stack or "prefer one family" behavior
   (§req:ipfamily-success-criteria, §req:ipfamily-constraints).
-- The public dartdoc for `ipv6` shall describe it as an exclusive
-  address-family selector (not merely an "IPv6 mode"), so a reader
-  understands that `ipv6:false` excludes IPv6 rather than preferring IPv4
+- The public dartdoc shall describe `IpVersion` as an exclusive
+  address-family selection, so a reader understands that `IpVersion.ipv4`
+  excludes IPv6 rather than preferring IPv4
   (§req:ipfamily-success-criteria, §req:ipfamily-priorities — documentation).
 - Where a platform cannot serve the requested family at all, the system
   shall surface an honest, explicit error rather than silently serving the
@@ -743,52 +753,67 @@ parameter.
   (§req:ipfamily-constraints — no new capability;
   §spec:address-family-error-honesty).
 
-**Why name an existing mechanism as a contract:** the library already
-selects family exclusively (`base_ping` runs `ping6` vs `ping`; Windows
-passes `-4`/`-6`), but this was never stated or documented, so callers
-reasonably read `ipv6:false` as "prefer IPv4 / dual-stack." Naming the
-exclusivity is the framing that makes mismatch validation
-(§spec:address-family-mismatch-validation) coherent and makes the
-"hostname works, IP fails" surprise explicable.
+**Why an enum instead of the `ipv6` boolean (breaking change):** the
+library already selects family exclusively (`base_ping` runs `ping6` vs
+`ping`; Windows passes `-4`/`-6`), but a boolean `ipv6` parameter names
+only one family and leaves `false` open to being read as "prefer IPv4 /
+dual-stack" — the exact misreading behind #69. An `IpVersion` enum makes
+the choice symmetric and self-documenting: both families are named, and
+neither value implies a preference or a fallback. Replacing the boolean is
+a deliberate breaking change, shipped with a major version bump and a
+migration note (`ipv6: true` → `IpVersion.ipv6`; `ipv6: false` / default →
+`IpVersion.ipv4`); the one-time migration is judged cheaper than carrying
+the ambiguity forward (§req:ipfamily-quality-attributes — compatibility).
+This framing is what makes mismatch validation
+(§spec:address-family-mismatch-validation) coherent and the "hostname
+works, IP fails" surprise explicable.
+
+**Why `IpVersion`, not `IpMode` (rejected name):** "mode" implies
+behavioral modes — prefer-one-family, auto-select, dual-stack — that the
+library explicitly does not offer. `IpVersion` names exactly what is
+chosen: which IP version the ping uses. The narrower name forecloses the
+very misreading the rename exists to remove.
 
 **Why not a dual-stack / auto-select model (rejected alternative):**
 letting the OS pick the family would require the library to resolve the
 host itself and choose — exactly the DNS work the library deliberately
 does not do (§req:ipfamily-constraints — thinness). Native `ping`/`ping6`
 are single-family tools; an auto-select layer on top would be a
-translation layer the spec explicitly avoids. The exclusive selector keeps
-the library thin and faithful to native behavior.
+translation layer the spec explicitly avoids. A two-value `IpVersion`
+keeps the library thin and faithful to native behavior, and deliberately
+leaves no third "auto" value.
 
 ## Address-family mismatch fails fast §spec:address-family-mismatch-validation
 *Status: not started*
 
 When the target is a **literal IP address** whose family contradicts the
-`ipv6` flag, the call fails immediately with a single, consistent,
-catchable error — before any ping stream starts — that names an
-address-family mismatch. Hostnames are never rejected this way.
+selected `IpVersion`, the call fails immediately with a single,
+consistent, catchable error — before any ping stream starts — that names
+an address-family mismatch. Hostnames are never rejected this way.
 
-- When `ipv6:false` is given with an IPv6 literal, **or** `ipv6:true` with
-  an IPv4 literal, the system shall throw an `ArgumentError` before the
-  ping stream starts, identical in shape across all platforms, whose
-  message names an address-family mismatch (not "Unknown Host", not a
-  hang) (§req:ipfamily-success-criteria, §req:ipfamily-user-stories).
+- When `IpVersion.ipv4` is selected with an IPv6 literal, **or**
+  `IpVersion.ipv6` with an IPv4 literal, the system shall throw an
+  `ArgumentError` before the ping stream starts, identical in shape across
+  all platforms, whose message names an address-family mismatch (not
+  "Unknown Host", not a hang)
+  (§req:ipfamily-success-criteria, §req:ipfamily-user-stories).
 - The mismatch check shall apply only to targets that parse as literal IP
   addresses, whose family is determinable without resolution; a target
   that is not an IP literal (a hostname) shall be passed through unchanged,
   with no DNS performed by the library
   (§req:ipfamily-constraints, §req:ipfamily-quality-attributes — thinness).
-- A literal whose family **matches** the flag (e.g. `ipv6:false` with an
-  IPv4 literal) and any hostname shall start the ping exactly as they do
-  today (§req:ipfamily-success-criteria — regression guards).
+- A literal whose family **matches** the selection (e.g. `IpVersion.ipv4`
+  with an IPv4 literal) and any hostname shall start the ping exactly as
+  they do today (§req:ipfamily-success-criteria — regression guards).
 - This validation shall be exercised by automated tests that require no
-  live network — a literal target plus a flag is pure input
+  live network — a literal target plus a selected `IpVersion` is pure input
   (§req:ipfamily-success-criteria, §req:ipfamily-priorities — tests;
   §spec:address-family-error-tests).
 
 **Why a synchronous `ArgumentError` rather than a stream error event:** a
-flag that contradicts a literal target is a programming error in the
-*call*, knowable before any process launches and detectable without a
-network. Surfacing it as a thrown `ArgumentError` lets the caller catch it
+selected family that contradicts a literal target is a programming error
+in the *call*, knowable before any process launches and detectable without
+a network. Surfacing it as a thrown `ArgumentError` lets the caller catch it
 at the call site and keeps it distinct from runtime network failures,
 which belong on the stream's error channel
 (§spec:address-family-error-honesty). The library throws no `ArgumentError`
@@ -808,9 +833,9 @@ this fix exists to remove.
 parsing alone (no resolution), so validating it honors the no-DNS
 thinness constraint; a hostname's family is not knowable without the
 resolution the library refuses to do, so hostnames are left to the
-platform. The requirement is symmetric — both `ipv6:false`+IPv6-literal
-and `ipv6:true`+IPv4-literal are caller errors — so both are rejected.
-"Auto-correcting" the flag to match the literal was rejected: it would
+platform. The requirement is symmetric — both `IpVersion.ipv4`+IPv6-literal
+and `IpVersion.ipv6`+IPv4-literal are caller errors — so both are rejected.
+"Auto-correcting" the selection to match the literal was rejected: it would
 hide a caller bug and could silently ping a different family than intended.
 
 ## Errors name the real failure §spec:address-family-error-honesty
@@ -841,8 +866,8 @@ no route for the family you asked for."
   failure into `unknownHost`: a genuine name-resolution failure maps to
   `unknownHost`, while an address-family / no-route condition maps to its
   honest typed error. The engine shall resolve and send for the family the
-  `ipv6` flag selects, or — where it cannot serve that family — surface an
-  honest error rather than silently resolving the other family
+  selected `IpVersion` requests, or — where it cannot serve that family —
+  surface an honest error rather than silently resolving the other family
   (§req:ipfamily-success-criteria, §req:ipfamily-problem-statement).
 - A hostname ping that works today — including one that resolves to a
   DNS64-synthesized address on an IPv6-only network — shall continue to
@@ -880,10 +905,10 @@ through. It adds no DNS, no retries, and no family fallback
 The mismatch validation and the error mapping are covered by automated
 tests that do not require a live IPv6-only network.
 
-- Literal-vs-flag validation shall be covered by deterministic tests over
-  pure input: an IPv6 literal with `ipv6:false` and an IPv4 literal with
-  `ipv6:true` each throw `ArgumentError`; a matching literal and a hostname
-  each do not (§req:ipfamily-success-criteria,
+- Literal-vs-selection validation shall be covered by deterministic tests
+  over pure input: an IPv6 literal with `IpVersion.ipv4` and an IPv4
+  literal with `IpVersion.ipv6` each throw `ArgumentError`; a matching
+  literal and a hostname each do not (§req:ipfamily-success-criteria,
   §req:ipfamily-priorities — high; §spec:address-family-mismatch-validation).
 - The error mapping shall be covered by feeding representative native
   outputs (address-family / no-route messages, and a genuine
@@ -895,7 +920,7 @@ tests that do not require a live IPv6-only network.
 **Why deterministic seams only:** the live failure modes (#69's actual
 IPv6-only-mobile-data conditions) cannot be reproduced in CI — hosted
 runners block unprivileged ICMP and have no IPv6-only network
-(§spec:ci). The testable surface is the pure logic: literal/flag
-validation (string + bool in → throw-or-not) and native-string → typed
-error mapping. This mirrors the existing principle that live network
+(§spec:ci). The testable surface is the pure logic: literal/selection
+validation (string + `IpVersion` in → throw-or-not) and native-string →
+typed error mapping. This mirrors the existing principle that live network
 behavior is a manual acceptance path, not a CI gate (§spec:ios-tests).
