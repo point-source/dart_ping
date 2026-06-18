@@ -70,6 +70,33 @@ void main() {
     expect(ping.command, contains('native Swift ICMP engine'));
   });
 
+  group('direct construction enforces the address-family guard', () {
+    test('an IPv4 literal with IpVersion.ipv6 throws ArgumentError', () {
+      expect(
+        () => DartPingIOS('1.2.3.4', 1, 1, 2, 64, IpVersion.ipv6),
+        throwsArgumentError,
+      );
+    });
+
+    test('an IPv6 literal with IpVersion.ipv4 throws ArgumentError', () {
+      expect(
+        () => DartPingIOS('::1', 1, 1, 2, 64, IpVersion.ipv4),
+        throwsArgumentError,
+      );
+    });
+
+    test('a matching literal and a hostname construct normally', () {
+      expect(
+        () => DartPingIOS('::1', 1, 1, 2, 64, IpVersion.ipv6),
+        returnsNormally,
+      );
+      expect(
+        () => DartPingIOS('example.com', 1, 1, 2, 64, IpVersion.ipv6),
+        returnsNormally,
+      );
+    });
+  });
+
   test('parser getter and setter are unsupported on iOS', () {
     final ping = DartPingIOS('host', 1, 1, 2, 64, IpVersion.ipv4);
     final dummyParser = PingParser(
