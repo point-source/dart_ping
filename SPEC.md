@@ -845,7 +845,7 @@ closure by §spec:stream-lifecycle-robustness. The feature deliberately adds
 no new failure-reporting mechanism (§req:interface-constraints).
 
 ## Enumerating available interfaces §spec:interface-listing
-*Status: not started*
+*Status: implemented (dart_ping 9.2.0) — a top-level `listNetworkInterfaces({includeLoopback, includeLinkLocal, type})` helper in `dart_ping/lib/src/interface_listing.dart`, exported from `dart_ping/lib/dart_ping.dart`, returns the host's `dart:io` `NetworkInterface`s via `NetworkInterface.list()` (no `ifconfig`/`ip`/`ipconfig` parsing). Each returned interface exposes a `name` and `addresses`, either of which feeds straight back into a `Ping`'s `interface` value; the entrypoint re-exports `NetworkInterface`/`InternetAddress`/`InternetAddressType` so the return type is nameable without importing `dart:io`. No new public model type is introduced. The helper is a thin pass-through with no `try/catch`, so an enumeration failure propagates to the caller as a rejected future rather than being swallowed; that failure path is made testable network-free via an internal `networkInterfaceLister` seam (typedef + mutable top-level default, reachable from `package:dart_ping/src/interface_listing.dart` but not from the public entrypoint). Covered by network-free `dart test` cases in `dart_ping/test/interface_listing_test.dart` (exported surface/shape, round-trip of a returned name/address into `Ping(host, interface: ...)`, and the not-swallowed-failure contract via the seam). Documented in the README ("Selecting a network interface") and the 9.2.0 CHANGELOG entry.*
 
 A developer can discover the network interfaces available on the current
 host — enough to identify one and pass it back into a `Ping` — so an app can

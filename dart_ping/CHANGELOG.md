@@ -4,6 +4,7 @@
 - The value is mapped to each platform's native binding flag: Linux/Android uses `-I` for both a name and an address; macOS uses `-b` for an interface name and `-S` for a source address; Windows uses `-S` (source-address form) for an address only.
 - Omitting `interface` (or passing `null`) leaves the spawned command byte-for-byte unchanged, so existing usage is unaffected.
 - No public model shapes changed: `PingData`, `PingResponse`, `PingSummary`, and `PingError` are identical to 9.1.1.
+- Add `listNetworkInterfaces()` (exported from `package:dart_ping/dart_ping.dart`), which returns the host's available network interfaces so you can present a chooser or validate input and feed a name/address straight back into `Ping(host, interface: ...)`. A failure to enumerate is reported to the caller, not swallowed.
 
 ## 9.1.1
 
