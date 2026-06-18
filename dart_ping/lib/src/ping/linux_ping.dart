@@ -13,6 +13,7 @@ class PingLinux extends BasePing implements Ping {
     IpVersion ipVersion, {
     PingParser? parser,
     Encoding encoding = const Utf8Codec(),
+    String? interface,
   }) : super(
           host,
           count,
@@ -23,6 +24,7 @@ class PingLinux extends BasePing implements Ping {
           parser ?? defaultParser,
           encoding,
           false,
+          interface,
         );
 
   static PingParser get defaultParser => PingParser(
@@ -64,6 +66,15 @@ class PingLinux extends BasePing implements Ping {
       '-t $ttl',
     ];
     if (count != null) params.add('-c $count');
+    // Linux/Android `ping -I` binds either an interface name or a source
+    // address. The flag and value are pushed as SEPARATE argv tokens: process
+    // launch uses `Process.start` with no shell, so a glued `'-I $interface'`
+    // token would reach ping as one argument whose value carries a leading
+    // space (e.g. interface " eth0"), and the bind would fail.
+    if (hasInterface) {
+      params.add('-I');
+      params.add(interface!);
+    }
 
     return params;
   }

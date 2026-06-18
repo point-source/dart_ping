@@ -1,6 +1,6 @@
 # Requirements
 
-This document tracks three areas of work:
+This document tracks six areas of work:
 
 1. **iOS SPM migration (#73)** — *shipped in `dart_ping_ios` 5.0.0.*
    Replace the `flutter_icmp_ping` dependency with a native Swift ICMP
@@ -24,6 +24,16 @@ This document tracks three areas of work:
    validate obvious literal mismatches up front, and surface honest,
    consistent errors instead of mislabeling them. Captured in the
    `§req:ipfamily-*` sections at the end.
+5. **Interface selection (#72)** — let a developer choose which network
+   interface (by interface name or by local source address) pings
+   originate from, on the desktop platforms (Linux/Android, macOS,
+   Windows), with a nice-to-have helper to enumerate the available
+   interfaces. Captured in the `§req:interface-*` sections at the end.
+6. **Concurrent-ping isolation (#70)** — a reported defect where two or
+   more `Ping` instances run at the same time report the same round-trip
+   results instead of each host's own, first seen on Android. Fix so that
+   concurrent `Ping` instances are fully independent. Captured in the
+   `§req:concurrent-*` sections at the end.
 
 ---
 
@@ -609,3 +619,309 @@ where mechanism is decided:
   principle applies to every engine (the core `dart_ping` process engine
   and `dart_ping_ios`). Which platforms actually exhibit the bug, and
   where each fix lands, is a design task. *(Was: "unsure / investigate".)*
+
+---
+
+# Interface selection (#72)
+
+Add an optional way to control which network interface a ping originates
+from. Driven by GitHub issue #72: a consumer wants to pick an interface
+(the issue cites Linux's `ping -I`) and, ideally, discover which
+interfaces are available. Additive feature on top of the existing
+multi-platform `Ping` API.
+
+## Interface — problem statement §req:interface-problem-statement
+
+The target users are developers using `dart_ping` on machines with more
+than one network path — a laptop on Wi-Fi and Ethernet at once, a device
+with a VPN or tunnel interface alongside a physical one, or an embedded /
+mobile system with both cellular and Wi-Fi radios.
+
+Today `dart_ping` always pings over whatever interface the operating
+system's default route selects. There is no way to say "send these pings
+out of *this* interface" or "use *this* local source address." A
+developer who needs to confirm reachability over a specific path cannot
+do it through this package, even though the underlying system `ping`
+binaries support it (e.g. `ping -I` on Linux). They are forced to drop
+out of `dart_ping` and shell out to `ping` themselves, or change the
+host's routing — both heavier than the task warrants.
+
+This blocks several concrete needs the maintainer and issue reporter
+called out, all variations of the same gap:
+
+- **Multi-homed selection** — the device has several interfaces and the
+  caller must pin pings to one specific NIC rather than accept the OS
+  default.
+- **Route / VPN verification** — confirm a host is reachable over (or
+  explicitly bypassing) a VPN or tunnel by pinging from that interface.
+- **Cellular vs. Wi-Fi** — on mobile/embedded hardware, test
+  connectivity on a chosen radio independent of the current default
+  route.
+- **Diagnostics parity** — general network diagnostics that want the
+  same `-I`-style control the system `ping` already offers.
+
+A secondary part of the gap: even when a developer wants to pick an
+interface, they often don't know the exact names/addresses available on
+the current host, and those names differ per platform. So discovering the
+candidate interfaces is part of the same problem, though a lesser part.
+
+The problem is bounded to the desktop platforms `dart_ping` drives via a
+native `ping` subprocess (Linux/Android, macOS, Windows). The iOS native
+Swift engine does not expose interface binding today; pinning to an
+interface there is a separate, larger piece of work and is explicitly
+out of scope for this change.
+
+## Interface — success criteria §req:interface-success-criteria
+
+Observable, end-to-end outcomes a tester can demonstrate:
+
+- **A ping can be pinned to an interface.** On Linux/Android and macOS, a
+  developer can construct a `Ping` that specifies a network interface and
+  observe — via the spawned command and the responses — that probes
+  originate from the chosen interface rather than the OS default.
+  *(must-have)*
+- **Interface accepts a name or a source address.** The selection can be
+  given either as an interface name (e.g. `eth0`, `en0`) or as a local
+  source IP address (e.g. `192.168.1.5`), and both forms work where the
+  platform supports them. *(must-have)*
+- **Windows honors the source-address form.** On Windows, specifying a
+  source IP address binds the ping to it. Passing a bare interface *name*
+  on Windows — which the OS `ping` cannot bind by — produces a clear,
+  catchable error rather than silently ignoring the request.
+  *(must-have)*
+- **Unsupported platforms fail loudly.** On iOS, supplying an interface
+  or source selection throws an explicit "interface selection not
+  supported" error, so a developer is never misled into thinking a
+  selection took effect when it did not. *(must-have — mirrors how
+  Windows rejects IPv6 today.)*
+- **A bad interface surfaces an error, then closes.** If the chosen
+  interface or source address does not exist or has no connectivity, the
+  consumer receives a catchable error event on the stream and the stream
+  then closes within bounded time — no hang. *(must-have — consistent
+  with the #76 stream-lifecycle robustness work,
+  `§req:robustness-success-criteria`.)*
+- **Omitting the selection changes nothing.** When no interface/source is
+  specified, behavior is byte-for-byte identical to today's: pings go out
+  the OS default route and existing consumer code is unaffected.
+  *(must-have — backward-compatibility guard.)*
+- **Available interfaces can be listed.** A developer can call a helper
+  that returns the network interfaces available on the current host
+  (enough to identify and pass one back into a `Ping`), so an app can
+  present a chooser or validate input. *(nice-to-have.)*
+
+## Interface — user stories §req:interface-user-stories
+
+- As a developer on a multi-homed machine, I want to tell `dart_ping`
+  which interface to ping from so that I can verify reachability over a
+  specific NIC instead of whatever the OS default route picks.
+- As a developer validating a VPN or tunnel, I want to originate pings
+  from that interface (or its source address) so that I can confirm a
+  host is reachable over the intended path.
+- As a developer on mobile/embedded hardware, I want to choose between
+  cellular and Wi-Fi when pinging so that I can test each radio
+  independently of the current default route.
+- As a cross-platform developer, I want to pass either an interface name
+  or a source address and have it work the same way on Linux/Android and
+  macOS so that my shared code is predictable.
+- As a Windows developer, I want a clear error when I pass an interface
+  name that Windows can't bind by, so that I switch to a source address
+  instead of silently pinging the wrong interface.
+- As an iOS developer, I want a clear "not supported" error if I try to
+  select an interface so that I'm not misled into thinking it worked.
+- As a developer who doesn't know the host's interfaces, I want to list
+  the available ones so that I can show a picker or validate the value I
+  pass in.
+- As an existing `dart_ping` user, I want pings without an interface
+  argument to behave exactly as they do today so that this addition is
+  invisible to my working code.
+
+## Interface — quality attributes §req:interface-quality-attributes
+
+- **Compatibility:** the feature is additive and optional — the existing
+  public `Ping` API and the `PingData` / `PingResponse` / `PingSummary` /
+  `PingError` shapes are unchanged for callers who don't use it. A
+  non-breaking, minor-version addition to `dart_ping`.
+- **Cross-platform predictability:** the same selection value behaves the
+  same way across the supported desktop platforms wherever the platform
+  allows it; where a platform genuinely cannot (Windows + interface name,
+  iOS entirely), the difference surfaces as a clear error rather than
+  silent divergence.
+- **Reliability:** a selection that can't be honored never leaves the
+  stream hanging — it surfaces a catchable error and the stream closes,
+  consistent with the broader stream-lifecycle guarantees.
+- **Discoverability:** error messages name the problem in the user's
+  terms (e.g. interface name vs. source address, platform not supported)
+  so a developer can correct the call without reading the source.
+- **Testability:** the command produced for a given selection, the
+  per-platform rejections, and the bad-interface error path are
+  verifiable via automated tests where feasible (e.g. asserting the
+  spawned command), without requiring specific live hardware.
+
+## Interface — constraints §req:interface-constraints
+
+- Scope is the desktop platforms `dart_ping` drives via a native `ping`
+  subprocess: **Linux/Android, macOS, and Windows**. **iOS is out of
+  scope** and rejects the selection with a clear error.
+- Selection accepts **either an interface name or a local source
+  address**. On platforms whose `ping` cannot bind by name (Windows,
+  which binds only by source address), the name form is rejected with a
+  clear error rather than approximated.
+- The change is **additive and backward-compatible**: a new optional
+  parameter (plus the optional listing helper). Omitting it preserves
+  current behavior. Ships as a **minor version** of `dart_ping`.
+- The exact parameter name/shape, the per-platform `ping` flags (Linux
+  `-I`, macOS `-b` / `-S`, Windows `-S`), name↔address resolution, and
+  the listing helper's signature are **design decisions for
+  `/symphonize:plan`**, not fixed here.
+- Bad-interface handling reuses the stream error channel and termination
+  guarantees from `§req:robustness-*`; this feature does not introduce a
+  new failure-reporting mechanism.
+
+## Interface — priorities §req:interface-priorities
+
+- **Must-have:** an optional interface/source selection on Linux/Android
+  and macOS, accepting a name or a source address; Windows honoring the
+  source-address form and clearly rejecting bare names; iOS clearly
+  rejecting the selection; a bad selection surfacing a catchable error
+  and closing the stream; and no change to behavior when the selection is
+  omitted.
+- **High priority:** consistent, well-worded errors across the platform
+  differences so cross-platform callers can react predictably; automated
+  tests for the produced command and the rejection/error paths.
+- **Nice-to-have:** the helper that enumerates the host's available
+  network interfaces for use in a picker or for input validation.
+
+---
+
+# Concurrent-ping isolation (#70)
+
+A reported correctness defect: when several `Ping` instances run at the
+same time, they report the same round-trip result instead of each host's
+own. First observed on Android, but the requirement is to guarantee
+isolation on every platform.
+
+## Concurrent pings — problem statement §req:concurrent-problem-statement
+
+The target users are developers who ping **several hosts at once** —
+typically by creating one `Ping` per host and awaiting them together, the
+canonical pattern for latency dashboards, server pickers, "fastest
+mirror" selection, and connectivity sweeps:
+
+```dart
+var domains = ['154.16.146.45', '187.188.169.169'];
+var pings = domains.map((e) => Ping(e, count: 1).stream.first).toList();
+var results = await Future.wait(pings);
+```
+
+A user (issue #70, on Android) reports that the concurrent results are
+**cross-contaminated**: each response carries the correct destination IP,
+but the round-trip time is identical across hosts —
+`time:176.0 ms` for both `154.16.146.45` and `187.188.169.169`. Pinging
+the same hosts **one at a time** returns the correct, distinct
+times (`170.0 ms` and `236.0 ms`). So the data is right when pings run
+sequentially and wrong when they overlap.
+
+Current behavior fails these users because the failure is **silent and
+plausible**: no error is thrown, the shape of the result is valid, and the
+IPs look right — so the caller has no signal that the timings (and
+possibly TTL) are wrong. Code that picks the "fastest" host, charts
+latency, or gates on a threshold then acts on fabricated numbers. Anyone
+pinging more than one host concurrently is exposed, and concurrent
+multi-host pinging is a common, expected use of the library rather than an
+exotic edge case.
+
+The root cause is not yet established — each `Ping` instance already owns
+its own OS process and stream, so there is no obvious shared state — and
+identifying it is left to `/plan`. It is also not yet confirmed whether the
+defect still reproduces on the current release (the report predates recent
+internal changes). This document captures the **observable problem** the
+user experiences; the cause and the platforms actually affected are
+solution-space questions for `/plan`.
+
+## Concurrent pings — success criteria §req:concurrent-success-criteria
+
+Observable, verifiable outcomes a tester can demonstrate against the
+public API:
+
+- **The defect is first reproduced (or shown already fixed).** A
+  test/repro that overlaps multiple `Ping` streams demonstrates the
+  cross-contamination against the current release — or establishes that it
+  no longer occurs. This gate sets the priority of the remaining
+  criteria. *(must-have — the confirm-then-decide step)*
+- **Concurrent pings return each host's own results.** When N `Ping`
+  instances to distinct hosts run at the same time, each stream's
+  responses carry that host's own round-trip time, TTL, and sequence —
+  matching what the same host returns when pinged alone. No field is
+  copied from a sibling ping. *(must-have)*
+- **Isolation holds on every platform.** The guarantee applies wherever
+  `dart_ping` runs — Android, Linux, macOS, and Windows (which share the
+  process-based engine) — and on iOS. Concurrent `Ping` instances are
+  fully independent everywhere. *(must-have)*
+- **Per-host summaries and error lists stay separate.** Each concurrent
+  run's summary (transmitted/received/time) and per-run error list reflect
+  only that run; errors or counts from one ping never appear in another's
+  summary. *(high)*
+- **Sequential behavior is unchanged.** Pinging hosts one at a time still
+  returns the same correct, distinct results as today. *(must-have —
+  regression guard)*
+- **An automated test guards isolation, with no live network.** A test
+  runnable under `dart test` overlaps multiple ping streams and **fails
+  if results cross-contaminate**, so a future regression is caught
+  offline rather than only on a device. *(must-have)*
+
+## Concurrent pings — user stories §req:concurrent-user-stories
+
+- As a developer pinging a list of hosts at once to find the fastest, I
+  want each result to reflect its own host's latency so that I pick the
+  genuinely closest server instead of one chosen from duplicated numbers.
+- As a developer building a latency dashboard, I want concurrent pings to
+  report independent round-trip times so that my chart shows real
+  per-host values rather than one value smeared across every row.
+- As a developer running a connectivity sweep, I want each host's
+  reachability and timing to be its own so that a single slow or failing
+  host does not silently mask or impersonate the others.
+- As an existing user who pings hosts one at a time, I want that path to
+  keep returning the same correct results so that this fix changes nothing
+  for sequential callers.
+- As a maintainer, I want an automated test that fails when concurrent
+  results bleed together so that this class of bug cannot quietly return.
+
+## Concurrent pings — quality attributes §req:concurrent-quality-attributes
+
+- **Correctness:** concurrent `Ping` instances are fully independent;
+  no response, timing, TTL, summary, or error from one ping appears in
+  another. This is the core guarantee.
+- **Compatibility:** the public API is unchanged — the `Ping` interface
+  and the `PingData` / `PingResponse` / `PingSummary` / `PingError`
+  shapes stay the same. Existing concurrent and sequential call sites keep
+  working without edits; correct code simply starts returning correct
+  data.
+- **Cross-platform consistency:** the isolation guarantee is uniform
+  across Android, Linux, macOS, Windows, and iOS.
+- **Testability:** isolation is verifiable by an automated test that
+  fails on cross-contamination and runs without a live network.
+
+## Concurrent pings — constraints §req:concurrent-constraints
+
+- The public Dart API stays unchanged; this is a correctness fix, not a
+  feature.
+- Scope is the cross-contamination defect and the guarantee that
+  concurrent `Ping` instances are independent — not new concurrency
+  features (e.g. no built-in multi-host helper is required).
+- The fix and its test must not depend on a live network or a physical
+  device to validate the isolation logic.
+- Surfaced by, and traceable to, issue #70; relates to the core
+  process-based engine (`§spec:` to be assigned in `/plan`).
+
+## Concurrent pings — priorities §req:concurrent-priorities
+
+- **First gate (confirm-then-decide):** reproduce the defect on the
+  current release, or establish that it is already fixed. The outcome sets
+  how urgent the rest is.
+- **Must-have (if it reproduces):** concurrent `Ping` instances return
+  each host's own results on every platform, sequential behavior is
+  unchanged, and an offline automated test guards against regression.
+- **High priority:** keep per-host summaries and error lists separate
+  under concurrency.
+- **Nice-to-have:** none beyond the above — this is a focused correctness
+  fix.

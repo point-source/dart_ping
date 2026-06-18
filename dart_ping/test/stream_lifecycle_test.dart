@@ -290,4 +290,90 @@ void main() {
       });
     });
   });
+
+  group(
+      'bad-interface error-then-close (§spec:interface-platform-rejection)',
+      () {
+    // A chosen interface / source address that does not exist (or has no
+    // connectivity) is NOT a new failure mode: the OS `ping` binary refuses
+    // the bind and exits non-zero. That non-zero exit is already routed
+    // through the stream's error channel and bounded-time closure by
+    // §spec:stream-lifecycle-robustness — no new mechanism is introduced.
+    // Here we model it network-free as a FakeProcess that emits a
+    // bind-failure stderr line and exits with code 2, which
+    // PingLinux.interpretExitCode does NOT map to a known PingError, so it is
+    // surfaced verbatim as an exit exception. The live-hardware variant is
+    // the manual @Tags(['live']) path and stays out of scope here.
+
+    test('bad interface (refused bind) emits error then closes once',
+        () async {
+      final ping = TestPing(
+        process: FakeProcess(
+          stderrLines: const [
+            'ping: SO_BINDTODEVICE: No such device',
+          ],
+          exit: 2,
+        ),
+      );
+
+      final result = await _drain(ping);
+
+      // (1) The consumer receives at least one catchable error event, and it
+      // is the surfaced exit exception (its text contains the exit code).
+      expect(result.errors, isNotEmpty,
+          reason: 'a refused bind / non-existent interface must surface an '
+              'error on the stream');
+      expect(result.errors.first.toString(),
+          contains('Ping process exited with code: 2'));
+
+      // (2) The stream then closes exactly once within the hard timeout —
+      // no hang.
+      expect(result.doneCount, 1, reason: 'stream must close exactly once');
+    });
+
+    test('bad source address (cannot assign) emits error then closes once',
+        () async {
+      final ping = TestPing(
+        process: FakeProcess(
+          stderrLines: const [
+            'ping: bind: Cannot assign requested address',
+          ],
+          exit: 2,
+        ),
+      );
+
+      final result = await _drain(ping);
+
+      expect(result.errors, isNotEmpty,
+          reason: 'a source address with no connectivity must surface an '
+              'error on the stream');
+      expect(result.errors.first.toString(),
+          contains('Ping process exited with code: 2'));
+      expect(result.doneCount, 1, reason: 'stream must close exactly once');
+    });
+
+    test('awaiting consumer returns within timeout on bad interface',
+        () async {
+      final ping = TestPing(
+        process: FakeProcess(
+          stderrLines: const [
+            'ping: SO_BINDTODEVICE: No such device',
+          ],
+          exit: 2,
+        ),
+      );
+      // An awaiting consumer that catches the surfaced error still observes
+      // onDone — the stream always closes. The timeout converts a hang into a
+      // failure.
+      final done = Completer<void>();
+      ping.stream.listen(
+        null,
+        onError: (Object _) {},
+        onDone: () {
+          if (!done.isCompleted) done.complete();
+        },
+      );
+      await done.future.timeout(_hardTimeout);
+    });
+  });
 }

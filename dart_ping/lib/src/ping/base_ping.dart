@@ -21,6 +21,7 @@ abstract class BasePing {
     this.parser,
     this.encoding,
     this.forceCodepage,
+    this.interface,
   ) {
     // Enforce the literal/family guard on EVERY construction path, not only the
     // `Ping(...)` factory — direct construction of a platform class must fail
@@ -66,6 +67,38 @@ abstract class BasePing {
   /// like so: `chcp 437 && ping {opts}`
   bool forceCodepage;
 
+  /// Network interface to originate pings from.
+  ///
+  /// This single value has a DUAL meaning: it is either an interface *name*
+  /// (e.g. `eth0` / `en0`) OR a local source *IP address* (e.g. `192.168.1.5`).
+  /// Which form was supplied is classified by [interfaceIsAddress], and each
+  /// platform maps it onto the binding flag(s) its `ping` supports. When `null`,
+  /// no interface binding is applied.
+  String? interface;
+
+  /// Whether an interface selection that should actually be applied was
+  /// supplied. An empty string is treated the same as `null` (no selection),
+  /// so it never produces a dangling binding flag.
+  bool get hasInterface => interface != null && interface!.isNotEmpty;
+
+  /// Whether [interface] holds a source IP address (rather than an interface
+  /// name), determined by parsing it as an IP literal via
+  /// [InternetAddress.tryParse].
+  ///
+  /// An IPv6 zone id (e.g. `fe80::1%eth0`) is stripped before parsing because
+  /// [InternetAddress.tryParse] rejects the `%zone` suffix; without this a
+  /// zone-scoped source address would be misclassified as an interface name.
+  bool get interfaceIsAddress =>
+      hasInterface &&
+      InternetAddress.tryParse(interface!.split('%').first) != null;
+
+  // Concurrent-isolation invariant (#70): every field below is instance-local
+  // mutable state. Each `Ping`/`BasePing` owns its own OS [_process] (and thus
+  // its own stdout/stderr pipes), its own [_controller], its own per-call
+  // [parser] instance, and its own [_errors]/[_summaryData] accumulators. There
+  // is no `static`/shared mutable state in this path, so concurrent runs to
+  // distinct hosts cannot cross-contaminate. Guarded offline by
+  // `test/concurrent_isolation_test.dart`.
   late final StreamController<PingData> _controller;
   Process? _process;
   StreamSubscription<PingData>? _sub;
