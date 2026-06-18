@@ -477,14 +477,17 @@ misattribute to the wrong layer.
 
 Observable, verifiable outcomes:
 
-- **`ipv6` is an exclusive family selector.** Across all supported
-  platforms, `ipv6:true` means IPv6-only and `ipv6:false` means
-  IPv4-only, matching the native `ping`/`ping6` (`-4`/`-6`) semantics the
-  library already relies on. This is documented. *(must-have)*
-- **Family/flag mismatch on a literal fails fast, clearly, and
+- **The address family is selected explicitly and exclusively.** The
+  caller chooses IPv4-only or IPv6-only through an explicit, unambiguous
+  selection — not a boolean flag whose `false` value can be misread as
+  "prefer IPv4 / dual-stack." Across all supported platforms the selected
+  family is the *only* family attempted, matching the native
+  `ping`/`ping6` (`-4`/`-6`) semantics the library already relies on. This
+  is documented. *(must-have)*
+- **Family mismatch on a literal fails fast, clearly, and
   consistently.** Pinging a literal IP whose family contradicts the
-  `ipv6` flag is rejected **in both directions** — `ipv6:false` with an
-  IPv6 literal *and* `ipv6:true` with an IPv4 literal — with a single,
+  selected family is rejected **in both directions** — IPv4 selected with
+  an IPv6 literal *and* IPv6 selected with an IPv4 literal — with a single,
   consistent, catchable error (a thrown `ArgumentError` before the stream
   starts) that names the actual problem (an address-family mismatch),
   identical in shape across platforms. Never a misleading "Unknown Host",
@@ -505,9 +508,11 @@ Observable, verifiable outcomes:
 - **Cross-platform error consistency.** The same invalid input yields the
   same Dart-side error on iOS, Android, macOS, Linux, and Windows, even
   though the underlying native ping messages differ. *(must-have)*
-- **Existing valid usage is unaffected.** A matching flag/target — e.g.
-  `ipv6:false` with an IPv4 literal or a hostname — pings exactly as it
-  does today. *(regression guard)*
+- **Runtime behavior is preserved for equivalent calls.** A target whose
+  family matches the selected family — e.g. IPv4 selected with an IPv4
+  literal, or any hostname — pings exactly as it does today. The selector
+  *parameter* changes shape (see Compatibility), but the ping behavior for
+  an equivalent call does not. *(regression guard)*
 - **The behavior is covered by automated tests** that do not require a
   live IPv6-only network (literal-vs-flag validation; error mapping for
   representative native outputs). *(high)*
@@ -517,9 +522,9 @@ Observable, verifiable outcomes:
 - As a developer whose app runs on IPv6-only mobile data, I want pinging a
   host to behave the same as it does on Wi-Fi so that my diagnostics don't
   silently break on cellular.
-- As a developer who set `ipv6:false` and passed an IPv6 literal (or
-  `ipv6:true` with an IPv4 literal), I want an immediate, clear error that
-  tells me the flag and the address disagree so that I fix my call instead
+- As a developer who selected IPv4 but passed an IPv6 literal (or selected
+  IPv6 with an IPv4 literal), I want an immediate, clear error that tells me
+  the selected family and the address disagree so that I fix my call instead
   of chasing a phantom "unknown host."
 - As a cross-platform developer, I want the same error for the same
   mistake on every platform so that my shared error handling works
@@ -529,8 +534,9 @@ Observable, verifiable outcomes:
   I can tell "this network has no route for that family" apart from "that
   hostname doesn't exist."
 - As an existing user, I want hostname pings and correctly-matched IP
-  pings to work exactly as they do today so that this fix doesn't change
-  working code.
+  pings to behave exactly as they do today once I migrate to the new
+  address-family selector, so that the breaking change is limited to how I
+  name the family — not to how ping itself works.
 
 ## IPv6 — quality attributes §req:ipfamily-quality-attributes
 
@@ -545,17 +551,24 @@ Observable, verifiable outcomes:
   up-front validation of incoherent combinations and faithful
   surfacing/mapping of native errors.
 - **Compatibility:** the public Dart API shape (`Ping`,
-  `PingData` / `PingResponse` / `PingSummary` / `PingError`) is
-  preserved; the `ipv6` parameter keeps its name and `false` default. Any
-  new error type is additive.
+  `PingData` / `PingResponse` / `PingSummary` / `PingError`) is preserved,
+  **except** the address-family selector, which is intentionally
+  redesigned. Replacing the ambiguous `ipv6` boolean with an explicit
+  address-family selection is a deliberate **breaking change**, shipped
+  with a major version bump and a migration note; the ambiguity of a
+  boolean `false` (misread as "prefer IPv4 / dual-stack") is judged a
+  worse long-term cost than a one-time migration. Any new error type is
+  additive.
 - **Testability:** mismatch and mislabeling behavior is verifiable via
   automated tests that do not depend on a live IPv6-only network.
 
 ## IPv6 — constraints §req:ipfamily-constraints
 
-- `ipv6` is treated as an **exclusive** address-family selector
-  (`true` = IPv6-only, `false` = IPv4-only), matching the native
-  `ping`/`ping6` (`-4`/`-6`) semantics the library already uses.
+- The address family is an **exclusive** selection (IPv4-only or
+  IPv6-only), matching the native `ping`/`ping6` (`-4`/`-6`) semantics the
+  library already uses. The selector is an explicit address-family choice
+  rather than a boolean flag, because a boolean `false` is reasonably
+  misread as "prefer IPv4 / dual-stack" — the exact ambiguity behind #69.
 - The library does **no DNS resolution of its own**; hostnames are handed
   to the platform. Up-front validation applies only to **literal IP**
   targets, whose family is determinable without resolution, and rejects a
@@ -564,8 +577,10 @@ Observable, verifiable outcomes:
   support where a platform lacks it today (Windows IPv6 remains
   unsupported — the goal there is an honest error, not new capability).
 - Any new typed error is **additive** to `PingError` / `ErrorType`;
-  existing values keep their meaning. The change aims to be non-breaking
-  to existing valid usage.
+  existing values keep their meaning. The error surface stays
+  backward-compatible; the **address-family selector is the one
+  deliberate breaking change** (major version bump, migration note), made
+  to remove the boolean ambiguity at the heart of #69.
 - Traceable to issue #69; relates to the refresh's error-mapping /
   parser-coverage goals (`§req:refresh-success-criteria`).
 
