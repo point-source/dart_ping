@@ -85,6 +85,13 @@ abstract class BasePing {
       hasInterface &&
       InternetAddress.tryParse(interface!.split('%').first) != null;
 
+  // Concurrent-isolation invariant (#70): every field below is instance-local
+  // mutable state. Each `Ping`/`BasePing` owns its own OS [_process] (and thus
+  // its own stdout/stderr pipes), its own [_controller], its own per-call
+  // [parser] instance, and its own [_errors]/[_summaryData] accumulators. There
+  // is no `static`/shared mutable state in this path, so concurrent runs to
+  // distinct hosts cannot cross-contaminate. Guarded offline by
+  // `test/concurrent_isolation_test.dart`.
   late final StreamController<PingData> _controller;
   Process? _process;
   StreamSubscription<PingData>? _sub;

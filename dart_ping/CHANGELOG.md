@@ -18,6 +18,12 @@
   list's identity hash, so two value-equal summaries could produce different
   hash codes and misbehave as `Set`/`Map` keys. `hashCode` now hashes
   `errors` element-wise.
+- Guard concurrent-ping isolation (#70) with a network-free regression test
+  (`test/concurrent_isolation_test.dart`) that overlaps multiple `Ping`
+  instances with interleaved per-host output and asserts no field bleeds
+  between runs. The defect did not reproduce on the current release — each
+  instance already owns only instance-local state — so no production change
+  was required (no behavior change).
 
 ## 9.1.0
 
