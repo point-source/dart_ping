@@ -35,9 +35,11 @@ class PingWindows extends BasePing implements Ping {
         timeoutRgx: RegExp(r'Request timed out'),
         timeToLiveRgx: RegExp(r'Reply from (?<ip>.*): TTL expired in transit'),
         unknownHostStr: RegExp(r'could not find host'),
+        noRouteStrs: [
+          RegExp(r'Destination host unreachable'),
+        ],
         errorStrs: [
           RegExp(r'General failure'),
-          RegExp(r'Destination host unreachable'),
         ],
       );
 
