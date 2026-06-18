@@ -793,7 +793,18 @@ keeps the library thin and faithful to native behavior, and deliberately
 leaves no third "auto" value.
 
 ## Address-family mismatch fails fast §spec:address-family-mismatch-validation
-*Status: not started*
+*Status: implemented (Batch #69-2) — a parse-only `ipLiteralFamily()` helper
+(`dart_ping/lib/src/address_family.dart`, wrapping `InternetAddress.tryParse`,
+no DNS) classifies a target as an IPv4 literal, IPv6 literal, or hostname. A
+synchronous guard at the top of the shared `Ping(...)` factory
+(`dart_ping/lib/src/ping_interface.dart`), before the platform switch (so it
+covers every engine including the iOS factory path), throws `ArgumentError`
+when a literal's family contradicts the selected `IpVersion` — both directions
+(`IpVersion.ipv4`+IPv6-literal and `IpVersion.ipv6`+IPv4-literal) — naming an
+address-family mismatch, before any stream/process starts. A matching literal
+or a hostname (`literalFamily == null`) falls through unchanged with no DNS.
+Covered by network-free tests (`dart_ping/test/address_family_test.dart`,
+`dart_ping/test/address_family_validation_test.dart`).*
 
 When the target is a **literal IP address** whose family contradicts the
 selected `IpVersion`, the call fails immediately with a single,
@@ -909,7 +920,15 @@ through. It adds no DNS, no retries, and no family fallback
 (§req:ipfamily-quality-attributes — thinness / native fidelity).
 
 ## Address-family error tests §spec:address-family-error-tests
-*Status: not started*
+*Status: partially implemented — the literal-vs-selection validation bullet
+landed in Batch #69-2 (`dart_ping/test/address_family_validation_test.dart`):
+deterministic, network-free cases asserting an IPv6 literal with
+`IpVersion.ipv4` and an IPv4 literal with `IpVersion.ipv6` each throw
+`ArgumentError` (including the `IpVersion.ipv4` default), while a matching
+literal and a hostname each construct without throwing. The error-mapping
+bullet (native address-family / no-route / unknown-host strings →
+`ErrorType`) is owned by Batch #69-3 (§spec:address-family-error-honesty) and
+remains pending.*
 
 The mismatch validation and the error mapping are covered by automated
 tests that do not require a live IPv6-only network.
