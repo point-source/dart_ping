@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'address_family.dart';
 import 'ip_version.dart';
 import 'models/ping_data.dart';
 import 'models/ping_parser.dart';
@@ -45,6 +46,24 @@ abstract class Ping {
     /// like so: `chcp 437 && ping {opts}`
     bool forceCodepage = false,
   }) {
+    // Synchronous address-family guard: if [host] is a literal IP address, its
+    // family MUST match the selected [ipVersion]. This runs before any platform
+    // dispatch (including the iOS factory path) and before any stream/process
+    // starts. A hostname (literalFamily == null) or a matching literal falls
+    // straight through to the platform switch unchanged — no DNS is performed.
+    final literalFamily = ipLiteralFamily(host);
+    if (literalFamily != null && literalFamily != ipVersion) {
+      throw ArgumentError.value(
+        host,
+        'host',
+        'Address family mismatch: the target is an '
+            '${literalFamily == IpVersion.ipv6 ? 'IPv6' : 'IPv4'} literal but '
+            'ipVersion is '
+            '${ipVersion == IpVersion.ipv6 ? 'IpVersion.ipv6' : 'IpVersion.ipv4'}. '
+            'A literal IP address must match the selected IP version',
+      );
+    }
+
     switch (Platform.operatingSystem) {
       case 'android':
       case 'fuchsia':
