@@ -88,9 +88,9 @@ public final class PingEngine {
         // `ttl` is optional: the v4 path always recovers it (cmsg or stripped IP
         // header), but a v6 reply has no IP-header fallback, so an absent
         // IPV6_HOPLIMIT cmsg yields nil ("unknown") rather than a misleading 0.
-        case response(seq: Int, ttl: Int?, timeMs: Int, ip: String)
+        case response(seq: Int, ttl: Int?, timeMicros: Int, ip: String)
         case error(kind: PingErrorKind, seq: Int?, ip: String?)
-        case summary(transmitted: Int, received: Int, timeMs: Int, errors: [PingErrorKind])
+        case summary(transmitted: Int, received: Int, timeMicros: Int, errors: [PingErrorKind])
     }
 
     public init(config: Config, onEvent: @escaping (Event) -> Void) {
@@ -129,7 +129,7 @@ public final class PingEngine {
     private var nextSequence: UInt16 = 0        // next seq to send
     private var sentCount = 0                    // total probes transmitted
     private var receivedCount = 0                // total replies matched
-    private var totalRTTMillis = 0               // sum of matched RTTs (ms)
+    private var totalRTTMicros = 0               // sum of matched RTTs (microseconds)
 
     /// Every error kind emitted during the run, in emission order, so the final
     /// summary can carry the full error list (parity with the other platforms,
@@ -596,13 +596,14 @@ public final class PingEngine {
         timeoutItems.removeValue(forKey: seq)
 
         let nowMicros = Self.nowMicros()
-        let rttMicros = nowMicros >= sendMicros ? (nowMicros - sendMicros) : 0
-        let rttMillis = Int((rttMicros + 500) / 1000) // round to nearest ms
+        // Raw microsecond RTT, surfaced as-is so sub-millisecond resolution is
+        // preserved on the wire (the Dart side decodes `time` as microseconds).
+        let rttMicros = Int(nowMicros >= sendMicros ? (nowMicros - sendMicros) : 0)
 
         receivedCount += 1
-        totalRTTMillis += rttMillis
+        totalRTTMicros += rttMicros
 
-        emit(.response(seq: Int(seq), ttl: ttl, timeMs: rttMillis, ip: sourceIP))
+        emit(.response(seq: Int(seq), ttl: ttl, timeMicros: rttMicros, ip: sourceIP))
         checkCompletionLocked()
     }
 
@@ -638,7 +639,7 @@ public final class PingEngine {
 
         emit(.summary(transmitted: sentCount,
                       received: receivedCount,
-                      timeMs: totalRTTMillis,
+                      timeMicros: totalRTTMicros,
                       errors: accumulatedErrors))
 
         // Closing the socket unblocks the receive loop (recvmsg returns < 0).
