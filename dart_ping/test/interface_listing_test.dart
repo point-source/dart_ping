@@ -28,17 +28,12 @@ void main() {
         // name. Windows `ping` binds only by source address, so PingWindows
         // rejects a bare interface name synchronously in its constructor
         // (UnimplementedError) — there the name round-trips by address instead.
-        if (Platform.isWindows) {
-          expect(
-            () => Ping('127.0.0.1', interface: iface.name, count: 1),
-            throwsA(isA<UnimplementedError>()),
-          );
-        } else {
-          expect(
-            () => Ping('127.0.0.1', interface: iface.name, count: 1),
-            returnsNormally,
-          );
-        }
+        expect(
+          () => Ping('127.0.0.1', interface: iface.name, count: 1),
+          Platform.isWindows
+              ? throwsA(isA<UnimplementedError>())
+              : returnsNormally,
+        );
 
         // And so does a returned address string, when one is present.
         if (iface.addresses.isNotEmpty) {
