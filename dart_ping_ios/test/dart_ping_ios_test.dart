@@ -160,12 +160,16 @@ void main() {
   });
 
   test(
-      'the on/off synthesis choice threads to native start for the literal+ipv4 '
-      'path', () async {
-    // The #52-1 cases above prove the field is wired for a hostname/ipv6 call;
-    // here we pin the choice on the path synthesis actually engages — an IPv4
-    // literal under IpVersion.ipv4 — so both ends of the on/off toggle reach the
-    // native engine that decides whether to un-pin the resolve (§spec:nat64-tests).
+      'the on/off nat64Synthesis flag threads to native start for an '
+      'IPv4-literal + ipv4 call', () async {
+    // Scope of THIS test: the Dart bridge forwards the flag verbatim for the
+    // IPv4-literal + IpVersion.ipv4 argument shape (both on and off), so the
+    // native engine receives the choice it needs. It does NOT — and cannot —
+    // exercise the synthesis DECISION itself: the bridge passes the flag through
+    // unchanged regardless of host/family, so this would still pass if the engine
+    // ignored it. The actual un-pin-vs-pin decision and the routable-address
+    // selection are covered offline on the native side by RunnerTests
+    // (`shouldSynthesize`, `synthesizedTransport`) (§spec:nat64-tests).
     Future<bool> threadedFlagFor(bool nat64) async {
       methodCalls = [];
       final ping = DartPingIOS('13.35.27.1', 1, 1, 2, 64, IpVersion.ipv4, nat64);

@@ -1789,12 +1789,18 @@ calls `getaddrinfo` with `AF_UNSPEC` and no `AI_NUMERICHOST` (gated by the pure
 return a synthesized NAT64 address on an IPv6-only network (and the plain IPv4
 address on Wi-Fi / dual-stack); it then sends ICMP/ICMPv6 to whichever TRANSPORT
 family the resolver returns while the caller-selected `IpVersion` is unchanged.
+When the resolver returns BOTH a synthesized IPv6 address and the original IPv4
+literal, the engine PREFERS the IPv6 (NAT64) address rather than committing to
+whichever entry `getaddrinfo` sorted first — the bare IPv4 literal has no route
+on an IPv6-only network, so first-entry selection could silently defeat the fix;
+this routable-family choice lives in the pure `PingEngine.synthesizedTransport(hasIPv4:hasIPv6:)`.
 Every other path keeps #69's byte-for-byte family-pinned resolve. The synthesis
-decision is offline-covered by the network-free `shouldSynthesize` /
-`isIPv4Literal` XCTest cases in the example's `RunnerTests` (iOS + macOS targets);
-the Swift change is not compilable on the Linux CI host (hand-verified; macOS CI
-`xcodebuild test` compiles/runs it). The live IPv6-only-cellular reachability leg
-is an on-device acceptance step (§spec:nat64-tests).*
+decision and the address-selection policy are offline-covered by the network-free
+`shouldSynthesize` / `isIPv4Literal` / `synthesizedTransport` XCTest cases in the
+example's `RunnerTests` (iOS + macOS targets); the Swift change is not compilable
+on the Linux CI host (hand-verified; macOS CI `xcodebuild test` compiles/runs it).
+The live IPv6-only-cellular reachability leg is an on-device acceptance step
+(§spec:nat64-tests).*
 
 On iOS, pinging an IPv4 literal on an IPv6-only (NAT64/DNS64) cellular
 network produces the **same observable result as pinging it over Wi-Fi** —
@@ -2004,13 +2010,18 @@ the option-presence / default-enabled / threading bullet is covered offline
 defaults to enabled on every subprocess class, threads the supplied value, and is
 an inert no-op (`params`/`command` byte-for-byte unchanged), and
 `dart_ping_ios/test/dart_ping_ios_test.dart` asserts the bridge `start` arguments
-carry `nat64Synthesis` (true by default, false when disabled, and pinned on the
-IPv4-literal + `IpVersion.ipv4` path the engine synthesizes for). The synthesis
-decision and the fallback-to-honest-error mapping land in Batch #52-2: the
-network-free `shouldSynthesize` / `isIPv4Literal` and the
-`errorKind(forGetaddrinfoStatus:)` / `errorKind(forSendErrno:)` XCTest cases in
-the example's `RunnerTests` (iOS + macOS targets) pin the un-pinned-vs-pinned
-resolve decision and the honest `.noRoute` / `.unknownHost` classification, and
+carry `nat64Synthesis` (true by default, false when disabled, and forwarded
+verbatim for the IPv4-literal + `IpVersion.ipv4` argument shape). That Dart test
+covers only the bridge's verbatim threading — the synthesis DECISION itself is a
+native concern and is covered by `RunnerTests` below, not by the bridge test. The
+synthesis decision, the routable-address selection, and the fallback-to-honest-
+error mapping land in Batch #52-2: the network-free `shouldSynthesize` /
+`isIPv4Literal` / `synthesizedTransport` (the prefer-IPv6-over-a-co-listed-IPv4-
+literal selection policy) and the `errorKind(forGetaddrinfoStatus:)` /
+`errorKind(forSendErrno:)` XCTest cases in the example's `RunnerTests` (iOS +
+macOS targets) pin the un-pinned-vs-pinned resolve decision, the
+synthesized-family choice, and the honest `.noRoute` / `.unknownHost`
+classification, and
 `dart_ping_ios/test/ping_event_mapper_test.dart` pins the Dart mapping seam
 (native `No Route` / `Unknown Host` -> the honest typed `PingError`, never a
 phantom or null) plus the synthesis-on regression guards (a normal reply still

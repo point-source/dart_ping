@@ -339,10 +339,78 @@ public final class PingEngine {
     /// Pure/static so the decision is testable without the network. This is the
     /// SOLE gate that relaxes #69's pinned resolve; everything else keeps the
     /// byte-for-byte family-pinned behavior (§spec:nat64-literal-synthesis).
+    ///
+    /// The IPv4-literal classification is recomputed natively here even though the
+    /// Dart layer already parses the host and enforces the literal/family guard
+    /// before the run reaches the channel. That is DELIBERATE defense-in-depth: the
+    /// engine consumes method-channel arguments from outside its own trust
+    /// boundary and must not assume the caller validated them, so it independently
+    /// decides whether to un-pin rather than trusting a flag it was handed.
     public static func shouldSynthesize(family: IPFamily,
                                         nat64Synthesis: Bool,
                                         host: String) -> Bool {
         return nat64Synthesis && family == .v4 && isIPv4Literal(host)
+    }
+
+    /// Choose the transport family for the un-pinned NAT64 synthesis resolve from
+    /// the families the resolver actually returned. Prefers IPv6 — the synthesized
+    /// NAT64 address, which is the routable one on an IPv6-only network — over a
+    /// co-listed IPv4 literal that has NO route there (sending to it would fail
+    /// `ENETUNREACH` or time out). Falls back to IPv4 when no IPv6 address was
+    /// synthesized (dual-stack / Wi-Fi). Returns nil when neither family is
+    /// present, which the caller maps to the honest `.noRoute`.
+    ///
+    /// This is the fix for relying on `getaddrinfo` result ORDER: rather than
+    /// committing to whichever entry happened to sort first (which could be the
+    /// unroutable IPv4 literal, silently defeating NAT64 on the exact network #52
+    /// targets), the routable family is chosen explicitly. Pure/static so
+    /// RunnerTests can pin the preference WITHOUT a live resolver — the offline
+    /// seam over the synthesis address-selection policy (§spec:nat64-tests).
+    public static func synthesizedTransport(hasIPv4: Bool, hasIPv6: Bool) -> IPFamily? {
+        if hasIPv6 { return .v6 }
+        if hasIPv4 { return .v4 }
+        return nil
+    }
+
+    /// Run `getaddrinfo(host)` with the given `aiFamily` hint (AF_INET / AF_INET6
+    /// for the pinned path, AF_UNSPEC for synthesis) and a SOCK_DGRAM socktype,
+    /// then hand the result list to `select`, which returns the chosen
+    /// destination (already copied into a `sockaddr_storage`) plus its transport
+    /// family, or nil when the list holds no usable address.
+    ///
+    /// This centralizes the getaddrinfo LIFECYCLE — the status guard and the
+    /// leak-safe `freeaddrinfo` on every exit — so the pinned (#69) and
+    /// synthesized (#52) paths share ONE copy of that reasoning instead of two
+    /// that can drift. On a getaddrinfo failure the status is classified by
+    /// `failureKind` (so each path keeps its own honesty rule); a resolved-but-
+    /// empty selection is a route problem for the host, hence `.noRoute`.
+    private static func resolved(
+        host: String,
+        aiFamily: Int32,
+        failureKind: (Int32) -> PingErrorKind,
+        select: (UnsafeMutablePointer<addrinfo>) -> (sockaddr_storage, socklen_t, IPFamily)?
+    ) -> Resolution {
+        var hints = addrinfo()
+        hints.ai_family = aiFamily
+        hints.ai_socktype = SOCK_DGRAM
+        // NB: do NOT constrain ai_protocol to IPPROTO_ICMP(V6) here. getaddrinfo
+        // validates the socktype/protocol pair and rejects SOCK_DGRAM+ICMP with
+        // EAI_BADHINTS, which would make every host resolve as a failure. The
+        // protocol only matters for the socket() call, not for name resolution.
+        // AI_NUMERICHOST is also left unset so the AF_UNSPEC path can synthesize.
+
+        var result: UnsafeMutablePointer<addrinfo>?
+        let status = getaddrinfo(host, nil, &hints, &result)
+        guard status == 0, let first = result else {
+            if result != nil { freeaddrinfo(result) }
+            return .failure(failureKind(status))
+        }
+        defer { freeaddrinfo(first) }
+
+        guard let (addr, addrLen, transport) = select(first) else {
+            return .failure(.noRoute)
+        }
+        return .success(addr, addrLen, transport)
     }
 
     /// Resolve `host` to a destination plus the TRANSPORT family to send for.
@@ -360,40 +428,27 @@ public final class PingEngine {
             return resolveSynthesized(host: host)
         }
 
-        var hints = addrinfo()
-        hints.ai_family = (family == .v4) ? AF_INET : AF_INET6  // pinned; never the other family
-        hints.ai_socktype = SOCK_DGRAM
-        // NB: do NOT constrain ai_protocol to IPPROTO_ICMP(V6) here. getaddrinfo
-        // validates the socktype/protocol pair and rejects SOCK_DGRAM+ICMP with
-        // EAI_BADHINTS, which would make every host resolve as a failure. The
-        // protocol only matters for the socket() call, not for name resolution.
-
-        var result: UnsafeMutablePointer<addrinfo>?
-        let status = getaddrinfo(host, nil, &hints, &result)
-        guard status == 0, let first = result else {
-            if result != nil { freeaddrinfo(result) }
-            return .failure(Self.errorKind(forGetaddrinfoStatus: status))
-        }
-        defer { freeaddrinfo(first) }
-
-        // Walk the list for the first entry matching the requested family and
-        // copy its sockaddr into a sockaddr_storage with the right socklen.
+        // Pinned to the selected family. The first entry of that family wins; the
+        // transport family equals the requested family (no synthesis).
         let wantFamily: Int32 = (family == .v4) ? AF_INET : AF_INET6
-        var node: UnsafeMutablePointer<addrinfo>? = first
-        while let current = node {
-            if current.pointee.ai_family == wantFamily,
-               let sa = current.pointee.ai_addr {
-                // Pinned path: transport family == the requested family.
-                let (out, wantLen) = Self.copyDestination(from: sa,
-                                                          addrLen: current.pointee.ai_addrlen,
-                                                          transport: family)
-                return .success(out, wantLen, family)
+        return Self.resolved(host: host,
+                             aiFamily: wantFamily,
+                             failureKind: { Self.errorKind(forGetaddrinfoStatus: $0) }) { first in
+            var node: UnsafeMutablePointer<addrinfo>? = first
+            while let current = node {
+                if current.pointee.ai_family == wantFamily,
+                   let sa = current.pointee.ai_addr {
+                    let (out, wantLen) = Self.copyDestination(from: sa,
+                                                              addrLen: current.pointee.ai_addrlen,
+                                                              transport: family)
+                    return (out, wantLen, family)
+                }
+                node = current.pointee.ai_next
             }
-            node = current.pointee.ai_next
+            // Resolved but no address of the selected family: a route problem,
+            // not a name miss (mapped to .noRoute by `resolved`).
+            return nil
         }
-        // getaddrinfo succeeded but returned no address of the selected family:
-        // there is no route for this family, not a name miss.
-        return .failure(.noRoute)
     }
 
     /// Resolve an IPv4 literal WITHOUT pinning the address family, so the system
@@ -404,44 +459,57 @@ public final class PingEngine {
     /// `AI_NUMERICHOST`: that flag would short-circuit the resolver and suppress
     /// synthesis, which is exactly the pinned behavior this path relaxes.
     ///
-    /// We take the FIRST result whose family is AF_INET or AF_INET6 and return it
-    /// as the transport family (`.v6` for AF_INET6, else `.v4`).
+    /// We PREFER the synthesized IPv6 (NAT64) address over a co-listed IPv4
+    /// literal (see `synthesizedTransport(hasIPv4:hasIPv6:)`) rather than taking
+    /// whichever entry sorted first, so the engine never silently commits to the
+    /// unroutable IPv4 literal on the very IPv6-only network this fix targets.
     ///
     /// Honest classification (§spec:nat64-error-fallback): an IPv4 literal that
     /// yields no routable address is a ROUTE problem, so ANY failure here
     /// (non-zero status OR no usable address) maps to `.noRoute`, NEVER
     /// `.unknownHost` — it is a literal, never a name miss.
     private func resolveSynthesized(host: String) -> Resolution {
-        var hints = addrinfo()
-        hints.ai_family = AF_UNSPEC          // let the resolver synthesize / choose
-        hints.ai_socktype = SOCK_DGRAM
-        // NB: do NOT set AI_NUMERICHOST — see the doc comment above.
-
-        var result: UnsafeMutablePointer<addrinfo>?
-        let status = getaddrinfo(host, nil, &hints, &result)
-        guard status == 0, let first = result else {
-            if result != nil { freeaddrinfo(result) }
-            return .failure(.noRoute)
-        }
-        defer { freeaddrinfo(first) }
-
-        // Walk the list for the first AF_INET / AF_INET6 entry and copy its
-        // sockaddr into a sockaddr_storage via the shared copyDestination helper.
-        var node: UnsafeMutablePointer<addrinfo>? = first
-        while let current = node {
-            let fam = current.pointee.ai_family
-            if (fam == AF_INET || fam == AF_INET6), let sa = current.pointee.ai_addr {
-                let transport: IPFamily = (fam == AF_INET6) ? .v6 : .v4
-                let (out, wantLen) = Self.copyDestination(from: sa,
-                                                          addrLen: current.pointee.ai_addrlen,
-                                                          transport: transport)
-                return .success(out, wantLen, transport)
+        // AF_UNSPEC: let the resolver synthesize / choose. ANY failure is a route
+        // problem for a literal (never a name miss), so failureKind is always
+        // .noRoute and the empty-selection case also maps to .noRoute.
+        return Self.resolved(host: host,
+                             aiFamily: AF_UNSPEC,
+                             failureKind: { _ in .noRoute }) { first in
+            // The resolver may return BOTH the synthesized IPv6 (NAT64) address
+            // and the original IPv4 literal. Capture the first entry of each
+            // family, then let the pure `synthesizedTransport` policy pick the
+            // routable one (IPv6 when synthesized) — not whichever sorted first.
+            var v4: (UnsafeMutablePointer<sockaddr>, socklen_t)?
+            var v6: (UnsafeMutablePointer<sockaddr>, socklen_t)?
+            var node: UnsafeMutablePointer<addrinfo>? = first
+            while let current = node {
+                if let sa = current.pointee.ai_addr {
+                    let len = current.pointee.ai_addrlen
+                    switch current.pointee.ai_family {
+                    case AF_INET6 where v6 == nil: v6 = (sa, len)
+                    case AF_INET where v4 == nil: v4 = (sa, len)
+                    default: break
+                    }
+                }
+                node = current.pointee.ai_next
             }
-            node = current.pointee.ai_next
+            // Resolved but no usable IPv4/IPv6 address -> nil -> .noRoute via `resolved`.
+            guard let transport = Self.synthesizedTransport(hasIPv4: v4 != nil,
+                                                            hasIPv6: v6 != nil) else {
+                return nil
+            }
+            // The chosen family is guaranteed present by the policy above, so the
+            // force-unwrap is total: .v6 only when v6 != nil, .v4 only when v4 != nil.
+            let entry: (UnsafeMutablePointer<sockaddr>, socklen_t)
+            switch transport {
+            case .v6: entry = v6!
+            case .v4: entry = v4!
+            }
+            let (out, wantLen) = Self.copyDestination(from: entry.0,
+                                                      addrLen: entry.1,
+                                                      transport: transport)
+            return (out, wantLen, transport)
         }
-        // Resolved but no usable IPv4/IPv6 address: a route problem for this
-        // literal, not a name miss.
-        return .failure(.noRoute)
     }
 
     /// Copy a resolved entry's `sockaddr` (`ai_addr`/`ai_addrlen`) into a

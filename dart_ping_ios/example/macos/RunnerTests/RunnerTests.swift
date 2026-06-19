@@ -588,4 +588,36 @@ class RunnerTests: XCTestCase {
     XCTAssertEqual(PingEngine.errorKind(forSendErrno: EADDRNOTAVAIL), .noRoute)
   }
 
+  // MARK: synthesizedTransport(hasIPv4:hasIPv6:) — the address-selection policy
+  // (§spec:nat64-literal-synthesis / §spec:nat64-tests)
+  //
+  // The un-pinned (AF_UNSPEC) resolve may return BOTH the synthesized IPv6
+  // (NAT64) address and the original IPv4 literal. The engine must NOT commit to
+  // whichever entry getaddrinfo sorted first — on an IPv6-only network the IPv4
+  // literal is unroutable, and picking it would silently defeat #52. This pure
+  // policy encodes the routable-family preference; it is the offline seam over
+  // the synthesis address selection (a live IPv6-only NAT64 network is not
+  // reproducible on a hosted runner / the simulator).
+
+  /// Both families synthesized -> prefer IPv6 (the routable NAT64 address). This
+  /// is the exact #52 case: a bare IPv4 literal on an IPv6-only network where the
+  /// resolver returns the synthesized v6 alongside the original (unroutable) v4.
+  func testSynthesizedTransportPrefersIPv6WhenBothPresent() {
+    XCTAssertEqual(PingEngine.synthesizedTransport(hasIPv4: true, hasIPv6: true), .v6)
+    // IPv6 alone (pure synthesis) is also v6.
+    XCTAssertEqual(PingEngine.synthesizedTransport(hasIPv4: false, hasIPv6: true), .v6)
+  }
+
+  /// No IPv6 synthesized (dual-stack / Wi-Fi, where the literal already routes)
+  /// -> send over IPv4, unchanged from the pre-#52 behavior.
+  func testSynthesizedTransportUsesIPv4WhenNoIPv6() {
+    XCTAssertEqual(PingEngine.synthesizedTransport(hasIPv4: true, hasIPv6: false), .v4)
+  }
+
+  /// Resolver returned no usable address -> nil, which the resolve path maps to
+  /// the honest `.noRoute` (never a phantom unknownHost, never a hang).
+  func testSynthesizedTransportNilWhenNeitherPresent() {
+    XCTAssertNil(PingEngine.synthesizedTransport(hasIPv4: false, hasIPv6: false))
+  }
+
 }
