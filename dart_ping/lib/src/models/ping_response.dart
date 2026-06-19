@@ -2,7 +2,7 @@ part of 'ping_event.dart';
 
 /// Each probe response — the successful-probe variant of [PingEvent].
 final class PingResponse extends PingEvent {
-  const PingResponse({this.seq, this.ttl, this.time, this.ip});
+  const PingResponse({this.seq, this.ttl, this.time, this.ip, this.stats});
 
   /// Transmission sequence position identifier
   /// (can be used to reconstruct packet order)
@@ -18,6 +18,14 @@ final class PingResponse extends PingEvent {
 
   /// IP Address of the target
   final String? ip;
+
+  /// A running snapshot of round-trip stats over all successful replies seen
+  /// so far in the run, at the moment this event was emitted (§spec:stats-live).
+  ///
+  /// Null on events not produced by the live run path (e.g. a bare parsed or
+  /// deserialized response).
+  @override
+  final RoundTripStats? stats;
 
   @override
   String toString() {
@@ -38,12 +46,14 @@ final class PingResponse extends PingEvent {
     int? ttl,
     Duration? time,
     String? ip,
+    RoundTripStats? stats,
   }) {
     return PingResponse(
       seq: seq ?? this.seq,
       ttl: ttl ?? this.ttl,
       time: time ?? this.time,
       ip: ip ?? this.ip,
+      stats: stats ?? this.stats,
     );
   }
 
@@ -55,12 +65,17 @@ final class PingResponse extends PingEvent {
         other.seq == seq &&
         other.ttl == ttl &&
         other.time == time &&
-        other.ip == ip;
+        other.ip == ip &&
+        other.stats == stats;
   }
 
   @override
   int get hashCode {
-    return seq.hashCode ^ ttl.hashCode ^ time.hashCode ^ ip.hashCode;
+    return seq.hashCode ^
+        ttl.hashCode ^
+        time.hashCode ^
+        ip.hashCode ^
+        stats.hashCode;
   }
 
   @override
@@ -71,6 +86,7 @@ final class PingResponse extends PingEvent {
       'ttl': ttl,
       'time': time?.inMicroseconds,
       'ip': ip,
+      'stats': stats?.toMap(),
     };
   }
 
@@ -80,6 +96,9 @@ final class PingResponse extends PingEvent {
       ttl: map['ttl']?.toInt(),
       time: _durationFromMicros(map['time']),
       ip: map['ip'],
+      stats: map['stats'] != null
+          ? RoundTripStats.fromMap(map['stats'] as Map<String, dynamic>)
+          : null,
     );
   }
 

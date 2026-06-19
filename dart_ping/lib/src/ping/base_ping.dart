@@ -171,16 +171,28 @@ abstract class BasePing {
         (event) {
           switch (event) {
             case PingResponse():
-              // Successful reply: feed its RTT into the stats accumulator so
-              // the terminal summary's RoundTripStats is built from per-probe
-              // times (§spec:stats-cross-platform).
+              // Successful reply: feed its RTT into the stats accumulator FIRST
+              // so the terminal summary's RoundTripStats is built from per-probe
+              // times (§spec:stats-cross-platform). Then emit a copy carrying a
+              // running snapshot taken AFTER adding this reply's RTT, so the
+              // snapshot includes the current reply (§spec:stats-live). Because
+              // no successful reply follows the last probe event, that event's
+              // snapshot equals the terminal `summary.stats` — the live↔summary
+              // consistency guarantee — since both come from the same
+              // `_rttStats` accumulator. A consumer derives loss-so-far from
+              // `stats.sampleCount` (received-so-far) and the count of probe
+              // events it has seen (transmitted-so-far), consistent with the
+              // terminal `packetLoss`.
               if (event.time != null) _rttStats.add(event.time!);
-              _controller.add(event);
+              _controller.add(event.copyWith(stats: _rttStats.snapshot()));
             case PingError():
-              // Accumulate the error so it is folded into the summary's
-              // errors list at cleanup, and surface it on the stream now.
+              // Accumulate the BARE error so it is folded into the summary's
+              // errors list at cleanup unchanged. Emit a copy carrying the
+              // current running snapshot: errors don't contribute to RTT
+              // figures, so their snapshot reflects the successful replies seen
+              // so far (§spec:stats-live).
               _errors.add(event);
-              _controller.add(event);
+              _controller.add(event.copyWith(stats: _rttStats.snapshot()));
             case PingSummary():
               // Hold the raw parsed summary; it is finalized (stats + errors)
               // in _cleanup.

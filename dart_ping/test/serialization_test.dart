@@ -22,7 +22,7 @@ void main() {
       expect(
         json,
         equals(
-          '{"type":"error","error":"Request Timed Out","message":"Test","seq":null,"ip":null}',
+          '{"type":"error","error":"Request Timed Out","message":"Test","seq":null,"ip":null,"stats":null}',
         ),
       );
       final deserialized = PingError.fromJson(json);
@@ -46,7 +46,7 @@ void main() {
       expect(
         json,
         equals(
-          '{"type":"response","seq":2,"ttl":5,"time":8000,"ip":"127.0.0.1"}',
+          '{"type":"response","seq":2,"ttl":5,"time":8000,"ip":"127.0.0.1","stats":null}',
         ),
       );
       final deserialized = PingResponse.fromJson(json);
@@ -58,7 +58,7 @@ void main() {
       expect(
         json,
         equals(
-          '{"type":"summary","transmitted":43,"received":8,"time":3957000,"stats":null,"errors":[{"type":"error","error":"Request Timed Out","message":"Test","seq":null,"ip":null}]}',
+          '{"type":"summary","transmitted":43,"received":8,"time":3957000,"stats":null,"errors":[{"type":"error","error":"Request Timed Out","message":"Test","seq":null,"ip":null,"stats":null}]}',
         ),
       );
       final deserialized = PingSummary.fromJson(json);

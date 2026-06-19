@@ -1496,7 +1496,7 @@ summary line and the run's accumulated errors
 `time` is reported where the platform provides it, unchanged.
 
 ## Live running statistics §spec:stats-live
-*Status: not started*
+*Status: implemented (dart_ping 10.0.0) — both `PingResponse` and `PingError` gain an additive nullable `RoundTripStats? stats` (null on events not from the live run path, so existing serialization/model round-trips are unchanged) participating in `copyWith`/`==`/`hashCode`/`toMap`/`fromMap`. `BasePing` attaches `_rttStats.snapshot()` to every emitted probe event — a response adds its own RTT THEN snapshots so the snapshot includes the current reply; an error snapshots the successful replies so far (errors never contribute to RTT figures) — reusing the same `RoundTripStatsAccumulator` as the terminal summary, so the last running snapshot equals `summary.stats`. The summary's `errors` list still stores the bare errors (their serialization is unchanged). Loss-so-far is derivable from `stats.sampleCount` (received-so-far) plus counted probe events (transmitted-so-far), consistent with the terminal `packetLoss`. Covered by network-free `dart test` cases.*
 
 While a run is in progress, a consumer can observe the statistics evolve:
 every probe event carries a **running `RoundTripStats` snapshot**
@@ -1678,13 +1678,25 @@ is normative.
 ## Statistics behavior tests §spec:stats-tests
 *Status: in progress — the round-trip computations, packet-loss derivation /
 zero-reply case, and the sealed-event contract landed with the model redesign
-(Batch #63-1, `dart_ping/test/`). The **sub-millisecond precision round-trip**
-bullet is now covered (Batch #63-3): `dart_ping/test/serialization_test.dart`
-serializes and deserializes sub-millisecond `PingResponse.time` and a
-`RoundTripStats` derived from sub-millisecond samples (carried on a
-`PingSummary`) and asserts every round-trip `Duration` survives to the
-microsecond (§spec:stats-precision). The iOS native-result → event/stats
-mapping tests remain tracked under §spec:stats-ios / §spec:ios-tests.*
+(Batch #63-1, `dart_ping/test/stats_event_test.dart`). The **sub-millisecond
+precision round-trip** bullet is covered (Batch #63-3):
+`dart_ping/test/serialization_test.dart` serializes and deserializes
+sub-millisecond `PingResponse.time` and a `RoundTripStats` derived from
+sub-millisecond samples (carried on a `PingSummary`) and asserts every
+round-trip `Duration` survives to the microsecond (§spec:stats-precision). The
+**live-consistency** coverage landed (Batch #63-2):
+`dart_ping/test/live_stats_test.dart` asserts every probe event
+(`PingResponse` and per-probe `PingError`) carries a non-null running
+`RoundTripStats` snapshot; the running snapshot tracks the same computation as
+the summary step by step (the i-th response equals
+`RoundTripStats.fromSamples([rtt_0..rtt_i])`, and a timeout carries the
+snapshot of the successful replies seen so far); the last running snapshot
+equals the terminal `summary.stats` for a run ending in a reply, a run whose
+last probe is a timeout, and the zero-reply run; and loss-so-far derived from
+probe-event count (transmitted) and `stats.sampleCount` (received) matches the
+terminal `summary.packetLoss` — all offline via the `FakeProcess`/`TestPing`
+harness. The iOS native-result → event/stats mapping tests remain tracked
+under §spec:stats-ios / §spec:ios-tests.*
 
 The statistics and the event contract are covered by automated tests that
 run under `dart test` / `flutter test` without a live network.
