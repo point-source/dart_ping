@@ -1,6 +1,6 @@
 # Requirements
 
-This document tracks eight areas of work:
+This document tracks nine areas of work:
 
 1. **iOS SPM migration (#73)** — *shipped in `dart_ping_ios` 5.0.0.*
    Replace the `flutter_icmp_ping` dependency with a native Swift ICMP
@@ -53,6 +53,15 @@ This document tracks eight areas of work:
    behind an explicit option that is enabled by default — extending the
    #69 scope boundary, which made the error honest but declined to make
    the ping work. Captured in the `§req:nat64-*` sections at the end.
+9. **CI on PRs to `develop`** — the repository follows a gitflow model
+   where feature branches merge into a `develop` integration branch, which
+   periodically merges to `main` for release. The existing CI
+   (`§spec:ci`) gates only PRs to `main`, so a feature branch merges into
+   `develop` with no checks and breakage accumulates there unseen until the
+   `develop`→`main` release PR runs CI — late, batched, and hard to
+   attribute. Extend CI so the same gate runs on PRs targeting `develop`,
+   and protect `develop` like `main`. Captured in the `§req:ci-develop-*`
+   sections at the end.
 
 ---
 
@@ -1390,3 +1399,123 @@ mechanism is decided:
   Confirming that synthesis does not change the validated family or
   disturb the literal-vs-family `ArgumentError`
   (`§spec:address-family-mismatch-validation`).
+
+---
+
+# CI on PRs to `develop`
+
+## CI on develop — problem statement §req:ci-develop-problem-statement
+
+The user is the maintainer of this two-package repository
+(`dart_ping` + `dart_ping_ios`), working in a gitflow-style branching
+model: feature branches merge into a long-lived `develop` integration
+branch, and `develop` periodically merges into `main` to cut a release.
+
+The existing continuous-integration gate (`§spec:ci`) triggers only on
+pull requests targeting `main`. In a gitflow model that is the wrong
+checkpoint: by the time code reaches a `develop`→`main` PR it has already
+been integrated on `develop`, often across many feature merges. So today a
+feature branch can merge into `develop` having never run the suite, and any
+breakage it introduces sits on `develop` unnoticed until the release PR
+finally runs CI.
+
+That makes failures **late, batched, and hard to attribute**: the release
+PR goes red, but the red reflects the combined effect of everything merged
+since the last release, not the one change that caused it. The maintainer
+then has to bisect after the fact instead of seeing a clean red check on
+the individual feature PR that introduced the problem. The integration
+branch — the very place a gitflow model expects to always be in a
+known-good, releasable state — has no guard keeping it that way.
+
+The fix the maintainer wants is to move the gate earlier: run the same
+checks on every PR into `develop`, and protect `develop` so nothing lands
+there without passing them — so `develop` stays releasable and breakage is
+caught on the PR that caused it.
+
+## CI on develop — success criteria §req:ci-develop-success-criteria
+
+Observable outcomes a tester can verify from the repository's GitHub
+surface (Actions tab, PR checks, branch-protection settings):
+
+- **Opening a PR that targets `develop` triggers CI.** The same automated
+  suites that run on a PR to `main` start automatically on a PR whose base
+  is `develop`, with no manual action. *(must-have)*
+- **The checks are at full parity with the `main` gate.** A PR to
+  `develop` runs the identical set of jobs a PR to `main` runs today — the
+  core `dart_ping` suite on Linux, Windows and macOS; the `dart_ping_ios`
+  Dart suite on Linux; the Swift `RunnerTests` suite on macOS; and the
+  informational coverage report — with the same deterministic, live-network-
+  excluded behavior. *(must-have)*
+- **A failing suite shows red on the `develop` PR.** When a change breaks a
+  gating suite, the failure is visible as a failed required check on that
+  PR, attributable to that change. *(must-have)*
+- **`develop` cannot be changed except through a passing PR.** Direct
+  pushes to `develop` are rejected, and a PR into `develop` cannot merge
+  until its required checks are green — mirroring the protection already on
+  `main`. *(must-have)*
+- **The `main` gate is unchanged.** PRs to `main` continue to trigger and
+  gate exactly as before; adding the `develop` trigger removes or weakens
+  nothing on the `main` path. *(must-have)*
+- **A manual run is still possible.** The workflow can still be dispatched
+  manually from the Actions tab (the existing `workflow_dispatch` path is
+  preserved). *(nice-to-have)*
+
+## CI on develop — user stories §req:ci-develop-user-stories
+
+- As the maintainer, I want CI to run automatically when a feature branch
+  opens a PR into `develop` so that I see breakage on the PR that caused it
+  rather than later on the release PR.
+- As the maintainer, I want `develop` protected so that no change can land
+  on it without a green run, keeping the integration branch releasable.
+- As a contributor, I want my PR into `develop` to show the same checks as a
+  PR into `main` so that "green on develop" already means "ready for
+  release," with no surprises at the `develop`→`main` step.
+- As the maintainer, I want the `develop`→`main` release PR to be
+  predictable — green because everything merged into `develop` was already
+  green — instead of a batched red I have to bisect.
+
+## CI on develop — quality attributes §req:ci-develop-quality-attributes
+
+- **Determinism (carried over from `§spec:ci`):** the gating checks on
+  `develop` stay reproducible — live ICMP round-trips to external hosts are
+  excluded, exactly as on the `main` gate. A required check that flaps on a
+  network blip trains the maintainer to ignore it.
+- **Parity / single source of truth:** the `develop` gate is the *same*
+  checks as the `main` gate, not a divergent copy that can drift. "Green on
+  develop" and "green on main" mean the same thing.
+- **Low maintenance:** extending the trigger should not duplicate job
+  definitions; the two branch targets share one workflow so there is one
+  place to change a job.
+- **Cost is acceptable:** running the full matrix on both `develop` PRs and
+  the later `develop`→`main` PR is an accepted cost — confidence on the
+  integration branch is worth the extra runner minutes. (Runner cost is not
+  a constraint for this work.)
+
+## CI on develop — constraints §req:ci-develop-constraints
+
+- **Full parity, not a lighter subset.** The decision is to run the
+  complete `main` job set on `develop` PRs (core OS matrix + iOS Dart + iOS
+  Swift + coverage), not a reduced fast gate.
+- **`develop` is branch-protected like `main`.** Required green checks
+  before merge, no direct pushes. Branch protection is a GitHub repository
+  setting outside the workflow file; it is part of this requirement's
+  "done" even though it is configured in repo settings rather than in
+  `.github/workflows/ci.yml`.
+- **The deterministic / live-network exclusion of `§spec:ci` is
+  preserved** — the `develop` gate inherits it because it is the same
+  workflow, not a separate definition.
+- **No change to the `main` trigger or its protection.** This work only
+  adds `develop` as an additional gated target.
+- **Builds on the existing `§spec:ci` workflow** (`.github/workflows/ci.yml`)
+  rather than introducing a new pipeline.
+
+## CI on develop — priorities §req:ci-develop-priorities
+
+- **Must-have:** CI triggers automatically on PRs to `develop`; full
+  job parity with the `main` gate; failures visible and attributable on the
+  `develop` PR; `develop` branch-protected so merges require green checks;
+  the `main` gate unchanged.
+- **Nice-to-have:** the manual `workflow_dispatch` path remains available.
+- **Out of scope:** any lighter/faster subset gate, coverage-threshold
+  enforcement, changes to which tests are live-excluded, and any change to
+  the `main` pipeline beyond adding the `develop` target.
