@@ -45,7 +45,7 @@ final class PingSummary extends PingEvent {
     var str = 'PingSummary(transmitted:$transmitted, received:$received';
     str = '$str, loss:$packetLoss%';
     if (time != null) {
-      str = '$str, time: ${time?.inMilliseconds ?? ''} ms';
+      str = '$str, time: ${time!.inMilliseconds} ms';
     }
     if (stats != null) {
       str = '$str, stats: $stats';
