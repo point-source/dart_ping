@@ -2349,7 +2349,7 @@ gate, the auto-wiring, the background-isolate fix, and the retirement of
 `dart_ping_ios`.
 
 ## iOS native engine ships as a build-hook code asset §spec:ios-code-asset-build-hook
-*Status: not started*
+*Status: implemented (Batch #28-1) — `dart_ping/hook/build.dart` (pure-Dart `hooks`/`code_assets` deps, no `flutter`) compiles the in-repo native engine into a single `dart:ffi` code asset named `dart_ping_ffi` ONLY when the target OS is iOS, via `xcrun`/`swiftc` against the iOS SDK. The PRIMARY language path was taken: the audited Swift `PingEngine`/`ICMPPacket` are carried verbatim into `dart_ping/native/` behind a flat C ABI (`native/include/dart_ping_ffi.h`) fronted by a hand-written `@_cdecl` shim (`native/ping_shim.swift`, 3-entry surface: start/stop/one event callback — no swift2objc/ffigen, no `objective_c` bridge). The target gate is factored into `hook/gating.dart` and covered by network-free `dart test` cases (`test/build_hook_gating_test.dart`); the hook was confirmed to run and short-circuit on the Linux host (empty `native_assets.yaml`, no toolchain invoked). The Swift/iOS cross-compile is hand-verified on macOS (`swiftc -emit-library -sdk $(xcrun --sdk iphoneos --show-sdk-path) -target arm64-apple-ios13.0 -import-objc-header …`, see `native/README.md`), not compilable on the Linux CI host (§spec:ci, §spec:ios-tests). The Dart FFI binding that opens this asset is a later batch (#28-2, §spec:ios-ffi-binding). NOTE: the engine is a transient byte-for-byte duplicate of the `dart_ping_ios` source until that package is retired.*
 
 `dart_ping` carries the native iOS ICMP engine and compiles it into a
 **code asset** (a native dynamic library, linked at app-build time and reached
@@ -2437,7 +2437,7 @@ floor). This is accepted as the price of one package; the hook's target-gated
 short-circuit keeps the cost off every non-iOS consumer.
 
 ## Pure-Dart consumers need no Flutter SDK §spec:pure-dart-preserved
-*Status: not started*
+*Status: implemented (Batch #28-1) — the non-negotiable gate holds. `dart_ping`'s only new deps are the pure-Dart `hooks`/`code_assets`; `dart pub deps` shows NO `flutter` SDK dependency anywhere in the graph, and `dart pub get` / `dart analyze --fatal-infos` / `dart test -x live` all pass with no Flutter SDK on the resolve path. On a non-iOS build the build hook (§spec:ios-code-asset-build-hook) emits no code asset and invokes no Swift/iOS toolchain — empirically confirmed on the Linux host: the hook ran and produced an empty `native_assets.yaml` with no compilation (and `xcrun` is absent here, so any leak into the iOS branch would have failed loudly). The SDK floor was raised from ≥3.8.0 to ≥3.10.0 (Dart 3.10 / Flutter 3.38, where build hooks / code assets are stable), recorded in `dart_ping/CHANGELOG.md` (10.0.0). The gate was satisfiable, so consolidation proceeds (the last-resort "do not consolidate" path was not needed).*
 
 `dart_ping` remains a pure-Dart package. A CLI, server, or backend project adds
 it with `dart pub add dart_ping` and pings on Linux / Windows / macOS desktop
