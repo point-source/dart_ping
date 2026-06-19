@@ -1,67 +1,78 @@
 # Requirements
 
-This document tracks the following areas of work:
+This document tracks ten areas of work:
 
-- **iOS SPM migration (#73)** — *shipped in `dart_ping_ios` 5.0.0.*
-  Replace the `flutter_icmp_ping` dependency with a native Swift ICMP
-  engine and ship under Swift Package Manager. Captured in the
-  `§req:problem-statement` … `§req:priorities` sections below.
-- **Maintenance & modernization refresh** — a cross-package pass to bring
-  dependencies, SDK constraints, documentation, and test coverage current,
-  and to surface bugs / security flaws / improvements across the Dart and
-  native Swift code. Captured in the `§req:refresh-*` sections.
-- **`base_ping` stream lifecycle robustness (#76)** — fix two edge paths
-  in the core `dart_ping` stream where a consumer can hang forever
-  instead of seeing an error: an unmapped non-zero exit code, and a
-  failed process launch (e.g. a missing `ping` binary). Surfaced by the
-  Dart code audit (`§spec:code-audit`). Captured in the
-  `§req:robustness-*` sections.
-- **IPv6 / address-family error clarity (#69)** — on IPv6-enabled
-  networks (notably mobile data), pinging an IP can fail with a
-  misleading "Unknown Host" error when the `ipv6` flag and the target's
-  address family disagree, or when the network/adapter cannot route the
-  selected family. Treat `ipv6` as an exclusive address-family selector,
-  validate obvious literal mismatches up front, and surface honest,
-  consistent errors instead of mislabeling them. Captured in the
-  `§req:ipfamily-*` sections at the end.
-- **Interface selection (#72)** — let a developer choose which network
-  interface (by interface name or by local source address) pings
-  originate from, on the desktop platforms (Linux/Android, macOS,
-  Windows), with a nice-to-have helper to enumerate the available
-  interfaces. Captured in the `§req:interface-*` sections at the end.
-- **Concurrent-ping isolation (#70)** — a reported defect where two or
-  more `Ping` instances run at the same time report the same round-trip
-  results instead of each host's own, first seen on Android. Fix so that
-  concurrent `Ping` instances are fully independent. Captured in the
-  `§req:concurrent-*` sections at the end.
-- **Summary statistics (#63)** — surface the richer round-trip
-  statistics the native `ping` already prints (min / avg / max / stddev),
-  plus a mean-consecutive-delta jitter figure and packet-loss %, both in
-  the run summary and as live running stats during a run, with full
-  cross-platform parity including iOS. Delivered via a from-scratch
-  redesign of the stream's event/data classes (a sealed event union plus a
-  reusable round-trip-stats value object), folded into the
-  already-unreleased breaking `dart_ping` 10.0.0 / `dart_ping_ios` 6.0.0
-  majors. Captured in the `§req:stats-*` sections at the end.
-- **NAT64 / IPv6-only IP-literal reachability (#52)** — on iOS over
-  cellular (mobile data), pinging a bare IPv4 literal fails outright,
-  while a hostname works and the same literal works over Wi-Fi, because
-  the carrier runs an IPv6-only (NAT64/DNS64) network that synthesizes a
-  routable address for hostnames but not for raw IP literals. Make the
-  literal ping actually succeed via the platform's NAT64 address
-  synthesis (as Apple's own guidance and third-party ping apps do),
-  behind an explicit option that is enabled by default — extending the
-  #69 scope boundary, which made the error honest but declined to make
-  the ping work. Captured in the `§req:nat64-*` sections at the end.
-- **CI on PRs to `develop`** — the repository follows a gitflow model
-  where feature branches merge into a `develop` integration branch, which
-  periodically merges to `main` for release. The existing CI
-  (`§spec:ci`) gates only PRs to `main`, so a feature branch merges into
-  `develop` with no checks and breakage accumulates there unseen until the
-  `develop`→`main` release PR runs CI — late, batched, and hard to
-  attribute. Extend CI so the same gate runs on PRs targeting `develop`,
-  and protect `develop` like `main`. Captured in the `§req:ci-develop-*`
-  sections at the end.
+1. **iOS SPM migration (#73)** — *shipped in `dart_ping_ios` 5.0.0.*
+   Replace the `flutter_icmp_ping` dependency with a native Swift ICMP
+   engine and ship under Swift Package Manager. Captured in the
+   `§req:problem-statement` … `§req:priorities` sections below.
+2. **Maintenance & modernization refresh** — a cross-package pass to bring
+   dependencies, SDK constraints, documentation, and test coverage current,
+   and to surface bugs / security flaws / improvements across the Dart and
+   native Swift code. Captured in the `§req:refresh-*` sections.
+3. **`base_ping` stream lifecycle robustness (#76)** — fix two edge paths
+   in the core `dart_ping` stream where a consumer can hang forever
+   instead of seeing an error: an unmapped non-zero exit code, and a
+   failed process launch (e.g. a missing `ping` binary). Surfaced by the
+   Dart code audit (`§spec:code-audit`). Captured in the
+   `§req:robustness-*` sections.
+4. **IPv6 / address-family error clarity (#69)** — on IPv6-enabled
+   networks (notably mobile data), pinging an IP can fail with a
+   misleading "Unknown Host" error when the `ipv6` flag and the target's
+   address family disagree, or when the network/adapter cannot route the
+   selected family. Treat `ipv6` as an exclusive address-family selector,
+   validate obvious literal mismatches up front, and surface honest,
+   consistent errors instead of mislabeling them. Captured in the
+   `§req:ipfamily-*` sections at the end.
+5. **Interface selection (#72)** — let a developer choose which network
+   interface (by interface name or by local source address) pings
+   originate from, on the desktop platforms (Linux/Android, macOS,
+   Windows), with a nice-to-have helper to enumerate the available
+   interfaces. Captured in the `§req:interface-*` sections at the end.
+6. **Concurrent-ping isolation (#70)** — a reported defect where two or
+   more `Ping` instances run at the same time report the same round-trip
+   results instead of each host's own, first seen on Android. Fix so that
+   concurrent `Ping` instances are fully independent. Captured in the
+   `§req:concurrent-*` sections at the end.
+7. **Summary statistics (#63)** — surface the richer round-trip
+   statistics the native `ping` already prints (min / avg / max / stddev),
+   plus a mean-consecutive-delta jitter figure and packet-loss %, both in
+   the run summary and as live running stats during a run, with full
+   cross-platform parity including iOS. Delivered via a from-scratch
+   redesign of the stream's event/data classes (a sealed event union plus a
+   reusable round-trip-stats value object), folded into the
+   already-unreleased breaking `dart_ping` 10.0.0 / `dart_ping_ios` 6.0.0
+   majors. Captured in the `§req:stats-*` sections at the end.
+8. **NAT64 / IPv6-only IP-literal reachability (#52)** — on iOS over
+   cellular (mobile data), pinging a bare IPv4 literal fails outright,
+   while a hostname works and the same literal works over Wi-Fi, because
+   the carrier runs an IPv6-only (NAT64/DNS64) network that synthesizes a
+   routable address for hostnames but not for raw IP literals. Make the
+   literal ping actually succeed via the platform's NAT64 address
+   synthesis (as Apple's own guidance and third-party ping apps do),
+   behind an explicit option that is enabled by default — extending the
+   #69 scope boundary, which made the error honest but declined to make
+   the ping work. Captured in the `§req:nat64-*` sections at the end.
+9. **Windows interface-listing round-trip contract (#85)** — the
+   interface-selection helper (#72) promised a listed interface could be
+   "passed back into a `Ping`," and a test read that as *every interface
+   name* round-tripping on *every* platform. That is false on Windows by
+   the package's own design: Windows `ping` binds only by source address
+   and a bare interface name is rejected. Once CI ran the core suite on a
+   real Windows host, the contradiction turned the Windows check red. Make
+   the round-trip contract honest per platform — the source **address**
+   round-trips everywhere, the **name** only where the OS binds by name —
+   without changing any platform's runtime behavior. Captured in the
+   `§req:windows-roundtrip-*` sections at the end.
+10. **CI on PRs to `develop`** — the repository follows a gitflow model
+    where feature branches merge into a `develop` integration branch, which
+    periodically merges to `main` for release. The existing CI
+    (`§spec:ci`) gates only PRs to `main`, so a feature branch merges into
+    `develop` with no checks and breakage accumulates there unseen until the
+    `develop`→`main` release PR runs CI — late, batched, and hard to
+    attribute. Extend CI so the same gate runs on PRs targeting `develop`,
+    and protect `develop` like `main`. Captured in the `§req:ci-develop-*`
+    sections at the end.
 
 ---
 
@@ -1399,6 +1410,141 @@ mechanism is decided:
   Confirming that synthesis does not change the validated family or
   disturb the literal-vs-family `ArgumentError`
   (`§spec:address-family-mismatch-validation`).
+
+---
+
+# Windows interface-listing round-trip contract (#85)
+
+A clarification, not a new feature. The interface-selection work (#72,
+`§req:interface-*`) shipped a nice-to-have helper that lists the host's
+network interfaces so a developer can "pass one back into a `Ping`." An
+automated test read that promise as *every interface name round-trips
+into a `Ping` on every platform* — an assumption the package itself
+contradicts on Windows. The contradiction stayed hidden until the
+cross-OS CI matrix ran the core suite on a real Windows host, where it
+turned the Windows check red. This area makes the round-trip contract
+honest per platform.
+
+## Windows round-trip — problem statement §req:windows-roundtrip-problem-statement
+
+The affected party here is the **maintainer** (and any contributor whose
+PR is blocked by a red gate), and secondarily the **cross-platform
+developer** who relies on the interface-listing helper's promise.
+
+The interface-selection feature (#72) established two facts that are both
+correct and both already documented in `§req:interface-success-criteria`:
+
+- The listing helper returns the host's interfaces, "enough to identify
+  and pass one back into a `Ping`."
+- On Windows, the OS `ping` binds **only by source address** (`-S
+  <address>`), never by interface name, so passing a **bare interface
+  name** on Windows produces a clear, catchable error rather than silently
+  pinging the default route.
+
+A test encoded a *stronger* reading of the first fact than the second
+allows: that every listed interface's **name** can be fed back into
+`Ping(interface: name)` and construct without throwing, on **every**
+platform. That holds on Linux/Android and macOS, whose `ping` binds by
+name. It is **false on Windows** — by the package's own deliberate
+design, a bare name is rejected.
+
+The contradiction was invisible while CI gated only PRs to `main` on the
+existing matrix; it surfaced once the core suite ran on an actual Windows
+runner (the cross-OS matrix from #77, extended to PRs targeting `develop`
+in #85). The Windows runner reports a named NIC (`"Ethernet 3"`); the
+round-trip test feeds that name back into a Windows `Ping`, which
+**correctly** throws `UnimplementedError` ("Windows ping binds only by
+source address, not by interface name…"), and the test fails with
+`195 tests passed, 1 failed`.
+
+The user-visible problem is therefore a **red Windows CI check that
+blocks merges**, caused not by wrong Windows behavior but by a test
+asserting a guarantee the package never offered on Windows. The defect is
+in the *contract/expectation*, not in Windows ping behavior. Left
+unaddressed it is both **frequent** (every PR re-runs the gate) and
+**expensive** (a red required check stops the merge queue and erodes
+trust in the matrix), while masking the fact that Windows is, in truth,
+behaving exactly as specified.
+
+## Windows round-trip — success criteria §req:windows-roundtrip-success-criteria
+
+Observable, verifiable outcomes:
+
+- **The Windows core CI check passes.** The `core (windows-latest)` job
+  goes green on a host that reports named NICs, so the cross-OS gate is
+  green on Linux, Windows, and macOS together. *(must-have)*
+- **The round-trip promise is honest per platform.** A listed interface's
+  **source address** round-trips into a `Ping` — constructs without
+  throwing — on **every** supported desktop platform. A listed interface's
+  **name** round-trips **only** where the OS binds by name (Linux/Android,
+  macOS); on Windows, passing a listed **name** is rejected with the
+  clear, catchable error already specified, and passing the listed
+  **address** works. *(must-have)*
+- **Windows runtime behavior is unchanged.** Source-address selection
+  still binds on Windows; a bare interface name is still rejected loudly
+  (never a silent default-route ping). No platform's runtime behavior
+  changes — only the contract and the test's expectation do. *(must-have —
+  consistency with `§req:interface-success-criteria`.)*
+- **The check is deterministic across runners.** The round-trip is
+  verified by automated tests that pass on a real Windows host and do
+  **not** depend on which interface names or addresses a particular runner
+  happens to report. *(must-have — the original failure was runner-NIC
+  dependent.)*
+
+## Windows round-trip — user stories §req:windows-roundtrip-user-stories
+
+- As a maintainer, I want the Windows CI check to pass so that merges
+  aren't blocked by a test asserting behavior the package intentionally
+  does not have.
+- As a cross-platform developer using the listing helper, I want "pass one
+  back into a `Ping`" to be true everywhere — I can rely on a listed
+  interface's **source address** round-tripping on any desktop platform,
+  and I understand the **name** works only where the OS binds by name.
+- As a Windows developer enumerating interfaces, I want a clear, working
+  path (select by the source address) and a clear error if I pass a name,
+  rather than a confusing CI failure or a silent wrong-interface ping.
+
+## Windows round-trip — quality attributes §req:windows-roundtrip-quality-attributes
+
+- **Cross-platform honesty:** the documented round-trip contract matches
+  actual per-platform behavior; there is no "green everywhere" claim that
+  is false on one OS (`§req:interface-quality-attributes` —
+  cross-platform predictability).
+- **Determinism:** the verifying test does not depend on host-specific NIC
+  names or addresses, so it is reproducible on any runner.
+- **Backward compatibility:** no change to the public API and no change to
+  runtime behavior on Linux/Android, macOS, or Windows — only the contract
+  wording and the test expectation change.
+- **Testability:** the corrected round-trip is exercised on a real Windows
+  host in CI, so the same contradiction cannot silently return.
+
+## Windows round-trip — constraints §req:windows-roundtrip-constraints
+
+- **Refinement, not new capability.** This refines
+  `§req:interface-success-criteria` ("Available interfaces can be listed"
+  and "Windows honors the source-address form"). Windows keeps **rejecting
+  bare names**; the fix corrects the contract and the test, it does not add
+  Windows name binding.
+- **No new public API, no behavior change** on any platform. Scope is the
+  listing↔selection round-trip contract and the tests that assert it.
+- **Decided in discovery:** the round-trippable handle is the source
+  **address** universally; the **name** only where the OS binds by name.
+  Making Windows resolve a name → source address (so names round-trip
+  everywhere) is **explicitly out of scope**.
+- **Traceability:** surfaced by issue **#85** (the CI work that ran the
+  core suite on a Windows host); relates to the cross-OS matrix (#77) and
+  interface selection (#72). The separate Windows IPv6 gap (#71) is **not**
+  in scope.
+
+## Windows round-trip — priorities §req:windows-roundtrip-priorities
+
+- **Must-have:** the Windows core CI check green; an honest per-platform
+  round-trip contract (address everywhere, name only where bound by name);
+  Windows name-rejection / address-acceptance unchanged; a deterministic
+  test independent of host NIC names and addresses.
+- **Nice-to-have:** a documentation note on the listing helper explaining
+  that on Windows you pass back a listed interface's **source address**,
+  not its name.
 
 ---
 

@@ -20,6 +20,13 @@ NetworkInterfaceLister networkInterfaceLister = NetworkInterface.list;
 /// or one of its `addresses` (`InternetAddress.address`, e.g.
 /// `192.168.1.5`) as the selection.
 ///
+/// On Windows the OS `ping` binds only by source address, so a bare
+/// interface `name` is rejected with a catchable [UnimplementedError];
+/// on Windows pass back one of the interface's `addresses`
+/// (`InternetAddress.address`), not its name. The address form
+/// round-trips on every platform; the name form only where the OS binds
+/// by name (Linux/Android, macOS).
+///
 /// Built on `dart:io`'s [NetworkInterface.list] — no `ifconfig`/`ip`/
 /// `ipconfig` text parsing. The [includeLoopback], [includeLinkLocal] and
 /// [type] arguments are forwarded unchanged.
