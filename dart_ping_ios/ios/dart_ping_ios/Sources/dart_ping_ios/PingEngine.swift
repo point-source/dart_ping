@@ -30,6 +30,19 @@
 import Foundation
 import Darwin
 
+// RFC 3542 IPv6 hop-limit socket options. Darwin gates these constants behind
+// the `__APPLE_USE_RFC_3542` macro in <netinet6/in6.h>, so the Clang importer
+// does NOT expose them to Swift by default — referencing `IPV6_RECVHOPLIMIT` /
+// `IPV6_HOPLIMIT` directly fails to compile ("cannot find in scope"). Their
+// ABI-stable Darwin values are therefore used directly, the same workaround the
+// engine already applies to the un-imported ICMP6_FILTER_SETBLOCKALL/SETPASS
+// macros. The kernel honors the setsockopt option and tags the delivered cmsg
+// with these numeric values regardless of header visibility.
+//   IPV6_RECVHOPLIMIT (37): setsockopt toggle to deliver the hop limit as a cmsg
+//   IPV6_HOPLIMIT     (47): cmsg_type of the delivered hop-limit ancillary datum
+private let kIPV6_RECVHOPLIMIT: Int32 = 37
+private let kIPV6_HOPLIMIT: Int32 = 47
+
 /// Error kinds this engine can report: per-probe timeouts, TTL/hop-limit
 /// exceeded by an intermediate hop, the run-level "no reply" (nothing came back
 /// for the whole run), host-resolution failures, address-family/route failures
@@ -237,7 +250,7 @@ public final class PingEngine {
             case .v4:
                 setsockopt(fd, IPPROTO_IP, IP_RECVTTL, &on, socklen_t(MemoryLayout<Int32>.size))
             case .v6:
-                setsockopt(fd, IPPROTO_IPV6, IPV6_RECVHOPLIMIT, &on, socklen_t(MemoryLayout<Int32>.size))
+                setsockopt(fd, IPPROTO_IPV6, kIPV6_RECVHOPLIMIT, &on, socklen_t(MemoryLayout<Int32>.size))
 
                 // Restrict the ICMPv6 socket to the message types we actually
                 // handle: echo reply (129) and time exceeded (3). Without a
@@ -943,7 +956,7 @@ public final class PingEngine {
                 // unlike the v4 single-byte u_char — read the full width, but
                 // only after confirming the cmsg actually carries those 4 bytes.
                 if current.pointee.cmsg_level == IPPROTO_IPV6,
-                   current.pointee.cmsg_type == IPV6_HOPLIMIT,
+                   current.pointee.cmsg_type == kIPV6_HOPLIMIT,
                    let data = cmsgData(current,
                                        readableBytes: MemoryLayout<Int32>.size,
                                        in: &msg) {
