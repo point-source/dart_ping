@@ -137,7 +137,26 @@ void main() {
     expect(args['timeout'], 5);
     expect(args['ttl'], 64);
     expect(args['ipVersion'], 'ipv6');
+    // The 8th positional arg (nat64Synthesis) is true here, proving the
+    // default-on option threads onto the native `start` arguments
+    // (§spec:nat64-tests).
+    expect(args['nat64Synthesis'], true);
     expect(args['id'], isNotNull);
+  });
+
+  test('disabling nat64Synthesis threads the raw-path signal to native start',
+      () async {
+    // With the nat64Synthesis positional set to false, the bridge must forward
+    // `nat64Synthesis: false` so the native engine takes the raw, family-pinned
+    // path with no IPv6 synthesis (§spec:nat64-tests).
+    final ping = DartPingIOS('example.com', 3, 1, 5, 64, IpVersion.ipv6, false);
+    final sub = ping.stream.listen((_) {});
+    addTearDown(sub.cancel);
+    await pumpEventQueue();
+
+    final start = callNamed('start');
+    final args = Map<String, dynamic>.from(start.arguments as Map);
+    expect(args['nat64Synthesis'], false);
   });
 
   test('forwards mapped events and closes after the terminal summary',
