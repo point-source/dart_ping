@@ -2093,7 +2093,7 @@ listing↔selection round-trip contract honest per platform and proves it on a
 real Windows host, with no change to any platform's runtime behavior.
 
 ## Per-platform round-trip honesty §spec:windows-roundtrip-contract
-*Status: not started*
+*Status: implemented (Batch #85-1) — the round-trip test `dart_ping/test/interface_listing_test.dart` ("each interface has the right shape and round-trips into Ping") now branches the listed-**name** expectation on the platform's binding ability (`Platform.isWindows`): a name round-trips (`returnsNormally`) on name-binding platforms (Linux/Android, macOS) and is expected to throw the catchable `UnimplementedError` on Windows (which `PingWindows` raises at construction), while a listed source **address** round-trips (`returnsNormally`) on every desktop platform. The expectation no longer depends on which names/addresses a runner reports, so it is deterministic on any host and the `core (windows-latest)` job goes green alongside Linux and macOS. The listing helper's dartdoc, the README "Selecting a network interface" section, and the CHANGELOG note that on Windows a listed interface is passed back as its source address, not its name. No runtime, command, stream, or public-API change on any platform. Covered by network-free `dart test` (the full core suite passes `-x live`, 196 tests).*
 
 The handle a developer carries from `listNetworkInterfaces()` back into a
 `Ping(interface: …)` round-trips per the platform's actual binding ability:
