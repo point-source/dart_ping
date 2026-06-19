@@ -281,6 +281,93 @@ void main() {
     });
   });
 
+  // --- §spec:nat64-error-fallback / §spec:nat64-tests: the synthesis-failure
+  //     honest-error fallback at the Dart mapping seam --------------------------
+  //
+  // When the native engine attempts NAT64 synthesis for an IPv4 literal and the
+  // platform yields no routable address, it falls back to #69's honest typed
+  // error over the channel. These tests pin that the Dart mapper turns that
+  // native string into the honest typed PingError — NOT a phantom and NOT null —
+  // and that enabling synthesis does not disturb a normal reply's mapping
+  // (regression guards). Offline: pure native-map -> PingEvent, no live network.
+  group('NAT64 synthesis-failure fallback maps to the honest typed error', () {
+    test('a No Route synthesis failure maps to ErrorType.noRoute, not a phantom',
+        () {
+      // Synthesis could not produce a routable address for the IPv4 literal: the
+      // engine emits 'No Route'. It must surface as the honest noRoute, never a
+      // phantom unknownHost and never null (§spec:nat64-error-fallback).
+      final event = mapNativeEvent({
+        'id': 'run-1',
+        'type': 'error',
+        'error': 'No Route',
+      });
+
+      expect(event, isNotNull);
+      expect(event, isA<PingError>());
+      expect((event as PingError).error, ErrorType.noRoute);
+      expect(event.error, isNot(ErrorType.unknownHost)); // not a phantom
+    });
+
+    test('a genuine Unknown Host stays ErrorType.unknownHost', () {
+      // The reserved meaning is preserved: a real name miss is still unknownHost,
+      // so noRoute and unknownHost stay distinct under synthesis
+      // (§spec:nat64-error-fallback).
+      final event = mapNativeEvent({
+        'id': 'run-1',
+        'type': 'error',
+        'error': 'Unknown Host',
+      });
+
+      expect(event, isNotNull);
+      expect((event as PingError).error, ErrorType.unknownHost);
+    });
+  });
+
+  group('NAT64 regression guards: synthesis must not disturb working paths', () {
+    // Stand-in for a hostname / Wi-Fi / already-routable-IPv4-literal ping: a
+    // normal reply event must map exactly as before, seq/ttl/time/ip intact,
+    // with a running stats snapshot (§spec:nat64-literal-synthesis regression
+    // guard; §spec:ios-ping-behavior). Offline: pure mapping, no live network.
+    test('a normal response still maps to an intact PingResponse + stats', () {
+      final mapper = NativeEventStatsMapper();
+      final response = mapper.map({
+        'id': 'run-1',
+        'type': 'response',
+        'seq': 2,
+        'ttl': 64,
+        'time': 12000, // microseconds == 12 ms
+        'ip': '13.35.27.1',
+      }) as PingResponse;
+
+      expect(response.seq, 2);
+      expect(response.ttl, 64);
+      expect(response.time, const Duration(microseconds: 12000));
+      expect(response.ip, '13.35.27.1');
+      // The working live path still stamps the running snapshot.
+      expect(response.stats, isNotNull);
+      expect(response.stats!.sampleCount, 1);
+    });
+
+    test('the bare mapper still maps a normal response unchanged', () {
+      // The synthesis option lives entirely below this seam, so the bare
+      // native-map -> PingResponse is byte-for-byte the pre-#52 behavior.
+      final response = mapNativeEvent({
+        'id': 'run-1',
+        'type': 'response',
+        'seq': 5,
+        'ttl': 55,
+        'time': 9000,
+        'ip': '1.1.1.1',
+      }) as PingResponse;
+
+      expect(response.seq, 5);
+      expect(response.ttl, 55);
+      expect(response.time, const Duration(microseconds: 9000));
+      expect(response.ip, '1.1.1.1');
+      expect(response.stats, isNull); // bare mapper attaches no stats
+    });
+  });
+
   // --- NativeEventStatsMapper: the native-result -> event/stats seam ---
   //
   // iOS round-trip statistics are computed by REUSING the core dart_ping

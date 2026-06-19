@@ -159,6 +159,29 @@ void main() {
     expect(args['nat64Synthesis'], false);
   });
 
+  test(
+      'the on/off synthesis choice threads to native start for the literal+ipv4 '
+      'path', () async {
+    // The #52-1 cases above prove the field is wired for a hostname/ipv6 call;
+    // here we pin the choice on the path synthesis actually engages — an IPv4
+    // literal under IpVersion.ipv4 — so both ends of the on/off toggle reach the
+    // native engine that decides whether to un-pin the resolve (§spec:nat64-tests).
+    Future<bool> threadedFlagFor(bool nat64) async {
+      methodCalls = [];
+      final ping = DartPingIOS('13.35.27.1', 1, 1, 2, 64, IpVersion.ipv4, nat64);
+      final sub = ping.stream.listen((_) {});
+      addTearDown(sub.cancel);
+      await pumpEventQueue();
+      final args = Map<String, dynamic>.from(callNamed('start').arguments as Map);
+      return args['nat64Synthesis'] as bool;
+    }
+
+    // ON -> the engine is told it may synthesize a NAT64 path for the literal.
+    expect(await threadedFlagFor(true), isTrue);
+    // OFF -> the engine is told to take the raw, family-pinned path (no synthesis).
+    expect(await threadedFlagFor(false), isFalse);
+  });
+
   test('forwards mapped events and closes after the terminal summary',
       () async {
     final ping = DartPingIOS('host', 2, 1, 2, 64, IpVersion.ipv4, true);
