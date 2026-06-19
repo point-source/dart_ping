@@ -1850,7 +1850,21 @@ iOS is a nice-to-have deferred to those platforms' own evidence
 reach).
 
 ## NAT64 synthesis is an explicit, default-on option §spec:nat64-option
-*Status: not started*
+*Status: implemented (Batch #52-1) — the `Ping` factory accepts a named
+`bool nat64Synthesis` defaulting to enabled, threaded through `BasePing` (a
+stored field) and sent to the iOS bridge over the method channel in the `start`
+invocation alongside `ipVersion`. On the subprocess platforms (Linux/Android,
+macOS, Windows) it is a documented no-op: the field is carried but unread, so
+`params`/`command` stay byte-for-byte identical and the option never raises an
+error, keeping a cross-platform call identical. dartdoc on the factory
+parameter describes what it does, the default, which platform synthesizes (iOS)
+vs. treats it as a no-op, and that disabling restores raw pass-through;
+CHANGELOG (dart_ping 10.0.0 / dart_ping_ios 6.0.0) and the root README document
+it. Covered by network-free tests (`dart_ping/test/nat64_option_test.dart` —
+presence/default/threading plus the `params`/`command` no-op guard — and the
+`dart_ping_ios` bridge `start`-argument assertions). The native engine acting on
+the flag (actual NAT64 synthesis) lands in Batch #52-2,
+§spec:nat64-literal-synthesis / §spec:nat64-error-fallback.*
 
 NAT64 / IPv6-only literal handling is controlled by a single named option
 on the `Ping` factory that is **enabled by default**, so an affected user's
@@ -1955,7 +1969,16 @@ to alter the guard — confirming this is a design invariant, not a new code
 path (§req:nat64-open-decisions — interaction with #69 validation).
 
 ## NAT64 reachability tests §spec:nat64-tests
-*Status: not started*
+*Status: partially implemented (Batch #52-1) — the option-presence /
+default-enabled / threading bullet is covered offline:
+`dart_ping/test/nat64_option_test.dart` asserts the option defaults to enabled
+on every subprocess class, threads the supplied value, and is an inert no-op
+(`params`/`command` byte-for-byte unchanged), and
+`dart_ping_ios/test/dart_ping_ios_test.dart` asserts the bridge `start`
+arguments carry `nat64Synthesis` (true by default, false when disabled). The iOS
+resolve/send-seam + fallback-to-honest-error mapping bullet and the on-device
+live leg land in Batch #52-2 (§spec:nat64-literal-synthesis,
+§spec:nat64-error-fallback).*
 
 The option's on/off behavior and the synthesis-vs-honest-error decision are
 covered by automated tests that need no live IPv6-only cellular network; the
