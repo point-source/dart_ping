@@ -698,7 +698,7 @@ silently breaking `Set`/`Map` membership. The fix is small and clearly
 correct, the kind of latent defect the §spec:code-audit pass targets.
 
 ## CI gates pull requests to `develop` §spec:ci-develop
-*Status: not started*
+*Status: implemented*
 
 The repository follows a gitflow model: feature branches merge into a
 long-lived `develop` integration branch, and `develop` periodically merges
