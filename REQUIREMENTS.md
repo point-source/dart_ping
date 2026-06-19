@@ -1665,3 +1665,214 @@ surface (Actions tab, PR checks, branch-protection settings):
 - **Out of scope:** any lighter/faster subset gate, coverage-threshold
   enforcement, changes to which tests are live-excluded, and any change to
   the `main` pipeline beyond adding the `develop` target.
+
+---
+
+# Package consolidation — one `dart_ping` with FFI-backed iOS
+
+A packaging and integration-mechanism change driven by two open GitHub
+issues that share a single root cause. Resolves
+[#28](https://github.com/point-source/dart_ping/issues/28) (collapse the
+two packages into one without losing pure-Dart support) and
+[#48](https://github.com/point-source/dart_ping/issues/48) (iOS ping
+fails inside a secondary isolate).
+
+The root cause both issues share: the iOS path talks Dart↔Swift over
+Flutter **platform channels** (`MethodChannel dart_ping_ios` +
+`EventChannel dart_ping_ios/events`). Platform channels require the
+Flutter plugin machinery — which forces `dart_ping_ios` to be a separate
+Flutter package (blocking #28) and routes all messages through the
+root-isolate binary messenger (crashing ping in any background isolate,
+#48). The maintainer's own diagnosis on #48 was "use `dart:ffi` instead
+of platform channels," and the #28 thread waited on Dart's native-code
+bundling for non-Flutter packages — now stable (build hooks / code
+assets, Dart 3.10 / Flutter 3.38, November 2025).
+
+## Consolidation — problem statement §req:consolidation-problem-statement
+
+The target users are: (1) Flutter iOS app developers who today must add a
+**second** package, `dart_ping_ios`, and remember to call
+`DartPingIOS.register()` before first use; (2) developers who need to run
+ping **inside a background isolate** on iOS and currently cannot; and (3)
+the maintainer, who carries two published packages where the platform
+split is an artifact of the integration mechanism, not a real domain
+boundary.
+
+Today's shape falls short in three ways:
+
+- **Two packages for one capability.** iOS support lives in a separate
+  `dart_ping_ios` package solely because Flutter platform channels need a
+  plugin. A consumer wanting iOS ping must depend on both packages, keep
+  their versions aligned, and wire up registration by hand. The original
+  #28 request — fewer projects to maintain, platform dispatch handled
+  inside the package — still stands.
+- **iOS ping is broken in background isolates.** Because the iOS event
+  stream rides a Flutter `EventChannel`, subscribing from a secondary
+  isolate throws (`BackgroundIsolateBinaryMessenger ... is invalid` /
+  "Background isolates do not support setMessageHandler()"). Developers
+  who run network work off the main isolate — a common, recommended
+  pattern — cannot use iOS ping at all (#48).
+- **The pure-Dart promise is what kept these separate.** The reason the
+  packages were never merged is that folding Flutter-plugin code into
+  `dart_ping` would force a Flutter SDK on every pure-Dart (CLI, server,
+  backend) consumer. That promise — `dart pub add dart_ping` works with no
+  Flutter SDK installed — is non-negotiable and must survive any
+  consolidation.
+
+The enabling change: Dart's build hooks / code assets are now stable, so
+a **pure-Dart** package can compile and bundle native Swift and call it
+over `dart:ffi`, with the native build triggered only when the target is
+actually iOS. This removes the reason the packages were separate and, by
+replacing platform channels with FFI, simultaneously removes the
+root-isolate dependency that breaks #48.
+
+This problem area is folded into the **unreleased `dart_ping` 10.0.0**
+consolidation train and builds directly on the native-Swift iOS engine
+already owned in this repository (the SPM / native-Swift work above). The
+Swift ICMP engine stays; only the Dart↔Swift seam changes from platform
+channels to FFI, and the package boundary collapses.
+
+## Consolidation — success criteria §req:consolidation-success-criteria
+
+Observable, verifiable outcomes. The first two are the **primary
+acceptance pair** — both must pass:
+
+- **One package on iOS.** A Flutter iOS app (SPM enabled, no CocoaPods
+  Podfile) adds **only `dart_ping`** — not `dart_ping_ios` — pings a host,
+  and receives correct per-probe responses and a run summary. No separate
+  iOS package, no `register()` call. *(must-have, primary acceptance)*
+- **Pure-Dart unchanged.** A pure-Dart CLI/server project runs
+  `dart pub add dart_ping` and pings on Linux / Windows / macOS desktop
+  **with no Flutter SDK present**, and no Swift / iOS toolchain is ever
+  invoked. *(must-have, primary acceptance — the non-negotiable gate)*
+- **Background isolates work on iOS.** Running a ping from a secondary
+  isolate on iOS produces responses and a summary without throwing — the
+  `BackgroundIsolateBinaryMessenger` failure no longer occurs. This is a
+  direct consequence of using FFI rather than platform channels, and is
+  asserted explicitly so the chosen FFI design does not reintroduce a
+  root-isolate dependency. *(must-have — closes #48)*
+- **`dart_ping_ios` is retired.** No new functional release of
+  `dart_ping_ios` is required to get iOS support; iOS lives in
+  `dart_ping`. The `DartPingIOS.register()` step is gone — iOS auto-wires
+  itself. *(must-have)*
+- **iOS behavioral parity is preserved.** Responses, summary, error set,
+  TTL handling, and round-trip statistics continue to match the other
+  platforms exactly as the current native-Swift implementation does — the
+  mechanism change does not regress observable behavior. *(must-have)*
+- **No manual platform wiring.** A consumer never writes platform-specific
+  registration or conditional imports to get iOS support; the package
+  dispatches by platform internally. *(high)*
+- **Non-iOS consumers pay nothing for iOS.** When the build target is not
+  iOS, no Swift is compiled, no build-hook download/compile cost is
+  incurred, and no iOS code ships. *(nice-to-have — see priorities; safe
+  consolidation outranks this)*
+
+## Consolidation — user stories §req:consolidation-user-stories
+
+- As a Flutter developer targeting iOS, I want to add **one** package
+  (`dart_ping`) and have iOS ping just work, so that I don't manage a
+  second dependency or remember a registration call.
+- As a developer who runs network work off the main thread, I want to ping
+  from a **background isolate on iOS** and get results back, so that my app
+  stays responsive — the same way ping already works in isolates on the
+  other platforms.
+- As a pure-Dart developer (CLI, server, backend), I want to keep using
+  `dart_ping` with `dart pub add dart_ping` and **no Flutter SDK**, so that
+  consolidating the iOS code costs me nothing and breaks nothing.
+- As an existing `dart_ping_ios` user upgrading, I want clear migration
+  notes — remove the `dart_ping_ios` dependency, delete the
+  `DartPingIOS.register()` call — so that moving to the single package is a
+  short, well-documented edit.
+- As the maintainer, I want one package and one Dart↔native seam (FFI)
+  instead of two packages and platform channels, so that I maintain less
+  and the platform split reflects real need, not a Flutter-plugin
+  artifact.
+
+## Consolidation — quality attributes §req:consolidation-quality-attributes
+
+- **Compatibility (the gate):** `dart_ping` remains a pure-Dart package
+  usable with no Flutter SDK. Pure-Dart, non-iOS consumers resolve and run
+  exactly as before. iOS support activates only when the build target is
+  iOS.
+- **Concurrency / isolates:** iOS ping is usable from any isolate, not
+  only the root isolate. FFI calls do not depend on the Flutter binary
+  messenger.
+- **Parity / reliability:** observable iOS behavior (responses, summary,
+  errors, TTL, statistics) is unchanged from the current native-Swift
+  implementation. The seam change is invisible to consumers of the public
+  Dart API.
+- **Tooling floor:** requires Dart 3.10 / Flutter 3.38 (Nov 2025) or
+  later, where build hooks and code assets are stable. Raising the minimum
+  SDK to this floor is acceptable.
+- **Testability:** verifiable via the example app on an SPM iOS target
+  (single-package import, no `register()`), a pure-Dart CLI on desktop with
+  no Flutter SDK, and an iOS background-isolate ping test.
+- **Ergonomics:** anything that reduces consumer setup (single import,
+  auto-wiring, no manual registration) is favored, provided the
+  compatibility gate holds.
+
+## Consolidation — constraints §req:consolidation-constraints
+
+- **Pure-Dart support is non-negotiable.** Any design that would force a
+  Flutter SDK on a pure-Dart consumer is rejected. This gate overrides all
+  other goals here.
+- **Single published package.** iOS native Swift is carried inside
+  `dart_ping` and dispatched by platform; `dart_ping_ios` is retired
+  outright (no forwarding shim) rather than kept as a thin wrapper.
+- **FFI, not platform channels.** The Dart↔Swift seam is `dart:ffi` over a
+  bundled code asset, replacing `MethodChannel` / `EventChannel`. This is
+  the mechanism that both removes the Flutter-plugin requirement and fixes
+  background-isolate use.
+- **Reuse the existing Swift engine.** The in-repo native Swift ICMP
+  implementation is retained; only its binding to Dart changes.
+- **Public Dart API is unchanged.** The `Ping` interface and
+  `PingData` / `PingResponse` / `PingSummary` / `PingError` shapes stay the
+  same; existing app code keeps working (minus the removed `register()`
+  call and `dart_ping_ios` import).
+- **Folds into `dart_ping` 10.0.0.** Ships as part of the unreleased
+  10.0.0 consolidation train, not a separate later major. `dart_ping_ios`
+  is discontinued as part of that release.
+- **Raised SDK floor.** Minimum Dart 3.10 / Flutter 3.38, as required by
+  stable build hooks / code assets.
+
+## Consolidation — priorities §req:consolidation-priorities
+
+- **Must-have (the gate):** pure-Dart usage survives with no Flutter SDK.
+  If `/plan` cannot achieve consolidation without breaking this, **do not
+  consolidate** — keep the two packages as they are today. Everything else
+  is subordinate to this.
+- **Must-have:** single `dart_ping` package carries iOS via FFI; iOS ping
+  works in background isolates (#48); `dart_ping_ios` retired and
+  `register()` removed (#28); iOS behavioral parity preserved.
+- **High:** zero manual platform wiring — single import, auto-wired iOS,
+  no conditional imports; clear migration notes for existing
+  `dart_ping_ios` users; updated example app importing only `dart_ping`.
+- **Nice-to-have:** non-iOS targets pay literally nothing for iOS (no
+  Swift compiled, no build-hook cost, no shipped weight). Desired, but
+  safe consolidation wins ties over zero-cost.
+
+## Consolidation — open decisions §req:consolidation-open-decisions
+
+Surfaced during discovery and deferred to `/symphonize:plan`, where
+mechanism and feasibility are decided:
+
+- **iOS code-asset feasibility (the make-or-break risk).** Whether the
+  iOS Swift ICMP engine can be compiled and bundled as a `dart:ffi` code
+  asset and linked into an iOS app build **outside** Flutter's plugin
+  machinery — covering Xcode integration, code signing, and the iOS
+  network sandbox — without compromising the pure-Dart gate. If this
+  cannot be done cleanly, the fallback is to keep the two packages. `/plan`
+  must answer this before committing to consolidation.
+- **FFI threading / isolate model.** The exact FFI design that streams
+  per-probe events from the Swift engine to Dart (native threads,
+  `NativeCallable`, ports) such that it works from any isolate and does not
+  reintroduce a root-isolate dependency.
+- **Auto-wiring mechanism.** How iOS initializes without a `register()`
+  call — lazy first-use initialization vs. build-hook-driven registration
+  — while keeping non-iOS targets untouched.
+- **Build-hook activation scope.** How the native build is gated to fire
+  only for iOS targets, so pure-Dart and non-iOS builds incur no Swift
+  compilation or download cost.
+- **Migration surface.** The precise consumer-facing migration (removing
+  the `dart_ping_ios` dependency, deleting `register()`, any import
+  changes) and how `dart_ping_ios` is marked discontinued on pub.dev.
