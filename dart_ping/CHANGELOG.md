@@ -73,6 +73,13 @@ NAT64/IPv6-only reachability (#52, §spec:nat64-option):
   never raises an error. Passing `nat64Synthesis: false` restores raw
   pass-through (the family-pinned resolve, no synthesis).
 
+Interface round-trip clarification (#85, §spec:windows-roundtrip-contract):
+
+- Documentation only: clarify that an interface listed by
+  `listNetworkInterfaces()` round-trips into `Ping(host, interface: ...)`
+  by source address on Windows — a bare interface name is rejected there —
+  while the address form round-trips on every platform. No behavior change.
+
 ## 9.2.0
 
 - Add an optional `interface` selection to the `Ping` factory and the platform constructors (#72). Pass either a network interface name (e.g. `eth0`) or a local source IP address (e.g. `192.168.1.5`) to bind the ping to a specific interface or source address.
