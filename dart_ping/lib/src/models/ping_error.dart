@@ -24,6 +24,7 @@ final class PingError extends PingEvent {
   ///
   /// Null on events not produced by the live run path (e.g. a bare parsed or
   /// deserialized error).
+  @override
   final RoundTripStats? stats;
 
   String get _errorStr =>

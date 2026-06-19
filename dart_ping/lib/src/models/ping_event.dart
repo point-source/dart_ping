@@ -16,6 +16,18 @@ part 'ping_summary.dart';
 sealed class PingEvent {
   const PingEvent();
 
+  /// Round-trip statistics associated with this event, or null when none apply.
+  ///
+  /// On a probe event ([PingResponse] / [PingError]) this is the **running**
+  /// snapshot over all successful replies seen so far in the run
+  /// (§spec:stats-live); on the terminal [PingSummary] it is the run's final
+  /// figures (§spec:stats-summary). Exposing it on the base lets a consumer
+  /// read `event.stats` off any event without a type switch — and because the
+  /// last probe snapshot equals the summary's, the figures are consistent
+  /// throughout the run. Null on events not produced by a live run path (e.g. a
+  /// bare parsed/deserialized event).
+  RoundTripStats? get stats;
+
   /// Serializes this event to a map. Each variant writes a `'type'`
   /// discriminator (`'response'` / `'error'` / `'summary'`) so
   /// [PingEvent.fromMap] can reconstruct the correct variant.

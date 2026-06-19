@@ -67,12 +67,11 @@ class TestPing extends PingLinux {
 PingEvent _lastProbeEvent(List<PingEvent> events) =>
     events.lastWhere((e) => e is PingResponse || e is PingError);
 
-/// The running [RoundTripStats] snapshot carried by a probe event.
-RoundTripStats? _statsOf(PingEvent e) => switch (e) {
-      PingResponse() => e.stats,
-      PingError() => e.stats,
-      PingSummary() => e.stats,
-    };
+/// Packet-loss percentage from running counts, using the SAME formula the
+/// terminal summary derives (§spec:stats-summary) so the comparison is exact,
+/// not float-fuzzy.
+double _lossPct(int transmitted, int received) =>
+    transmitted == 0 ? 100.0 : 100 * (transmitted - received) / transmitted;
 
 void main() {
   group('Live running stats — every probe carries a snapshot '
@@ -96,7 +95,7 @@ void main() {
       final probes = events.where((e) => e is PingResponse || e is PingError);
       expect(probes, isNotEmpty);
       for (final probe in probes) {
-        expect(_statsOf(probe), isNotNull,
+        expect(probe.stats, isNotNull,
             reason: 'every probe event must carry a running snapshot');
       }
     });
@@ -196,7 +195,7 @@ void main() {
       final lastProbe = _lastProbeEvent(events);
 
       expect(lastProbe, isA<PingResponse>());
-      expect(_statsOf(lastProbe), equals(summary.stats));
+      expect(lastProbe.stats, equals(summary.stats));
       expect(summary.stats!.sampleCount, 2);
     });
 
@@ -248,14 +247,14 @@ void main() {
       final probes = events.where((e) => e is PingResponse || e is PingError);
       expect(probes, isNotEmpty);
       for (final probe in probes) {
-        final stats = _statsOf(probe)!;
+        final stats = probe.stats!;
         expect(stats.sampleCount, 0);
         expect(stats, equals(empty));
         expect(stats, equals(summary.stats));
       }
 
       final lastProbe = _lastProbeEvent(events);
-      expect(_statsOf(lastProbe), equals(summary.stats));
+      expect(lastProbe.stats, equals(summary.stats));
     });
   });
 
@@ -284,16 +283,12 @@ void main() {
       final probes =
           events.where((e) => e is PingResponse || e is PingError).toList();
       final transmittedSoFar = probes.length;
-      final receivedSoFar = _statsOf(_lastProbeEvent(events))!.sampleCount;
+      final receivedSoFar = _lastProbeEvent(events).stats!.sampleCount;
 
       expect(transmittedSoFar, 3);
       expect(receivedSoFar, 2);
 
-      // Derive loss-so-far using the SAME formula the summary uses
-      // (§spec:stats-summary), so the comparison is exact, not float-fuzzy.
-      final derivedLoss = transmittedSoFar == 0
-          ? 100.0
-          : 100 * (transmittedSoFar - receivedSoFar) / transmittedSoFar;
+      final derivedLoss = _lossPct(transmittedSoFar, receivedSoFar);
       expect(derivedLoss, summary.packetLoss);
       expect(derivedLoss, closeTo(33.33, 0.01));
     });
@@ -317,12 +312,10 @@ void main() {
       final probes =
           events.where((e) => e is PingResponse || e is PingError).toList();
       final transmittedSoFar = probes.length;
-      final receivedSoFar = _statsOf(_lastProbeEvent(events))!.sampleCount;
+      final receivedSoFar = _lastProbeEvent(events).stats!.sampleCount;
 
       expect(receivedSoFar, 0);
-      final derivedLoss = transmittedSoFar == 0
-          ? 100.0
-          : 100 * (transmittedSoFar - receivedSoFar) / transmittedSoFar;
+      final derivedLoss = _lossPct(transmittedSoFar, receivedSoFar);
       expect(derivedLoss, 100.0);
       expect(derivedLoss, summary.packetLoss);
     });

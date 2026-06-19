@@ -29,6 +29,7 @@ final class PingSummary extends PingEvent {
   /// Round-trip statistics computed from the per-probe reply times of this run
   /// (§spec:stats-summary). Null until finalized; the empty snapshot reports
   /// the round-trip figures as absent when no reply was received.
+  @override
   final RoundTripStats? stats;
 
   /// All errors that occurred during the ping process

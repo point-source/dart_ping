@@ -24,6 +24,7 @@ final class PingResponse extends PingEvent {
   ///
   /// Null on events not produced by the live run path (e.g. a bare parsed or
   /// deserialized response).
+  @override
   final RoundTripStats? stats;
 
   @override
