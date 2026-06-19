@@ -1,7 +1,7 @@
-import 'dart:convert';
+part of 'ping_event.dart';
 
-/// Each probe response
-class PingResponse {
+/// Each probe response — the successful-probe variant of [PingEvent].
+final class PingResponse extends PingEvent {
   const PingResponse({this.seq, this.ttl, this.time, this.ip});
 
   /// Transmission sequence position identifier
@@ -63,8 +63,10 @@ class PingResponse {
     return seq.hashCode ^ ttl.hashCode ^ time.hashCode ^ ip.hashCode;
   }
 
+  @override
   Map<String, dynamic> toMap() {
     return {
+      'type': 'response',
       'seq': seq,
       'ttl': ttl,
       'time': time?.inMilliseconds,
@@ -81,8 +83,6 @@ class PingResponse {
     );
   }
 
-  String toJson() => json.encode(toMap());
-
   factory PingResponse.fromJson(String source) =>
-      PingResponse.fromMap(json.decode(source));
+      PingResponse.fromMap(json.decode(source) as Map<String, dynamic>);
 }
