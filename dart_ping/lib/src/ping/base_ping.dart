@@ -166,7 +166,7 @@ abstract class BasePing {
     try {
       // Start new ping process on host OS
       _process = await platformProcess;
-      // Get platform-specific parsed PingData
+      // Get platform-specific parsed PingEvents
       _sub = _parsedOutput.listen(
         (event) {
           switch (event) {
