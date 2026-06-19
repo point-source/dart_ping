@@ -1,38 +1,38 @@
 # Specification
 
-This document covers eight areas, matching REQUIREMENTS.md:
+This document covers the following areas, matching REQUIREMENTS.md:
 
-1. **iOS SPM migration (#73)** — `§spec:swift-icmp-engine` …
-   `§spec:ios-tests` below (implemented).
-2. **Maintenance & modernization refresh** — the `§spec:dependency-currency`
-   … `§spec:code-audit` sections (complete).
-3. **`base_ping` stream lifecycle robustness (#76)** —
-   `§spec:stream-lifecycle-robustness` (implemented). A focused
-   follow-up to two hang paths deferred from `§spec:code-audit`.
-4. **Continuous integration & coverage expansion (#74, #77)** — the
-   `§spec:ci` … `§spec:coverage-expansion` sections (implemented). This is
-   new work *beyond* the refresh's "fill gaps only" scope, which had
-   deliberately excluded CI (§spec:test-coverage).
-5. **IPv6 / address-family error clarity (#69)** — the
-   `§spec:ipv6-address-family-selector` …
-   `§spec:address-family-error-tests` sections (implemented). A
-   correctness-of-errors fix so address-family and routing failures stop
-   masquerading as "Unknown Host" on IPv6-enabled networks.
-6. **Interface selection (#72)** — `§spec:interface-selection` …
-   `§spec:interface-listing` at the very end (not started). An optional way
-   to pin pings to a chosen network interface or source address on the
-   subprocess platforms, with a helper to enumerate the host's interfaces.
-   Additive on top of the existing `Ping` API.
-7. **Concurrent-ping isolation (#70)** — `§spec:concurrent-isolation`
-   at the very end (implemented). A reported cross-contamination defect
-   between simultaneously-running `Ping` instances.
-8. **Summary statistics (#63)** — the `§spec:stats-event-model` …
-   `§spec:stats-tests` sections at the very end (not started). Surfaces
-   round-trip min / avg / max / stddev, jitter, and packet-loss — in the run
-   summary and live during a run, with iOS parity — via a from-scratch
-   redesign of the stream's event/data classes, folded into the unreleased
-   breaking `dart_ping` 10.0.0 / `dart_ping_ios` 6.0.0 majors. **Supersedes
-   the API-stability promises of areas 1–7.**
+- **iOS SPM migration (#73)** — `§spec:swift-icmp-engine` …
+  `§spec:ios-tests` below (implemented).
+- **Maintenance & modernization refresh** — the `§spec:dependency-currency`
+  … `§spec:code-audit` sections (complete).
+- **`base_ping` stream lifecycle robustness (#76)** —
+  `§spec:stream-lifecycle-robustness` (implemented). A focused
+  follow-up to two hang paths deferred from `§spec:code-audit`.
+- **Continuous integration & coverage expansion (#74, #77)** — the
+  `§spec:ci` … `§spec:coverage-expansion` sections (implemented). This is
+  new work *beyond* the refresh's "fill gaps only" scope, which had
+  deliberately excluded CI (§spec:test-coverage).
+- **IPv6 / address-family error clarity (#69)** — the
+  `§spec:ipv6-address-family-selector` …
+  `§spec:address-family-error-tests` sections (implemented). A
+  correctness-of-errors fix so address-family and routing failures stop
+  masquerading as "Unknown Host" on IPv6-enabled networks.
+- **Interface selection (#72)** — `§spec:interface-selection` …
+  `§spec:interface-listing` at the very end (not started). An optional way
+  to pin pings to a chosen network interface or source address on the
+  subprocess platforms, with a helper to enumerate the host's interfaces.
+  Additive on top of the existing `Ping` API.
+- **Concurrent-ping isolation (#70)** — `§spec:concurrent-isolation`
+  at the very end (implemented). A reported cross-contamination defect
+  between simultaneously-running `Ping` instances.
+- **Summary statistics (#63)** — the `§spec:stats-event-model` …
+  `§spec:stats-tests` sections at the very end (not started). Surfaces
+  round-trip min / avg / max / stddev, jitter, and packet-loss — in the run
+  summary and live during a run, with iOS parity — via a from-scratch
+  redesign of the stream's event/data classes, folded into the unreleased
+  breaking `dart_ping` 10.0.0 / `dart_ping_ios` 6.0.0 majors. **Supersedes
+  the API-stability promises of the preceding areas.**
 
 Solution-space design for issue #73 — native, Swift Package Manager
 (SPM)-compatible iOS support for `dart_ping`.
