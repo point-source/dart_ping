@@ -40,6 +40,18 @@ PingEvent? mapNativeEvent(Map<dynamic, dynamic> event) {
       // PingError.fromMap reads `seq`/`ip`/`message`/`error`, so a per-probe
       // timeout / TTL-exceeded error is a single PingError that identifies its
       // own probe.
+      //
+      // This is also the seam where NAT64 synthesis failure surfaces honestly
+      // (§spec:nat64-error-fallback): when the native engine cannot synthesize
+      // or route an IPv4 literal on an IPv6-only network it emits
+      // `error:"No Route"`, which PingError.fromMap → ErrorType.fromMessage maps
+      // to the honest, branchable ErrorType.noRoute — never a phantom
+      // ErrorType.unknownHost for a literal, and never a silent drop or hang.
+      // A genuine name-resolution failure still arrives as `error:"Unknown Host"`
+      // → ErrorType.unknownHost; any unrecognized message falls back to
+      // ErrorType.unknown (§spec:address-family-error-honesty). The error event
+      // is forwarded like any other event — only the terminal summary closes
+      // the stream — so an error is delivered, not lost.
       return PingError.fromMap(map);
     case 'summary':
       // The platform codec delivers the nested `errors` entries as
