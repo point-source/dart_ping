@@ -48,6 +48,19 @@ Live running statistics (#63, §spec:stats-live):
   path (e.g. a bare parsed/deserialized event), so existing behavior is
   unchanged.
 
+Sub-millisecond precision / serialization (#63, §spec:stats-precision):
+
+- **Breaking (wire format):** round-trip `Duration` values are now serialized
+  in **microseconds**, not whole milliseconds. `PingResponse.toMap`,
+  `PingSummary.toMap`, and `RoundTripStats.toMap` write `time` / the stat
+  figures as `inMicroseconds`, and the matching `fromMap`s decode them as
+  `Duration(microseconds: …)`. This preserves sub-millisecond resolution
+  end-to-end (the previous `inMilliseconds` truncation rounded stddev/jitter
+  toward zero on fast links). Serialization round-trips within 10.0.0 are
+  consistent; however, JSON/maps persisted by `dart_ping` ≤ 9.x decode 1000×
+  too small under 10.0.0 (a millisecond magnitude read as microseconds), so do
+  not mix serialized round-trip values across the major boundary.
+
 ## 9.2.0
 
 - Add an optional `interface` selection to the `Ping` factory and the platform constructors (#72). Pass either a network interface name (e.g. `eth0`) or a local source IP address (e.g. `192.168.1.5`) to bind the ping to a specific interface or source address.

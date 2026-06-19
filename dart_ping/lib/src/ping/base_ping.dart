@@ -274,22 +274,38 @@ abstract class BasePing {
       // error (§spec:stats-cross-platform).
       final errors = [..._errors, ?exitError];
       final stats = _rttStats.snapshot();
-      PingSummary? summary;
+      final PingSummary summary;
       if (_summaryData != null) {
+        // The native summary line is authoritative for transmitted/received.
         summary = _summaryData!.copyWith(stats: stats, errors: errors);
-      } else if (exitError != null) {
+      } else {
+        // No native summary line was parsed (e.g. an unmapped exit, or the
+        // process was killed before printing one). Still emit a terminal
+        // summary so the run's final event is always a `PingSummary`
+        // (§spec:stats-event-model). Reconstruct self-consistent counts from
+        // what we actually observed rather than reporting a misleading 0/0:
+        // `received` is the number of successful replies (== stats.sampleCount
+        // by construction), and `transmitted` adds the probes that failed with
+        // a per-probe error (timeout / TTL-exceeded). Run-level errors
+        // (noReply / unknownHost / noRoute / unknown) are not probes and do not
+        // inflate the count. `time` is left null because the OS-reported
+        // wall-clock comes only from the (absent) native summary line.
+        final received = stats.sampleCount;
+        final probeFailures = _errors
+            .where((e) =>
+                e.error == ErrorType.requestTimedOut ||
+                e.error == ErrorType.timeToLiveExceeded)
+            .length;
         summary = PingSummary(
-          transmitted: 0,
-          received: 0,
-          time: Duration(),
+          transmitted: received + probeFailures,
+          received: received,
+          time: null,
           stats: stats,
           errors: errors,
         );
       }
 
-      if (summary != null) {
-        _controller.add(summary);
-      }
+      _controller.add(summary);
     } catch (error, stackTrace) {
       // The controller is only closed in the finally below, so it is still
       // open here and the error can always be surfaced.

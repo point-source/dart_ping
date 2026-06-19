@@ -375,4 +375,80 @@ void main() {
       await done.future.timeout(_hardTimeout);
     });
   });
+
+  group('terminal summary always emitted & self-consistent '
+      '(§spec:stats-event-model / §spec:stats-summary)', () {
+    test('unmapped exit with replies but no native summary line still emits a '
+        'consistent terminal summary', () async {
+      // One reply (seq 1) and one timeout (seq 2), an unmapped non-zero exit,
+      // and NO "N packets transmitted ..." line — so BasePing takes the
+      // synthetic-summary fallback. Previously that path either emitted nothing
+      // or reported transmitted:0/received:0 alongside non-empty stats (a
+      // self-contradictory 100% loss). It must now emit a terminal summary
+      // whose counts agree with the stats.
+      final ping = TestPing(
+        process: FakeProcess(
+          stdoutLines: const [
+            '64 bytes from 1.1.1.1: icmp_seq=1 ttl=57 time=10.1 ms',
+            'no answer yet for icmp_seq=2',
+          ],
+          exit: 2,
+        ),
+      );
+
+      final result = await _drain(ping);
+
+      // (finding 3) A terminal PingSummary is emitted and is the FINAL event.
+      final summaries = result.data.whereType<PingSummary>().toList();
+      expect(summaries, hasLength(1),
+          reason: 'a terminal summary must be emitted even without a native '
+              'summary line');
+      expect(result.data.last, isA<PingSummary>(),
+          reason: 'the summary is the final event of the run');
+
+      // (finding 2) Counts are reconstructed consistently: received equals the
+      // successful-reply sample count, transmitted adds the one probe failure,
+      // and loss is therefore 50% — never a fabricated 100% while stats show a
+      // reply.
+      final summary = summaries.single;
+      expect(summary.received, 1);
+      expect(summary.received, summary.stats?.sampleCount,
+          reason: 'received must equal the stats sample count');
+      expect(summary.transmitted, 2,
+          reason: '1 reply + 1 timed-out probe');
+      expect(summary.packetLoss, 50.0);
+      expect(summary.time, isNull,
+          reason: 'no OS wall-clock without the native summary line');
+      // The unmapped exit still surfaces a catchable error.
+      expect(result.errors.single.toString(),
+          contains('Ping process exited with code: 2'));
+      expect(result.doneCount, 1);
+    });
+
+    test('zero-exit run with no native summary line still emits a terminal '
+        'summary', () async {
+      final ping = TestPing(
+        process: FakeProcess(
+          stdoutLines: const [
+            '64 bytes from 1.1.1.1: icmp_seq=1 ttl=57 time=10.1 ms',
+          ],
+          exit: 0,
+        ),
+      );
+
+      final result = await _drain(ping);
+
+      final summaries = result.data.whereType<PingSummary>().toList();
+      expect(summaries, hasLength(1),
+          reason: 'a clean run with no parsed summary line still terminates '
+              'with a PingSummary');
+      expect(result.data.last, isA<PingSummary>());
+      final summary = summaries.single;
+      expect(summary.received, 1);
+      expect(summary.transmitted, 1);
+      expect(summary.packetLoss, 0.0);
+      expect(result.errors, isEmpty);
+      expect(result.doneCount, 1);
+    });
+  });
 }

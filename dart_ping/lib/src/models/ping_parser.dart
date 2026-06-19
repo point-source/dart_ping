@@ -108,7 +108,10 @@ class PingParser {
 
       return PingError(
         ErrorType.timeToLiveExceeded,
-        seq: seq == null ? null : int.tryParse(seq),
+        // Parse consistently with the timeout branch above: the `seq` named
+        // group only matches digits, so `int.parse` is safe and a malformed
+        // value surfaces loudly rather than silently dropping the probe id.
+        seq: seq == null ? null : int.parse(seq),
         ip: match.namedGroup('ip'),
       );
     }

@@ -21,9 +21,11 @@ final class PingSummary extends PingEvent {
   /// Number of packets returned to the source from the target
   final int received;
 
-  /// Total wall-clock duration of the ping session as reported by the OS.
-  /// On Linux/Android, this includes interval delays between pings.
-  /// On macOS and Windows, this value is null.
+  /// Total wall-clock duration of the ping session.
+  /// On Linux/Android, this is the OS-reported total (it includes the interval
+  /// delays between pings). On iOS, it is the engine-measured session duration.
+  /// On macOS and Windows, this value is null (the native tool reports no such
+  /// figure). It is never a sum of round-trip times — those are in [stats].
   final Duration? time;
 
   /// Round-trip statistics computed from the per-probe reply times of this run
@@ -114,7 +116,7 @@ final class PingSummary extends PingEvent {
     return PingSummary(
       transmitted: map['transmitted']?.toInt() ?? 0,
       received: map['received']?.toInt() ?? 0,
-      time: _durationFromMicros(map['time']),
+      time: durationFromMicros(map['time']),
       stats: map['stats'] != null ? RoundTripStats.fromMap(map['stats']) : null,
       errors: map['errors'] is List
           ? map['errors'].map<PingError>((e) => PingError.fromMap(e)).toList()

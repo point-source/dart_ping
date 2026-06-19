@@ -146,4 +146,39 @@ void main() {
       expect(RoundTripStats.fromMap(map), stats);
     });
   });
+
+  group('accumulator snapshot memoization', () {
+    test('repeated snapshot() between adds returns the same instance', () {
+      final acc = RoundTripStatsAccumulator()
+        ..add(const Duration(microseconds: 1000));
+
+      final first = acc.snapshot();
+      final second = acc.snapshot();
+      // Memoized: identical instance until the next add (no recompute/alloc).
+      expect(identical(first, second), isTrue);
+    });
+
+    test('add() invalidates the cache and the next snapshot reflects it', () {
+      final acc = RoundTripStatsAccumulator()
+        ..add(const Duration(microseconds: 1000));
+      final before = acc.snapshot();
+      expect(before.sampleCount, 1);
+
+      acc.add(const Duration(microseconds: 3000));
+      final after = acc.snapshot();
+
+      expect(identical(before, after), isFalse,
+          reason: 'a new sample must invalidate the memoized snapshot');
+      expect(after.sampleCount, 2);
+      // The recomputed snapshot equals a fresh batch computation over the
+      // same samples — memoization changes nothing observable.
+      expect(
+        after,
+        RoundTripStats.fromSamples(const [
+          Duration(microseconds: 1000),
+          Duration(microseconds: 3000),
+        ]),
+      );
+    });
+  });
 }

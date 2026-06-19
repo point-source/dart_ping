@@ -1,6 +1,17 @@
 import 'dart:convert';
 import 'dart:math' as math;
 
+/// Decodes a serialized round-trip duration (stored in **microseconds** to
+/// preserve sub-millisecond precision) back into a [Duration], or null when the
+/// field is absent.
+///
+/// This is the single home for the microsecond decode convention; the model
+/// `fromMap`s in `ping_event.dart` reuse it (round_trip_stats.dart is the
+/// lower-level library they import, so the helper lives here). It is not
+/// re-exported from the public `dart_ping` barrel.
+Duration? durationFromMicros(dynamic value) =>
+    value == null ? null : Duration(microseconds: (value as num).toInt());
+
 /// Immutable round-trip statistics value object (§spec:stats-round-trip).
 ///
 /// Carries the round-trip figures — minimum, average, maximum, standard
@@ -119,15 +130,12 @@ class RoundTripStats {
   }
 
   factory RoundTripStats.fromMap(Map<String, dynamic> map) {
-    Duration? micros(dynamic value) =>
-        value != null ? Duration(microseconds: (value as num).toInt()) : null;
-
     return RoundTripStats(
-      min: micros(map['min']),
-      avg: micros(map['avg']),
-      max: micros(map['max']),
-      stddev: micros(map['stddev']),
-      jitter: micros(map['jitter']),
+      min: durationFromMicros(map['min']),
+      avg: durationFromMicros(map['avg']),
+      max: durationFromMicros(map['max']),
+      stddev: durationFromMicros(map['stddev']),
+      jitter: durationFromMicros(map['jitter']),
       sampleCount: map['sampleCount']?.toInt() ?? 0,
     );
   }
@@ -156,12 +164,21 @@ class RoundTripStatsAccumulator {
   int? _previousMicros;
   int _sumAbsDeltaMicros = 0;
 
+  /// Memoized result of [snapshot], invalidated on every [add]. Repeated reads
+  /// between adds — e.g. a run of error events (which don't change the figures)
+  /// or the terminal summary right after the last reply — return the cached
+  /// instance instead of recomputing and allocating a fresh [RoundTripStats].
+  RoundTripStats? _cachedSnapshot;
+
   /// Number of successful samples ingested so far.
   int get sampleCount => _count;
 
   /// Ingests one successful reply's round-trip time.
   void add(Duration rtt) {
     final micros = rtt.inMicroseconds;
+
+    // The figures change, so any memoized snapshot is now stale.
+    _cachedSnapshot = null;
 
     _count++;
     _sumMicros += micros;
@@ -181,8 +198,11 @@ class RoundTripStatsAccumulator {
   }
 
   /// Returns a [RoundTripStats] reflecting all RTTs added so far, honoring the
-  /// null/absent contract.
-  RoundTripStats snapshot() {
+  /// null/absent contract. The result is memoized until the next [add], so
+  /// repeated reads between adds reuse one immutable instance.
+  RoundTripStats snapshot() => _cachedSnapshot ??= _computeSnapshot();
+
+  RoundTripStats _computeSnapshot() {
     if (_count == 0) {
       return const RoundTripStats(sampleCount: 0);
     }

@@ -98,7 +98,9 @@ only. There is no "prefer one family" or dual-stack mode — `IpVersion.ipv4`
 *excludes* IPv6 rather than preferring it. The default is `IpVersion.ipv4`.
 
 ```dart
-// IPv6 only (uses ping6 / -6 under the hood)
+// IPv6 only (the system ping is invoked with the -6 family flag on
+// Linux/Android; unsupported on Windows and the macOS subprocess path —
+// iOS IPv6 is served by dart_ping_ios's native engine)
 final ping = Ping('google.com', ipVersion: IpVersion.ipv6);
 ```
 

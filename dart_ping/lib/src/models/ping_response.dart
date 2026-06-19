@@ -94,7 +94,7 @@ final class PingResponse extends PingEvent {
     return PingResponse(
       seq: map['seq']?.toInt(),
       ttl: map['ttl']?.toInt(),
-      time: _durationFromMicros(map['time']),
+      time: durationFromMicros(map['time']),
       ip: map['ip'],
       stats: map['stats'] != null
           ? RoundTripStats.fromMap(map['stats'] as Map<String, dynamic>)

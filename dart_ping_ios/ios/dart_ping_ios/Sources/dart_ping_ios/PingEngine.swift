@@ -90,6 +90,11 @@ public final class PingEngine {
         // IPV6_HOPLIMIT cmsg yields nil ("unknown") rather than a misleading 0.
         case response(seq: Int, ttl: Int?, timeMicros: Int, ip: String)
         case error(kind: PingErrorKind, seq: Int?, ip: String?)
+        // `timeMicros` on the summary is the engine-measured session wall-clock
+        // duration (microseconds), surfaced as the cross-platform
+        // `PingSummary.time` — NOT a sum of round-trip times. The round-trip
+        // figures (min/avg/max/stddev/jitter) are computed on the Dart side as
+        // `RoundTripStats` from the per-probe `time`s.
         case summary(transmitted: Int, received: Int, timeMicros: Int, errors: [PingErrorKind])
     }
 
@@ -129,7 +134,10 @@ public final class PingEngine {
     private var nextSequence: UInt16 = 0        // next seq to send
     private var sentCount = 0                    // total probes transmitted
     private var receivedCount = 0                // total replies matched
-    private var totalRTTMicros = 0               // sum of matched RTTs (microseconds)
+    /// Wall-clock microseconds captured when the run starts, so the terminal
+    /// summary reports the session duration (parity with the subprocess
+    /// platforms' OS-reported summary time) rather than a sum of RTTs.
+    private var runStartMicros: UInt64 = 0
 
     /// Every error kind emitted during the run, in emission order, so the final
     /// summary can carry the full error list (parity with the other platforms,
@@ -156,6 +164,9 @@ public final class PingEngine {
         stateQueue.async { [weak self] in
             guard let self = self else { return }
             guard !self.stopped, self.socketFD == -1 else { return }
+
+            // Mark the session start so the summary can report wall-clock duration.
+            self.runStartMicros = Self.nowMicros()
 
             // 1) Resolve the host for the SELECTED family. On failure: emit the
             //    HONEST kind (unknownHost vs noRoute, classified from the
@@ -201,6 +212,28 @@ public final class PingEngine {
                 setsockopt(fd, IPPROTO_IP, IP_RECVTTL, &on, socklen_t(MemoryLayout<Int32>.size))
             case .v6:
                 setsockopt(fd, IPPROTO_IPV6, IPV6_RECVHOPLIMIT, &on, socklen_t(MemoryLayout<Int32>.size))
+
+                // Restrict the ICMPv6 socket to the message types we actually
+                // handle: echo reply (129) and time exceeded (3). Without a
+                // filter the kernel delivers ALL ICMPv6 types — Neighbor
+                // Discovery, MLD, Router Advertisements — each of which would
+                // wake the blocking receive loop only to be dropped. Best-effort:
+                // a failure leaves the default deliver-all behavior, which is
+                // still correct, just noisier. (ICMP6_FILTER_SETBLOCKALL /
+                // SETPASS are C macros not imported into Swift, so the bitmask is
+                // built directly: pass type T => filt[T >> 5] |= 1 << (T & 31).)
+                var filter = icmp6_filter()
+                withUnsafeMutableBytes(of: &filter) { raw in
+                    let words = raw.bindMemory(to: UInt32.self)
+                    for i in words.indices { words[i] = 0 } // block all
+                    let pass: (Int) -> Void = { type in
+                        words[type >> 5] |= (UInt32(1) << UInt32(type & 31))
+                    }
+                    pass(3)   // ICMP6_TIME_EXCEEDED
+                    pass(129) // ICMP6_ECHO_REPLY
+                }
+                setsockopt(fd, IPPROTO_ICMPV6, ICMP6_FILTER,
+                           &filter, socklen_t(MemoryLayout<icmp6_filter>.size))
             }
 
             // Set the outgoing hop limit (TTL). Best-effort, like the RECV option:
@@ -601,7 +634,6 @@ public final class PingEngine {
         let rttMicros = Int(nowMicros >= sendMicros ? (nowMicros - sendMicros) : 0)
 
         receivedCount += 1
-        totalRTTMicros += rttMicros
 
         emit(.response(seq: Int(seq), ttl: ttl, timeMicros: rttMicros, ip: sourceIP))
         checkCompletionLocked()
@@ -637,9 +669,14 @@ public final class PingEngine {
             accumulatedErrors.append(.noReply)
         }
 
+        // Session wall-clock duration (microseconds) for PingSummary.time. Guard
+        // against a non-monotonic clock going backwards between samples.
+        let nowMicros = Self.nowMicros()
+        let sessionMicros = Int(nowMicros >= runStartMicros ? (nowMicros - runStartMicros) : 0)
+
         emit(.summary(transmitted: sentCount,
                       received: receivedCount,
-                      timeMicros: totalRTTMicros,
+                      timeMicros: sessionMicros,
                       errors: accumulatedErrors))
 
         // Closing the socket unblocks the receive loop (recvmsg returns < 0).
@@ -693,21 +730,27 @@ public final class PingEngine {
         while let current = cmsg {
             switch family {
             case .v4:
+                // On Darwin/iOS the IP_RECVTTL ancillary datum is a single byte
+                // (u_char), so read exactly one byte. Reading a wider Int32 here
+                // would fold in adjacent cmsg padding/stale bytes (the control
+                // buffer is not re-zeroed per recvmsg) and yield a garbage TTL.
                 if current.pointee.cmsg_level == IPPROTO_IP,
-                   current.pointee.cmsg_type == IP_RECVTTL {
-                    // On Darwin/iOS the IP_RECVTTL ancillary datum is a single
-                    // byte (u_char), so read exactly one byte. Reading a wider
-                    // Int32 here would fold in adjacent cmsg padding/stale bytes
-                    // (the control buffer is not re-zeroed per recvmsg) and yield
-                    // a garbage TTL.
-                    return Int(cmsgData(current).load(as: UInt8.self))
+                   current.pointee.cmsg_type == IP_RECVTTL,
+                   let data = cmsgData(current,
+                                       readableBytes: MemoryLayout<UInt8>.size,
+                                       in: &msg) {
+                    return Int(data.load(as: UInt8.self))
                 }
             case .v6:
+                // The IPV6_HOPLIMIT ancillary datum is an Int32 (4 bytes),
+                // unlike the v4 single-byte u_char — read the full width, but
+                // only after confirming the cmsg actually carries those 4 bytes.
                 if current.pointee.cmsg_level == IPPROTO_IPV6,
-                   current.pointee.cmsg_type == IPV6_HOPLIMIT {
-                    // The IPV6_HOPLIMIT ancillary datum is an Int32 (4 bytes),
-                    // unlike the v4 single-byte u_char — read the full width.
-                    return Int(cmsgData(current).load(as: Int32.self))
+                   current.pointee.cmsg_type == IPV6_HOPLIMIT,
+                   let data = cmsgData(current,
+                                       readableBytes: MemoryLayout<Int32>.size,
+                                       in: &msg) {
+                    return Int(data.load(as: Int32.self))
                 }
             }
             cmsg = cmsgNextHeader(&msg, current)
@@ -735,9 +778,25 @@ public final class PingEngine {
         return control.assumingMemoryBound(to: cmsghdr.self)
     }
 
-    /// CMSG_DATA: pointer to the data following a control header.
-    private static func cmsgData(_ cmsg: UnsafeMutablePointer<cmsghdr>) -> UnsafeRawPointer {
-        return UnsafeRawPointer(cmsg).advanced(by: cmsgAlign(MemoryLayout<cmsghdr>.size))
+    /// CMSG_DATA with bounds validation: returns a pointer to the control
+    /// message's data ONLY if the cmsg declares (via `cmsg_len`) at least
+    /// `byteCount` data bytes AND those bytes fall within the control buffer
+    /// (`msg_controllen`). Returns nil for a truncated/short cmsg, so a
+    /// malformed reply cannot fold in stale bytes from a prior, larger recvmsg
+    /// (the control buffer is not re-zeroed per call) or read past the
+    /// populated region.
+    private static func cmsgData(_ cmsg: UnsafeMutablePointer<cmsghdr>,
+                                 readableBytes byteCount: Int,
+                                 in msg: inout msghdr) -> UnsafeRawPointer? {
+        guard let control = msg.msg_control else { return nil }
+        let headerLen = cmsgAlign(MemoryLayout<cmsghdr>.size)
+        // The cmsg's own declared length must cover the header plus the datum.
+        guard Int(cmsg.pointee.cmsg_len) >= headerLen + byteCount else { return nil }
+        let data = UnsafeRawPointer(cmsg).advanced(by: headerLen)
+        let controlEnd = UnsafeRawPointer(control).advanced(by: Int(msg.msg_controllen))
+        // ...and the datum must lie within the control buffer.
+        guard data.advanced(by: byteCount) <= controlEnd else { return nil }
+        return data
     }
 
     /// CMSG_NXTHDR: next control header, or nil once the list is exhausted.
