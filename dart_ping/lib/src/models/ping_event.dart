@@ -41,3 +41,10 @@ sealed class PingEvent {
   factory PingEvent.fromJson(String source) =>
       PingEvent.fromMap(json.decode(source) as Map<String, dynamic>);
 }
+
+/// Decodes a serialized round-trip duration (stored in **microseconds** to
+/// preserve sub-millisecond precision) back into a [Duration], or null when the
+/// field is absent. Shared by the [PingResponse] / [PingSummary] `fromMap`s so
+/// the microsecond convention has a single home.
+Duration? _durationFromMicros(dynamic value) =>
+    value == null ? null : Duration(microseconds: (value as num).toInt());

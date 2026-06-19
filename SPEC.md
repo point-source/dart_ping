@@ -1589,7 +1589,17 @@ which is more useful to a cross-platform consumer than faithfully echoing a
 different statistic on each OS.
 
 ## Sub-millisecond precision preserved end-to-end §spec:stats-precision
-*Status: not started*
+*Status: implemented (Batch #63-3) — round-trip `Duration` values now serialize
+at **microsecond** resolution end-to-end: `PingResponse.toMap`/`fromMap` and
+`PingSummary.toMap`/`fromMap` encode `time` via `inMicroseconds` /
+`Duration(microseconds:)` instead of the former whole-millisecond truncation,
+and `RoundTripStats` already carried its figures (min/avg/max/stddev/jitter) in
+microseconds from Batch #63-1, so the whole serialize→deserialize round trip
+preserves sub-millisecond resolution. The map key stays `'time'`; only the
+numeric scale changed, which the unreleased breaking 10.0.0 major absorbs.
+Covered by network-free round-trip tests in
+`dart_ping/test/serialization_test.dart` (§spec:stats-tests). The iOS
+microseconds-over-channel half remains tracked under §spec:stats-ios.*
 
 Round-trip times retain the resolution the platform provides —
 sub-millisecond where the native tool reports it — through the in-memory
@@ -1666,7 +1676,15 @@ detail (§spec:ios-ping-behavior); only the resulting `Duration` resolution
 is normative.
 
 ## Statistics behavior tests §spec:stats-tests
-*Status: not started*
+*Status: in progress — the round-trip computations, packet-loss derivation /
+zero-reply case, and the sealed-event contract landed with the model redesign
+(Batch #63-1, `dart_ping/test/`). The **sub-millisecond precision round-trip**
+bullet is now covered (Batch #63-3): `dart_ping/test/serialization_test.dart`
+serializes and deserializes sub-millisecond `PingResponse.time` and a
+`RoundTripStats` derived from sub-millisecond samples (carried on a
+`PingSummary`) and asserts every round-trip `Duration` survives to the
+microsecond (§spec:stats-precision). The iOS native-result → event/stats
+mapping tests remain tracked under §spec:stats-ios / §spec:ios-tests.*
 
 The statistics and the event contract are covered by automated tests that
 run under `dart test` / `flutter test` without a live network.
