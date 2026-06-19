@@ -1,9 +1,8 @@
 library;
 
-export 'package:dart_ping/src/models/ping_data.dart';
-export 'package:dart_ping/src/models/ping_error.dart';
-export 'package:dart_ping/src/models/ping_response.dart';
-export 'package:dart_ping/src/models/ping_summary.dart';
+export 'package:dart_ping/src/models/ping_event.dart';
+export 'package:dart_ping/src/models/round_trip_stats.dart'
+    show RoundTripStats, RoundTripStatsAccumulator;
 export 'package:dart_ping/src/ip_version.dart';
 export 'package:dart_ping/src/address_family.dart'
     show ipLiteralFamily, validateAddressFamily;

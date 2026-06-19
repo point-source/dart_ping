@@ -1,8 +1,8 @@
-import 'dart:convert';
+part of 'ping_event.dart';
 
-/// Each probe response
-class PingResponse {
-  const PingResponse({this.seq, this.ttl, this.time, this.ip});
+/// Each probe response — the successful-probe variant of [PingEvent].
+final class PingResponse extends PingEvent {
+  const PingResponse({this.seq, this.ttl, this.time, this.ip, this.stats});
 
   /// Transmission sequence position identifier
   /// (can be used to reconstruct packet order)
@@ -18,6 +18,14 @@ class PingResponse {
 
   /// IP Address of the target
   final String? ip;
+
+  /// A running snapshot of round-trip stats over all successful replies seen
+  /// so far in the run, at the moment this event was emitted (§spec:stats-live).
+  ///
+  /// Null on events not produced by the live run path (e.g. a bare parsed or
+  /// deserialized response).
+  @override
+  final RoundTripStats? stats;
 
   @override
   String toString() {
@@ -38,12 +46,14 @@ class PingResponse {
     int? ttl,
     Duration? time,
     String? ip,
+    RoundTripStats? stats,
   }) {
     return PingResponse(
       seq: seq ?? this.seq,
       ttl: ttl ?? this.ttl,
       time: time ?? this.time,
       ip: ip ?? this.ip,
+      stats: stats ?? this.stats,
     );
   }
 
@@ -55,20 +65,28 @@ class PingResponse {
         other.seq == seq &&
         other.ttl == ttl &&
         other.time == time &&
-        other.ip == ip;
+        other.ip == ip &&
+        other.stats == stats;
   }
 
   @override
   int get hashCode {
-    return seq.hashCode ^ ttl.hashCode ^ time.hashCode ^ ip.hashCode;
+    return seq.hashCode ^
+        ttl.hashCode ^
+        time.hashCode ^
+        ip.hashCode ^
+        stats.hashCode;
   }
 
+  @override
   Map<String, dynamic> toMap() {
     return {
+      'type': 'response',
       'seq': seq,
       'ttl': ttl,
-      'time': time?.inMilliseconds,
+      'time': time?.inMicroseconds,
       'ip': ip,
+      'stats': stats?.toMap(),
     };
   }
 
@@ -76,13 +94,14 @@ class PingResponse {
     return PingResponse(
       seq: map['seq']?.toInt(),
       ttl: map['ttl']?.toInt(),
-      time: map['time'] != null ? Duration(milliseconds: map['time']) : null,
+      time: durationFromMicros(map['time']),
       ip: map['ip'],
+      stats: map['stats'] != null
+          ? RoundTripStats.fromMap(map['stats'] as Map<String, dynamic>)
+          : null,
     );
   }
 
-  String toJson() => json.encode(toMap());
-
   factory PingResponse.fromJson(String source) =>
-      PingResponse.fromMap(json.decode(source));
+      PingResponse.fromMap(json.decode(source) as Map<String, dynamic>);
 }

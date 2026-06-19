@@ -1,5 +1,24 @@
 ## 6.0.0
 
+- **Breaking change (#63):** the iOS `Ping.stream` now emits the sealed
+  `PingEvent` union (`PingResponse` / `PingError` / `PingSummary`) instead of
+  the old `PingData`, matching `dart_ping` 10.0.0. A timed-out or TTL-exceeded
+  probe is now a single `PingError` carrying its own `seq`/`ip` (no combined
+  response+error). Branch on the event type (e.g. `switch` / `is PingSummary`)
+  rather than checking which nullable field is populated.
+- **Statistics parity (#63):** every event now carries a running
+  `RoundTripStats` snapshot (min / avg / max / population stddev / jitter), and
+  the terminal `PingSummary` carries the run's final figures plus a derived
+  packet-loss percentage. These are computed by **reusing the core `dart_ping`
+  `RoundTripStatsAccumulator`** from the per-probe round-trip times — no
+  parallel Swift math — so iOS reports the identical statistic set (including
+  stddev, which no native tool emits) to the subprocess platforms. A zero-reply
+  run reports the round-trip figures as absent (not fabricated zeros) with 100%
+  loss.
+- **Sub-millisecond precision (#63):** the native engine now surfaces each
+  probe's round-trip time at **microsecond** resolution over the channel
+  (previously rounded to whole milliseconds), so stddev/jitter stay meaningful
+  on fast local links.
 - **Breaking change (#69):** track `dart_ping` 10.0.0's `IpVersion` selector.
   `DartPingIOS` now takes an `IpVersion` in place of the `ipv6` boolean, and the
   selected address family is sent to the native engine as `ipVersion` (the enum

@@ -142,7 +142,7 @@ void main() {
   test('forwards mapped events and closes after the terminal summary',
       () async {
     final ping = DartPingIOS('host', 2, 1, 2, 64, IpVersion.ipv4);
-    final received = <PingData>[];
+    final received = <PingEvent>[];
     final done = Completer<void>();
     ping.stream.listen(received.add, onDone: done.complete);
     await pumpEventQueue();
@@ -167,13 +167,13 @@ void main() {
 
     await done.future;
     expect(received, hasLength(2));
-    expect(received.first.response!.seq, 1);
-    expect(received.last.summary!.transmitted, 2);
+    expect((received.first as PingResponse).seq, 1);
+    expect((received.last as PingSummary).transmitted, 2);
   });
 
   test('ignores events addressed to a different run id', () async {
     final ping = DartPingIOS('host', 1, 1, 2, 64, IpVersion.ipv4);
-    final received = <PingData>[];
+    final received = <PingEvent>[];
     ping.stream.listen(received.add);
     await pumpEventQueue();
 
@@ -188,7 +188,7 @@ void main() {
     emitNativeEvent({'id': id, 'type': 'response', 'seq': 1});
     await pumpEventQueue();
     expect(received, hasLength(1));
-    expect(received.single.response!.seq, 1);
+    expect((received.single as PingResponse).seq, 1);
   });
 
   test('stop() invokes the native stop and resolves to true', () async {

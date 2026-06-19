@@ -49,8 +49,36 @@ void main() {
     test('toMap serializes the human-readable error message', () {
       expect(
         PingError(ErrorType.timeToLiveExceeded, message: 'm').toMap(),
-        {'error': 'Time To Live Exceeded', 'message': 'm'},
+        {
+          'type': 'error',
+          'error': 'Time To Live Exceeded',
+          'message': 'm',
+          'seq': null,
+          'ip': null,
+          'stats': null,
+        },
       );
+    });
+
+    test('toString appends seq and ip when present', () {
+      expect(
+        PingError(ErrorType.timeToLiveExceeded, seq: 3, ip: '1.2.3.4')
+            .toString(),
+        'timeToLiveExceeded, seq:3, ip:1.2.3.4',
+      );
+    });
+
+    test('copyWith overrides seq and ip', () {
+      final updated = PingError(ErrorType.requestTimedOut)
+          .copyWith(seq: 5, ip: '9.9.9.9');
+      expect(updated.seq, 5);
+      expect(updated.ip, '9.9.9.9');
+    });
+
+    test('equality distinguishes seq/ip', () {
+      final a = PingError(ErrorType.requestTimedOut, seq: 1);
+      final b = PingError(ErrorType.requestTimedOut, seq: 2);
+      expect(a, isNot(equals(b)));
     });
 
     test('fromMap with a missing error falls back to ErrorType.unknown', () {
@@ -131,20 +159,47 @@ void main() {
     test('toString without time or errors', () {
       expect(
         PingSummary(transmitted: 4, received: 3).toString(),
-        'PingSummary(transmitted:4, received:3)',
+        'PingSummary(transmitted:4, received:3, loss:25.0%)',
       );
     });
 
-    test('toString appends time and errors when present', () {
+    test('toString appends time, loss and errors when present', () {
       final str = PingSummary(
         transmitted: 4,
         received: 2,
         time: const Duration(milliseconds: 1500),
         errors: [PingError(ErrorType.noReply)],
       ).toString();
+      expect(str, contains('loss:50.0%'));
       expect(str, contains('time: 1500 ms'));
       expect(str, contains('Errors:'));
       expect(str, contains('noReply'));
+    });
+
+    test('packetLoss is derived from the counts', () {
+      expect(PingSummary(transmitted: 10, received: 7).packetLoss, 30.0);
+      expect(PingSummary(transmitted: 4, received: 0).packetLoss, 100.0);
+      expect(PingSummary(transmitted: 0, received: 0).packetLoss, 100.0);
+    });
+
+    test('copyWith carries stats over and overrides it', () {
+      final stats = RoundTripStats.fromSamples(
+        [const Duration(milliseconds: 1), const Duration(milliseconds: 3)],
+      );
+      final original = PingSummary(transmitted: 2, received: 2, stats: stats);
+      expect(original.copyWith().stats, stats);
+      final other = RoundTripStats.fromSamples([const Duration(seconds: 1)]);
+      expect(original.copyWith(stats: other).stats, other);
+    });
+
+    test('equality and toMap include stats', () {
+      final stats = RoundTripStats.fromSamples([const Duration(milliseconds: 5)]);
+      final a = PingSummary(transmitted: 1, received: 1, stats: stats);
+      final b = PingSummary(transmitted: 1, received: 1, stats: stats);
+      final c = PingSummary(transmitted: 1, received: 1);
+      expect(a, equals(b));
+      expect(a, isNot(equals(c)));
+      expect(a.toMap()['stats'], stats.toMap());
     });
 
     test('copyWith with no args returns an equal value', () {
@@ -211,60 +266,27 @@ void main() {
     });
   });
 
-  group('PingData', () {
-    final response = PingResponse(seq: 1, ip: '1.1.1.1');
-    final error = PingError(ErrorType.requestTimedOut);
-    final summary = PingSummary(transmitted: 1, received: 0);
-
-    test('toString delegates to the summary when present', () {
-      final data = PingData(response: response, summary: summary, error: error);
-      expect(data.toString(), summary.toString());
-    });
-
-    test('toString renders the response+error form when no summary', () {
-      final data = PingData(response: response, error: error);
-      expect(data.toString(), 'PingError(response:$response, error:$error)');
-    });
-
-    test('toString delegates to the response when only a response', () {
-      final data = PingData(response: response);
-      expect(data.toString(), response.toString());
-    });
-
-    test('toString of an empty PingData is "null"', () {
-      expect(const PingData().toString(), 'null');
-    });
-
-    test('copyWith with no args returns an equal value', () {
-      final original = PingData(response: response, error: error);
-      expect(original.copyWith(), equals(original));
-    });
-
-    test('copyWith overrides each field', () {
-      final updated = const PingData().copyWith(
-        response: response,
-        summary: summary,
-        error: error,
+  group('PingEvent', () {
+    test('fromMap dispatches on the type discriminator', () {
+      expect(
+        PingEvent.fromMap(PingResponse(seq: 1, ip: '1.1.1.1').toMap()),
+        isA<PingResponse>(),
       );
-      expect(updated.response, response);
-      expect(updated.summary, summary);
-      expect(updated.error, error);
+      expect(
+        PingEvent.fromMap(PingError(ErrorType.requestTimedOut).toMap()),
+        isA<PingError>(),
+      );
+      expect(
+        PingEvent.fromMap(PingSummary(transmitted: 1, received: 0).toMap()),
+        isA<PingSummary>(),
+      );
     });
 
-    test('equality, identity and hashCode', () {
-      final a = PingData(response: response, error: error);
-      final b = PingData(response: response, error: error);
-      expect(a, equals(b));
-      expect(a.hashCode, b.hashCode);
-      expect(a == a, isTrue);
-      expect(a, isNot(equals(PingData(summary: summary))));
-      expect(a, isNot(equals(Object())));
-    });
-
-    test('toMap/fromMap round-trips null members as null', () {
-      const empty = PingData();
-      expect(empty.toMap(), {'response': null, 'summary': null, 'error': null});
-      expect(PingData.fromMap(empty.toMap()), equals(empty));
+    test('fromMap throws on an unknown type', () {
+      expect(
+        () => PingEvent.fromMap({'type': 'bogus'}),
+        throwsArgumentError,
+      );
     });
   });
 }

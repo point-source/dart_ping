@@ -5,9 +5,8 @@ import 'dart:io';
 import 'package:async/async.dart';
 import 'package:dart_ping/src/address_family.dart';
 import 'package:dart_ping/src/ip_version.dart';
-import 'package:dart_ping/src/models/ping_data.dart';
-import 'package:dart_ping/src/models/ping_error.dart';
-import 'package:dart_ping/src/models/ping_summary.dart';
+import 'package:dart_ping/src/models/ping_event.dart';
+import 'package:dart_ping/src/models/round_trip_stats.dart';
 import 'package:dart_ping/src/models/ping_parser.dart';
 
 abstract class BasePing {
@@ -27,7 +26,7 @@ abstract class BasePing {
     // `Ping(...)` factory — direct construction of a platform class must fail
     // fast the same way (§spec:address-family-mismatch-validation).
     validateAddressFamily(host, ipVersion);
-    _controller = StreamController<PingData>(
+    _controller = StreamController<PingEvent>(
       onListen: _onListen,
       onCancel: _onCancel,
       onPause: () => _sub?.pause(),
@@ -95,15 +94,22 @@ abstract class BasePing {
   // Concurrent-isolation invariant (#70): every field below is instance-local
   // mutable state. Each `Ping`/`BasePing` owns its own OS [_process] (and thus
   // its own stdout/stderr pipes), its own [_controller], its own per-call
-  // [parser] instance, and its own [_errors]/[_summaryData] accumulators. There
-  // is no `static`/shared mutable state in this path, so concurrent runs to
-  // distinct hosts cannot cross-contaminate. Guarded offline by
-  // `test/concurrent_isolation_test.dart`.
-  late final StreamController<PingData> _controller;
+  // [parser] instance, and its own [_errors]/[_summaryData]/[_rttStats]
+  // accumulators. There is no `static`/shared mutable state in this path, so
+  // concurrent runs to distinct hosts cannot cross-contaminate. Guarded offline
+  // by `test/concurrent_isolation_test.dart`.
+  late final StreamController<PingEvent> _controller;
   Process? _process;
-  StreamSubscription<PingData>? _sub;
-  PingData? _summaryData;
+  StreamSubscription<PingEvent>? _sub;
+
+  /// Raw parsed summary; its `stats` is null until finalized in [_cleanup].
+  PingSummary? _summaryData;
   final List<PingError> _errors = [];
+
+  /// Accumulates per-probe round-trip times so the terminal summary's
+  /// [RoundTripStats] is computed from the per-probe replies — the same code on
+  /// every subprocess platform (§spec:stats-cross-platform).
+  final RoundTripStatsAccumulator _rttStats = RoundTripStatsAccumulator();
 
   /// Whether a consumer has begun listening (so [_onListen] has started). Used
   /// by [stop] to decide whether awaiting closure could ever return.
@@ -147,31 +153,50 @@ abstract class BasePing {
   Stream<String> _lines(Stream<List<int>> raw) =>
       raw.transform(encoding.decoder).transform(const LineSplitter());
 
-  /// Transforms the ping process output into PingData objects
+  /// Transforms the ping process output into [PingEvent] objects
   ///
   /// Each raw stream is decoded and line-split independently before merging, so
   /// interleaved stderr/stdout writes cannot corrupt or split a line.
-  Stream<PingData> get _parsedOutput =>
+  Stream<PingEvent> get _parsedOutput =>
       StreamGroup.merge([_lines(_process!.stderr), _lines(_process!.stdout)])
-          .transform<PingData>(parser.transformParser);
+          .transform<PingEvent>(parser.transformParser);
 
   Future<void> _onListen() async {
     _started = true;
     try {
       // Start new ping process on host OS
       _process = await platformProcess;
-      // Get platform-specific parsed PingData
+      // Get platform-specific parsed PingEvents
       _sub = _parsedOutput.listen(
         (event) {
-          if (event.response != null || event.error != null) {
-            // Accumulate error if one exists
-            if (event.error != null) {
-              _errors.add(event.error!);
-            }
-            _controller.add(event);
-          } else if (event.summary != null) {
-            event.summary!.errors.addAll(_errors);
-            _summaryData = event;
+          switch (event) {
+            case PingResponse():
+              // Successful reply: feed its RTT into the stats accumulator FIRST
+              // so the terminal summary's RoundTripStats is built from per-probe
+              // times (§spec:stats-cross-platform). Then emit a copy carrying a
+              // running snapshot taken AFTER adding this reply's RTT, so the
+              // snapshot includes the current reply (§spec:stats-live). Because
+              // no successful reply follows the last probe event, that event's
+              // snapshot equals the terminal `summary.stats` — the live↔summary
+              // consistency guarantee — since both come from the same
+              // `_rttStats` accumulator. A consumer derives loss-so-far from
+              // `stats.sampleCount` (received-so-far) and the count of probe
+              // events it has seen (transmitted-so-far), consistent with the
+              // terminal `packetLoss`.
+              if (event.time != null) _rttStats.add(event.time!);
+              _controller.add(event.copyWith(stats: _rttStats.snapshot()));
+            case PingError():
+              // Accumulate the BARE error so it is folded into the summary's
+              // errors list at cleanup unchanged. Emit a copy carrying the
+              // current running snapshot: errors don't contribute to RTT
+              // figures, so their snapshot reflects the successful replies seen
+              // so far (§spec:stats-live).
+              _errors.add(event);
+              _controller.add(event.copyWith(stats: _rttStats.snapshot()));
+            case PingSummary():
+              // Hold the raw parsed summary; it is finalized (stats + errors)
+              // in _cleanup.
+              _summaryData = event;
           }
         },
         // Route parser/transform errors through the stream's error channel so
@@ -223,24 +248,11 @@ abstract class BasePing {
     try {
       final exitCode = await _process!.exitCode;
 
+      PingError? exitError;
       if (exitCode != 0) {
         // Does the exit code reveal an error?
-        final error = interpretExitCode(exitCode);
-        if (error != null) {
-          // Is there a ping summary that we should add exit code info to?
-          if (_summaryData != null) {
-            _summaryData!.summary!.errors.add(error);
-          } else {
-            _summaryData = PingData(
-              summary: PingSummary(
-                transmitted: 0,
-                received: 0,
-                time: Duration(),
-                errors: [error],
-              ),
-            );
-          }
-        } else {
+        exitError = interpretExitCode(exitCode);
+        if (exitError == null) {
           // Unmapped non-zero exit: surface the exception rather than
           // discarding it, so the consumer can catch it. This fires even when
           // a typed error (e.g. a `noRoute` line) already surfaced during the
@@ -257,9 +269,43 @@ abstract class BasePing {
         }
       }
 
+      // Build the terminal summary from the per-probe RTTs (NOT any native
+      // stats line), folding in the accumulated errors plus any exit-code
+      // error (§spec:stats-cross-platform).
+      final errors = [..._errors, ?exitError];
+      final stats = _rttStats.snapshot();
+      final PingSummary summary;
       if (_summaryData != null) {
-        _controller.add(_summaryData!);
+        // The native summary line is authoritative for transmitted/received.
+        summary = _summaryData!.copyWith(stats: stats, errors: errors);
+      } else {
+        // No native summary line was parsed (e.g. an unmapped exit, or the
+        // process was killed before printing one). Still emit a terminal
+        // summary so the run's final event is always a `PingSummary`
+        // (§spec:stats-event-model). Reconstruct self-consistent counts from
+        // what we actually observed rather than reporting a misleading 0/0:
+        // `received` is the number of successful replies (== stats.sampleCount
+        // by construction), and `transmitted` adds the probes that failed with
+        // a per-probe error (timeout / TTL-exceeded). Run-level errors
+        // (noReply / unknownHost / noRoute / unknown) are not probes and do not
+        // inflate the count. `time` is left null because the OS-reported
+        // wall-clock comes only from the (absent) native summary line.
+        final received = stats.sampleCount;
+        final probeFailures = _errors
+            .where((e) =>
+                e.error == ErrorType.requestTimedOut ||
+                e.error == ErrorType.timeToLiveExceeded)
+            .length;
+        summary = PingSummary(
+          transmitted: received + probeFailures,
+          received: received,
+          time: null,
+          stats: stats,
+          errors: errors,
+        );
       }
+
+      _controller.add(summary);
     } catch (error, stackTrace) {
       // The controller is only closed in the finally below, so it is still
       // open here and the error can always be surfaced.
@@ -276,7 +322,7 @@ abstract class BasePing {
   /// Converts error exit codes into Exceptions
   Exception? throwExit(int exitCode);
 
-  Stream<PingData> get stream => _controller.stream;
+  Stream<PingEvent> get stream => _controller.stream;
 
   Future<void> _onCancel() async {
     _process?.kill(ProcessSignal.sigint);

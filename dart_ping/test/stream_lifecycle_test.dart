@@ -79,7 +79,7 @@ class TestPing extends PingLinux {
 
 /// Result of draining a ping stream to completion.
 class _Collected {
-  final List<PingData> data = [];
+  final List<PingEvent> data = [];
   final List<Object> errors = [];
   int doneCount = 0;
 }
@@ -170,10 +170,7 @@ void main() {
           reason: 'a clean run must not surface an error');
       expect(result.doneCount, 1, reason: 'stream must close exactly once');
 
-      final responses = result.data
-          .where((d) => d.response != null)
-          .map((d) => d.response!)
-          .toList();
+      final responses = result.data.whereType<PingResponse>().toList();
       expect(responses, hasLength(2), reason: 'two per-probe responses');
       expect(responses[0].seq, 1);
       expect(responses[0].ttl, 57);
@@ -181,19 +178,21 @@ void main() {
       expect(responses[1].seq, 2);
       expect(responses[1].ttl, 57);
 
-      final summaries = result.data.where((d) => d.summary != null).toList();
+      final summaries = result.data.whereType<PingSummary>().toList();
       expect(summaries, hasLength(1), reason: 'one run summary expected');
-      final summary = summaries.single.summary!;
+      final summary = summaries.single;
       expect(summary.transmitted, 5);
       expect(summary.received, 5);
       expect(summary.time, const Duration(milliseconds: 4005));
+      // Stats are computed from the two per-probe replies.
+      expect(summary.stats?.sampleCount, 2);
       // Per-run error list is present and empty on a clean run.
       expect(summary.errors, isEmpty);
     });
 
     test('(b2) a typed noRoute event AND the unmapped-exit error both surface',
         () async {
-      // A noRoute line surfaces a typed PingData(error: noRoute) and the process
+      // A noRoute line surfaces a typed PingError(noRoute) and the process
       // also exits non-zero (2, unmapped). The unmapped-exit error is still
       // surfaced — the exit code is an independent signal from the parsed line,
       // so it is NOT suppressed (suppressing it would also hide a distinct exit
@@ -207,10 +206,10 @@ void main() {
 
       final result = await _drain(ping);
 
-      final errorData = result.data.where((d) => d.error != null).toList();
+      final errorData = result.data.whereType<PingError>().toList();
       expect(errorData, hasLength(1));
-      expect(errorData.single.error!.error, ErrorType.noRoute,
-          reason: 'the routing failure surfaces as a typed PingData event');
+      expect(errorData.single.error, ErrorType.noRoute,
+          reason: 'the routing failure surfaces as a typed PingError event');
       expect(result.errors, hasLength(1),
           reason: 'the unmapped exit still surfaces a catchable error');
       expect(result.errors.single.toString(),
@@ -374,6 +373,82 @@ void main() {
         },
       );
       await done.future.timeout(_hardTimeout);
+    });
+  });
+
+  group('terminal summary always emitted & self-consistent '
+      '(§spec:stats-event-model / §spec:stats-summary)', () {
+    test('unmapped exit with replies but no native summary line still emits a '
+        'consistent terminal summary', () async {
+      // One reply (seq 1) and one timeout (seq 2), an unmapped non-zero exit,
+      // and NO "N packets transmitted ..." line — so BasePing takes the
+      // synthetic-summary fallback. Previously that path either emitted nothing
+      // or reported transmitted:0/received:0 alongside non-empty stats (a
+      // self-contradictory 100% loss). It must now emit a terminal summary
+      // whose counts agree with the stats.
+      final ping = TestPing(
+        process: FakeProcess(
+          stdoutLines: const [
+            '64 bytes from 1.1.1.1: icmp_seq=1 ttl=57 time=10.1 ms',
+            'no answer yet for icmp_seq=2',
+          ],
+          exit: 2,
+        ),
+      );
+
+      final result = await _drain(ping);
+
+      // (finding 3) A terminal PingSummary is emitted and is the FINAL event.
+      final summaries = result.data.whereType<PingSummary>().toList();
+      expect(summaries, hasLength(1),
+          reason: 'a terminal summary must be emitted even without a native '
+              'summary line');
+      expect(result.data.last, isA<PingSummary>(),
+          reason: 'the summary is the final event of the run');
+
+      // (finding 2) Counts are reconstructed consistently: received equals the
+      // successful-reply sample count, transmitted adds the one probe failure,
+      // and loss is therefore 50% — never a fabricated 100% while stats show a
+      // reply.
+      final summary = summaries.single;
+      expect(summary.received, 1);
+      expect(summary.received, summary.stats?.sampleCount,
+          reason: 'received must equal the stats sample count');
+      expect(summary.transmitted, 2,
+          reason: '1 reply + 1 timed-out probe');
+      expect(summary.packetLoss, 50.0);
+      expect(summary.time, isNull,
+          reason: 'no OS wall-clock without the native summary line');
+      // The unmapped exit still surfaces a catchable error.
+      expect(result.errors.single.toString(),
+          contains('Ping process exited with code: 2'));
+      expect(result.doneCount, 1);
+    });
+
+    test('zero-exit run with no native summary line still emits a terminal '
+        'summary', () async {
+      final ping = TestPing(
+        process: FakeProcess(
+          stdoutLines: const [
+            '64 bytes from 1.1.1.1: icmp_seq=1 ttl=57 time=10.1 ms',
+          ],
+          exit: 0,
+        ),
+      );
+
+      final result = await _drain(ping);
+
+      final summaries = result.data.whereType<PingSummary>().toList();
+      expect(summaries, hasLength(1),
+          reason: 'a clean run with no parsed summary line still terminates '
+              'with a PingSummary');
+      expect(result.data.last, isA<PingSummary>());
+      final summary = summaries.single;
+      expect(summary.received, 1);
+      expect(summary.transmitted, 1);
+      expect(summary.packetLoss, 0.0);
+      expect(result.errors, isEmpty);
+      expect(result.doneCount, 1);
     });
   });
 }

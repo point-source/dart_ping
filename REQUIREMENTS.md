@@ -34,6 +34,15 @@ This document tracks six areas of work:
    results instead of each host's own, first seen on Android. Fix so that
    concurrent `Ping` instances are fully independent. Captured in the
    `§req:concurrent-*` sections at the end.
+7. **Summary statistics (#63)** — surface the richer round-trip
+   statistics the native `ping` already prints (min / avg / max / stddev),
+   plus a mean-consecutive-delta jitter figure and packet-loss %, both in
+   the run summary and as live running stats during a run, with full
+   cross-platform parity including iOS. Delivered via a from-scratch
+   redesign of the stream's event/data classes (a sealed event union plus a
+   reusable round-trip-stats value object), folded into the
+   already-unreleased breaking `dart_ping` 10.0.0 / `dart_ping_ios` 6.0.0
+   majors. Captured in the `§req:stats-*` sections at the end.
 
 ---
 
@@ -925,3 +934,228 @@ public API:
   under concurrency.
 - **Nice-to-have:** none beyond the above — this is a focused correctness
   fix.
+
+---
+
+# Summary statistics (#63)
+
+Surface richer round-trip statistics in the ping result, and make them
+available both as a final run summary and as live running figures during a
+run. Driven by GitHub issue #63: a consumer of the `vernet` app asked to
+show the round-trip `min / avg / max / stddev` values that the native
+`ping` already prints at the end of a session (screenshots for macOS and
+Linux are attached to the issue). The work is delivered through a
+from-scratch redesign of the stream's event/data classes, ridden in on the
+already-unreleased breaking majors.
+
+## Statistics — problem statement §req:stats-problem-statement
+
+The target users are developers using `dart_ping` for latency measurement
+and network diagnostics — latency dashboards, "fastest host" pickers,
+connectivity sweeps, and traceroute-style tools.
+
+The native `ping` binary prints a round-trip summary at the end of every
+session (`round-trip min/avg/max/stddev = …` on macOS/Linux; Minimum /
+Maximum / Average on Windows), and that is exactly the information a
+diagnostics UI wants to show. `dart_ping` discards it. Its `PingSummary`
+exposes only `transmitted`, `received`, an optional total `time`, and the
+error list — so a developer who wants min / avg / max / stddev, jitter, or
+a packet-loss percentage has to reconstruct them by hand from the
+per-probe response stream. min / max are easy; **stddev and jitter are
+not**, and getting them right (which samples to include, how to define
+jitter) is exactly the kind of thing a library should do once, correctly,
+for everyone.
+
+Three things make the do-it-yourself path worse than it looks:
+
+- **The raw material is lossy.** Per-probe `PingResponse.time` is a
+  `Duration` with sub-millisecond resolution in memory, but its
+  serialized form (`toMap`) truncates to whole milliseconds — so a
+  consumer who computes stats from serialized data loses the precision
+  that makes stddev/jitter meaningful for fast local links.
+- **There is no running view.** Stats only make sense at the end today;
+  there is no way to watch min / avg / max / jitter evolve while a long
+  run is in progress, which is what a live dashboard wants.
+- **The event shape resists extension.** A stream event is a single
+  `PingData` with three nullable fields (`response` / `summary` /
+  `error`), and consumers detect end-of-run by checking
+  `summary != null`. That idiom makes "a summary-so-far on every probe"
+  impossible to add without breaking the very signal consumers rely on.
+
+The reporter's underlying need is simple — *"show me the stats my OS
+already computes"* — but satisfying it well (cross-platform, precise,
+live, and on iOS too, where there is no native summary line at all) is
+what motivates the redesign rather than a field bolt-on.
+
+## Statistics — success criteria §req:stats-success-criteria
+
+Observable, verifiable outcomes a tester can demonstrate against the
+public API:
+
+- **The summary exposes the full statistic set.** A completed run reports
+  round-trip **min, avg, max, and stddev**, a **jitter** figure, and a
+  **packet-loss percentage**, in addition to the existing
+  transmitted / received / total-time / errors. *(must-have)*
+- **The same set is available on every platform.** Linux/Android, macOS,
+  Windows, and iOS all report the complete set — including stddev on
+  Windows (whose native `ping` omits it) and every figure on iOS (whose
+  native engine emits no summary line). Where a platform's native output
+  is missing a value, the library fills it by computing from the per-probe
+  round-trip times; where the native value is present it is preferred.
+  *(must-have)*
+- **Live stats are observable during a run.** While a run is in progress,
+  a consumer can observe the running statistics (min / avg / max / stddev /
+  jitter / loss so far) update as each probe arrives — not only once at the
+  end. *(must-have)*
+- **The end of a run is unambiguous.** A consumer can tell a per-probe
+  event, an error event, and the terminal run-summary event apart without
+  guessing from which fields happen to be null, and the terminal summary is
+  identifiable as the final event of the run. *(must-have)*
+- **Packet loss is consistent with the counts.** The reported loss
+  percentage always equals the loss implied by `transmitted` and
+  `received` (it is a derived view of them, not an independently stored
+  number that can drift). *(must-have)*
+- **Zero-reply runs report honestly.** When a run receives no replies
+  (100% loss), the round-trip statistics (min / avg / max / stddev /
+  jitter) are reported as absent/undefined rather than as fabricated
+  zeros, while loss is 100% and received is 0. *(must-have)*
+- **Sub-millisecond precision is preserved.** The round-trip statistics
+  retain the resolution the platform provides (sub-millisecond where the
+  native tool reports it); they are not silently truncated to whole
+  milliseconds on the way to the consumer or through serialization.
+  *(high)*
+- **Jitter means probe-to-probe variation.** The jitter figure is the
+  mean of the absolute differences between consecutive successful probe
+  round-trip times, and this definition is documented so consumers know
+  what they are charting. *(high)*
+- **Existing result information is preserved.** transmitted, received,
+  total `time` (where the platform reports it), the per-run error list,
+  and per-probe seq / ttl / time / ip all remain available after the
+  redesign. *(must-have — no information is lost in the reshape.)*
+- **The behavior is covered by automated tests** that run under
+  `dart test` without a live network — verifying the computed statistics
+  for representative per-probe inputs, the zero-reply case, the
+  native-vs-computed fill, and that the terminal event is distinguishable.
+  *(high)*
+
+## Statistics — user stories §req:stats-user-stories
+
+- As a developer building a latency dashboard, I want the run summary to
+  give me round-trip min / avg / max / stddev and jitter directly so that
+  I can display them without reimplementing the math.
+- As a developer comparing hosts, I want a packet-loss percentage in the
+  summary so that I can rank or gate on reliability as well as latency.
+- As a developer running long or continuous pings, I want to watch the
+  statistics update live as probes arrive so that my UI reflects current
+  conditions instead of only a final number.
+- As a cross-platform developer, I want the same statistics on Windows and
+  iOS as on Linux/macOS — including stddev and jitter — so that my shared
+  diagnostics code shows the same columns everywhere.
+- As a developer consuming the stream, I want to tell probe, error, and
+  end-of-run events apart explicitly so that my handling code is clear and
+  doesn't break when new fields appear.
+- As a developer measuring a fast local link, I want sub-millisecond
+  precision retained in the statistics so that stddev and jitter are
+  meaningful rather than rounded to zero.
+- As a developer whose run gets no replies, I want the latency statistics
+  to be clearly "not available" rather than zero so that I don't chart a
+  misleading 0 ms for an unreachable host.
+
+## Statistics — quality attributes §req:stats-quality-attributes
+
+- **Cross-platform consistency:** the same statistic set is reported on
+  every platform, normalized at the Dart boundary, despite differing
+  native summary formats (and iOS having none).
+- **Native fidelity where it exists:** where a platform's native `ping`
+  reports a statistic, that value is preferred; the library only computes
+  the figures the platform does not provide, staying as close to native
+  numbers as the cross-platform goal allows.
+- **Precision:** statistics retain the resolution the native tool
+  provides; serialization does not truncate round-trip values to whole
+  milliseconds (the current `toMap` truncation is corrected as part of
+  this work).
+- **Clarity of the event contract:** the stream's event types make the
+  kind of each event explicit, so consumers branch on event type rather
+  than on which nullable field is populated.
+- **Compatibility:** this is a **breaking change**, but it is folded into
+  the already-unreleased breaking majors (`dart_ping` 10.0.0,
+  `dart_ping_ios` 6.0.0) — see Constraints. No additional break is imposed
+  beyond the one the next release already carries.
+- **Testability:** the statistic computations and the event contract are
+  verifiable via offline automated tests without a live network or a
+  physical device.
+
+## Statistics — constraints §req:stats-constraints
+
+- **The delivery vehicle is a from-scratch redesign of the stream's
+  event/data classes.** The current single-`PingData`-with-nullable-fields
+  shape is replaced by an explicit, discriminated set of stream events
+  (a probe response, a probe error, and a terminal run summary), and the
+  round-trip statistics are carried by a single reusable value object
+  (round-trip min / avg / max / stddev / jitter / sample count) that can
+  be computed incrementally. This is the design judged most sensible if
+  the stream were built today; #63 is the occasion to adopt it because the
+  next release is already breaking.
+- **Packet loss is a derived view, not stored state** — computed from
+  `transmitted` and `received` on read, so it cannot drift from the
+  counts and adds no redundant serialized field.
+- **Jitter is defined** as the mean of the absolute differences between
+  consecutive successful probe round-trip times (RFC 3550-style
+  interarrival variation), computed over received replies only.
+- **Round-trip statistics are computed over successful replies only**
+  (timed-out / errored probes contribute to loss and counts, not to
+  min / avg / max / stddev / jitter).
+- **Version / release:** the redesign ships in the already-unreleased
+  `dart_ping` **10.0.0** and `dart_ping_ios` **6.0.0** majors. The
+  maintainer is consolidating all changes since the last published
+  release into these majors, so the breaking event/data reshape is
+  absorbed by a break the release already carries.
+- **This revises the API-stability stance of the earlier work areas.**
+  Sections 1–6 above each promise the `PingData` / `PingResponse` /
+  `PingSummary` shapes stay unchanged; those promises were scoped to the
+  same unreleased 10.0.0 / 6.0.0 window and are **superseded** by this
+  redesign — the public event/data shape changes once, here, as part of
+  that major, rather than each area preserving the old shape.
+- iOS parity is **in scope**: the native Swift engine surfaces the same
+  statistic set (computed from per-probe times, as it has no native
+  summary line).
+- Traceable to issue #63; relates to the refresh's serialization-precision
+  and test-coverage goals (`§req:refresh-success-criteria`).
+
+## Statistics — priorities §req:stats-priorities
+
+- **Must-have:** the run summary reports round-trip min / avg / max /
+  stddev, jitter, and packet-loss %, with the same set on every platform
+  (including Windows stddev and iOS); live running stats observable during
+  a run; an unambiguous, explicitly-typed terminal event; zero-reply runs
+  reporting absent latency stats with 100% loss; and no existing result
+  information lost in the reshape.
+- **High priority:** sub-millisecond precision preserved end-to-end
+  (including the serialization-truncation fix); documented jitter
+  definition; offline automated tests for the computations, the
+  native-vs-computed fill, the zero-reply case, and the event contract.
+- **Nice-to-have:** none beyond the above — scope is the statistics plus
+  the event redesign that makes them clean to deliver.
+
+## Statistics — open decisions §req:stats-open-decisions
+
+Surfaced during discovery and deferred to `/symphonize:plan`, where
+mechanism is decided:
+
+- **Exact event/value-object shapes and names** — the concrete sealed
+  event hierarchy, the round-trip-stats value-object API, and how a
+  running stats snapshot rides each probe event (an attached field, a
+  separate periodic event, or both) are design choices for `/plan`,
+  constrained by the observable outcomes above.
+- **Native-vs-computed precedence and tolerance** — when a platform
+  reports a native value *and* the library can compute one, which wins and
+  whether any consistency check / tolerance is applied (the success
+  criteria require "the full set, consistent"; the exact reconciliation is
+  a design detail).
+- **Serialization format for the new shape** — the JSON/map
+  representation of the redesigned events and the precision-preserving
+  encoding of round-trip values (replacing the whole-millisecond
+  truncation) are for `/plan`.
+- **iOS surfacing mechanism** — how the native Swift engine exposes the
+  per-probe data the stats are computed from, over the method channel, is
+  a design task for `/plan`.

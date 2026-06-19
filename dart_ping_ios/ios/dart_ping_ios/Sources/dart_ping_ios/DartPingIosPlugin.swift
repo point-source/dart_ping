@@ -11,7 +11,9 @@
 //  - EventChannel `dart_ping_ios/events`: a single shared broadcast stream;
 //    every engine event is forwarded to the one sink, tagged with its `id` and
 //    a `type`. The terminal `summary` removes the engine from the registry.
-//    Event payloads (besides `id`):
+//    Event payloads (besides `id`). NOTE: every `time` value is in MICROSECONDS
+//    (the Dart `fromMap` decodes `time` as `Duration(microseconds:)`), so
+//    sub-millisecond RTT resolution is preserved across the channel:
 //      response: `type:"response", seq, ttl, time, ip`
 //      error:    `type:"error", error:<message>` (+ `seq` when present, `ip`
 //                when the error came from an identified hop, e.g. TTL exceeded)
@@ -180,12 +182,12 @@ public class DartPingIosPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         let map: [String: Any]
 
         switch event {
-        case let .response(seq, ttl, timeMs, ip):
+        case let .response(seq, ttl, timeMicros, ip):
             var responseMap: [String: Any] = [
                 "id": id,
                 "type": "response",
                 "seq": seq,
-                "time": timeMs,
+                "time": timeMicros,
                 "ip": ip,
             ]
             // Include `ttl` only when the reply's hop limit is known. A v6 reply
@@ -204,13 +206,13 @@ public class DartPingIosPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             if let seq = seq { errorMap["seq"] = seq }
             if let ip = ip { errorMap["ip"] = ip }
             map = errorMap
-        case let .summary(transmitted, received, timeMs, errors):
+        case let .summary(transmitted, received, timeMicros, errors):
             map = [
                 "id": id,
                 "type": "summary",
                 "transmitted": transmitted,
                 "received": received,
-                "time": timeMs,
+                "time": timeMicros,
                 // Each error becomes {error:<message>, message:null}, matching
                 // the cross-platform PingSummary.errors shape.
                 "errors": errors.map { kind in
