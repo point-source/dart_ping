@@ -697,6 +697,75 @@ deserialized one vs. its original) could land in different hash buckets,
 silently breaking `Set`/`Map` membership. The fix is small and clearly
 correct, the kind of latent defect the §spec:code-audit pass targets.
 
+## CI gates pull requests to `develop` §spec:ci-develop
+*Status: not started*
+
+The repository follows a gitflow model: feature branches merge into a
+long-lived `develop` integration branch, and `develop` periodically merges
+into `main` to cut a release (§req:ci-develop-problem-statement). The CI
+gate (§spec:ci) previously triggered only on pull requests to `main`, which
+in a gitflow model is the wrong checkpoint — a feature branch could land on
+`develop` having never run the suite, so breakage accumulated on the
+integration branch unseen until the `develop`→`main` release PR finally ran
+CI: late, batched across many merges, and hard to attribute to the change
+that caused it. This section moves the gate earlier so `develop` stays
+releasable and a failure shows on the PR that introduced it.
+
+- When a pull request targets `develop`, the CI workflow shall trigger
+  automatically — no manual action — running the same job set a pull
+  request to `main` runs (§req:ci-develop-success-criteria).
+- The jobs run on a `develop` PR shall be at full parity with the `main`
+  gate: the core `dart_ping` suite on Linux, Windows and macOS; the
+  `dart_ping_ios` Dart suite on Linux; the Swift `RunnerTests` suite on
+  macOS; and the informational coverage report — with the same
+  deterministic, live-network-excluded behavior (`dart test -x live`) the
+  `main` gate has (§spec:ci, §req:ci-develop-constraints).
+- Parity shall be structural, not a maintained copy: `develop` and `main`
+  are two triggers on **one** workflow definition, so the two gates cannot
+  drift and there is a single place to change a job
+  (§req:ci-develop-quality-attributes).
+- When a change breaks a gating suite, the failure shall be visible as a
+  failed required check on the `develop` PR, attributable to that change
+  (§req:ci-develop-success-criteria).
+- `develop` shall be branch-protected like `main`: direct pushes are
+  rejected, and a PR into `develop` cannot merge until its required checks
+  are green. This protection is a GitHub repository setting outside the
+  workflow file but is part of this section's done state
+  (§req:ci-develop-constraints).
+- Adding the `develop` trigger shall leave the `main` gate unchanged — PRs
+  to `main` continue to trigger and gate exactly as before, and `main`'s
+  protection is untouched (§req:ci-develop-success-criteria).
+- The manual `workflow_dispatch` path shall remain available
+  (§req:ci-develop-priorities, nice-to-have).
+- No lighter or faster subset gate, coverage-threshold enforcement, or
+  change to which tests are live-excluded shall be introduced
+  (§req:ci-develop-priorities, out of scope).
+
+**Why full parity rather than a lighter fast gate:** "green on `develop`"
+must mean the same thing as "green on `main`," so the `develop`→`main`
+release PR is predictable — green because everything merged into `develop`
+was already green, not a batched red the maintainer has to bisect
+(§req:ci-develop-user-stories). A divergent reduced gate would let a class
+of failure reach the release PR unguarded, defeating the purpose. Running
+the full matrix on both `develop` PRs and the later release PR is an
+accepted cost; runner minutes are not a constraint here
+(§req:ci-develop-quality-attributes).
+
+**Why one workflow with two branch targets rather than a second pipeline:**
+a copied workflow drifts — a job fixed on one path silently rots on the
+other — and the determinism guarantee of §spec:ci is inherited only if the
+`develop` gate *is* that same definition. Extending the existing
+`pull_request.branches` list keeps one source of truth and inherits the
+live-network exclusion by construction rather than by duplicated
+configuration (§req:ci-develop-constraints).
+
+**Why branch protection is in scope despite living in repo settings:** the
+problem is not just "checks run" but "nothing lands on `develop` without
+them." Triggering CI without protecting the branch would still let a red or
+unchecked change merge, leaving the integration branch unguarded — so the
+protection setting, though configured outside `.github/workflows/ci.yml`, is
+part of "done" for this capability (§req:ci-develop-problem-statement).
+
 ---
 
 # IPv6 / address-family error clarity
