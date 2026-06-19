@@ -2474,7 +2474,7 @@ Flutter 3.38 or later, where build hooks and code assets are stable. Raising
 §spec:sdk-floor) rises to ≥3.10 as part of 10.0.0.
 
 ## iOS talks to the engine over `dart:ffi` §spec:ios-ffi-binding
-*Status: not started*
+*Status: implemented (Batch #28-2) — the iOS Dart↔Swift seam moved from `MethodChannel`/`EventChannel` to `dart:ffi` over the `dart_ping_ffi` code asset. `dart_ping/lib/src/ping/ios/dart_ping_bindings.dart` binds `dart_ping_start`/`dart_ping_stop` (`@Native`, assetId `package:dart_ping/dart_ping_ffi`) and the flat `dart_ping_event` struct; per-probe events stream back through a `NativeCallable.listener` delivered to the owning isolate's event loop. Each `IosPing` (`lib/src/ping/ios/ios_ping.dart`) owns its own native handle + callback — no shared broadcast stream, no run-`id` demux (§spec:concurrent-isolation). The FFI start call carries the full run config (host, count, interval, timeout, ttl, `ipVersion`→family, `nat64Synthesis`), so NAT64 IPv4-literal synthesis is preserved across the seam (§spec:nat64-literal-synthesis). Native events map to the sealed `PingResponse`/`PingError`/`PingSummary` via `lib/src/ping/ios/ios_event_mapper.dart`, reusing the core `RoundTripStatsAccumulator` so iOS stats match the other platforms by construction (§spec:stats-cross-platform / §spec:stats-ios); RTTs cross the seam in microseconds (§spec:stats-precision). The event payload is heap-allocated by the `@_cdecl` shim and freed by the Dart receiver via the new `dart_ping_free_event` entry point, making the async `.listener` delivery memory-safe. iOS is still obtained via the `register()`/`iosFactory` seam (`package:dart_ping/dart_ping_ios_ffi.dart` → `registerDartPingIosFfi()`); its removal and `dart_ping_ios` retirement are #28-3. Dart-side bindings, mapping/accumulator, and `Ping` construction are covered by network-free `dart test` (`test/ios_bindings_test.dart`, `test/ios_event_mapper_test.dart`, `test/ios_ping_test.dart`, `test/ios_registrar_test.dart`). The Swift shim heap-transfer change and live ICMP are hand-verified on macOS / a real iOS target — not compilable on the Linux CI host (§spec:ci, §spec:ios-tests).*
 
 On iOS the Dart layer drives the native engine over `dart:ffi`, not over a
 `MethodChannel` / `EventChannel`. Starting a run is a foreign-function call;
@@ -2535,7 +2535,7 @@ channel's automatic codec. Accepted: the ABI surface is small (start / stop /
 one event callback) and is the prerequisite for both fixes.
 
 ## iOS ping works from any isolate §spec:ios-background-isolate
-*Status: not started*
+*Status: implemented (Batch #28-2) — the iOS path no longer touches the Flutter binary messenger: events arrive over a `dart:ffi` `NativeCallable.listener` (§spec:ios-ffi-binding) that the engine's background thread invokes and that Dart delivers to the owning isolate's event loop, so a `Ping` constructed and listened from a non-root isolate runs without the `BackgroundIsolateBinaryMessenger ... is invalid` failure (closes #48). The per-instance asynchronous native callback settles §req:consolidation-open-decisions (FFI threading / isolate model). Verified on a real iOS target as part of the manual acceptance path — live ICMP and an iOS runtime are not reproducible on the Linux CI host (§spec:ci, §spec:ios-tests).*
 
 Running an iOS ping from a **secondary (background) isolate** produces
 per-probe responses and a terminal summary without throwing. The

@@ -88,6 +88,27 @@ Package consolidation (#28, §spec:ios-code-asset-build-hook):
   floor. `hooks` and `code_assets` are added as **pure-Dart** dependencies —
   they do **not** pull the `flutter` SDK into `dart_ping`'s dependency graph,
   preserving the pure-Dart gate (§spec:pure-dart-preserved).
+- iOS now talks to the native engine over `dart:ffi` (the bundled
+  `dart_ping_ffi` code asset) instead of Flutter's `MethodChannel` /
+  `EventChannel` (§spec:ios-ffi-binding). The observable contract is
+  unchanged: `Ping`, `PingResponse`, `PingError`, and `PingSummary` keep the
+  same shapes, the same event order, and the same terminal summary.
+- Each iOS `Ping` owns its own native run handle and `NativeCallable`
+  callback — there is no shared broadcast stream and no run-id demux, so
+  concurrent pings to distinct hosts cannot cross-contaminate
+  (§spec:concurrent-isolation).
+- The full run config (including `ipVersion` and `nat64Synthesis`) crosses
+  the FFI seam, so iOS NAT64 IPv4-literal synthesis is preserved; microsecond
+  RTT precision and the shared-core stats accumulator (so iOS stats match the
+  other platforms by construction) are unchanged.
+- iOS ping now works from background isolates: the
+  `BackgroundIsolateBinaryMessenger ... is invalid` failure (#48) is gone
+  because the path no longer uses the Flutter binary messenger
+  (§spec:ios-background-isolate).
+- During the transition, enable iOS by calling `registerDartPingIosFfi()`
+  from `package:dart_ping/dart_ping_ios_ffi.dart` (this replaces
+  `DartPingIOS.register()`). The registration step and the separate
+  `dart_ping_ios` package are removed in a later change.
 
 ## 9.2.0
 
