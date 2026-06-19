@@ -1343,7 +1343,7 @@ of that major, rather than each earlier area preserving the old shape
 (§req:stats-constraints).
 
 ## Sealed ping-event stream §spec:stats-event-model
-*Status: not started*
+*Status: implemented (dart_ping 10.0.0) — the nullable `PingData` envelope is replaced by a `sealed class PingEvent` with three `final` subtypes: `PingResponse` (successful probe), `PingError` (probe/run error, now also carrying optional `seq`/`ip` so a self-identifying timeout/TTL probe stays a single event), and the terminal `PingSummary`. Each variant writes a `'type'` discriminator so `PingEvent.fromMap`/`fromJson` reconstruct the right subtype; the three files are a part/part-of library rooted at `ping_event.dart`. The stream (`Ping.stream`, `BasePing`, the parser transformer) is now `Stream<PingEvent>`, consumers branch with an exhaustive `switch`, and the summary is identifiable by type alone (`is PingSummary`) as the final event. Covered by network-free `dart test` cases in `dart_ping/test/{model_test,serialization_test,parse_test,stats_event_test}.dart`.*
 
 A `Ping` instance's stream emits a **sealed `PingEvent`** union with three
 explicit variants — a probe response, a probe error, and a terminal run
@@ -1401,7 +1401,7 @@ ambiguity; it is paid once, inside a release that already forces a
 migration, and the result is code the compiler checks for completeness.
 
 ## Round-trip statistics value object §spec:stats-round-trip
-*Status: not started*
+*Status: implemented (dart_ping 10.0.0) — a single immutable `RoundTripStats` value object in `dart_ping/lib/src/models/round_trip_stats.dart` carries min/avg/max/**population** stddev/jitter plus the successful-`sampleCount`, computed incrementally by `RoundTripStatsAccumulator` so the batch (`RoundTripStats.fromSamples`) and one-at-a-time paths are identical. Honors the null/absent contract (0 samples → all figures null; 1 sample → stddev `Duration.zero`, jitter null; ≥2 → all present) and serializes Durations in microseconds to preserve sub-millisecond precision. Covered by network-free `dart test` cases in `dart_ping/test/round_trip_stats_test.dart`.*
 
 A single reusable value object — `RoundTripStats` — carries the round-trip
 figures: **minimum, average, maximum, standard deviation, jitter**, and the
@@ -1459,7 +1459,7 @@ explicitly (§req:stats-success-criteria, §req:stats-user-stories — the
 zero-reply story).
 
 ## Run summary reports the full statistic set §spec:stats-summary
-*Status: not started*
+*Status: implemented (dart_ping 10.0.0) — `PingSummary` gains a `RoundTripStats? stats` field (the run's round-trip figures) and a DERIVED `packetLoss` getter computed on read from `transmitted`/`received` (never stored, so it cannot drift; a run that transmitted nothing or received nothing reports 100% loss). `stats`/`packetLoss` participate in `copyWith`/`==`/`hashCode`/`toString`/`toMap`/`fromMap`. The round-trip figures come from the per-probe reply times accumulated during the run, so a zero-reply run carries the empty snapshot (figures absent, not fabricated zeros). Covered by network-free `dart test` cases in `dart_ping/test/{model_test,stats_event_test,serialization_test}.dart`.*
 
 The terminal run-summary event reports the complete statistic set: the
 round-trip `RoundTripStats` (§spec:stats-round-trip), a **packet-loss
@@ -1533,7 +1533,7 @@ end-of-run signal (§spec:stats-event-model) — it is the concrete reason the
 event model is redesigned rather than extended.
 
 ## Statistics computed uniformly across platforms §spec:stats-cross-platform
-*Status: not started*
+*Status: implemented for the subprocess platforms (dart_ping 10.0.0; iOS lands in its own batch — §spec:stats-ios) — `BasePing` feeds every successful probe's RTT into a single `RoundTripStatsAccumulator` and, at `_cleanup`, builds the terminal summary's `RoundTripStats` from that per-probe accumulation rather than from any native `ping` stats line (the native min/avg/max/stddev line is not parsed). Because the same accumulator code runs on Linux/Android, macOS, and Windows, every subprocess platform reports the identical figure set — including a computed standard deviation on Windows, whose native `ping` does not emit one. Covered by network-free `dart test` cases in `dart_ping/test/stats_event_test.dart` (per-probe → populated stats incl. non-null stddev, and the end-to-end BasePing path via a fake process).*
 
 The round-trip statistics are computed once, at the Dart boundary, from the
 **per-probe round-trip times the platform measured** — the same algorithm
