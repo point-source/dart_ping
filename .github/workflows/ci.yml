@@ -1,11 +1,12 @@
 name: CI
 
-# Runs on pull requests targeting main. `main` is protected and cannot be
-# pushed to directly, so every change lands through a PR that these checks
-# gate. workflow_dispatch allows a manual run from the Actions tab.
+# Runs on pull requests targeting main and develop. Both branches are
+# protected and cannot be pushed to directly, so every change lands through a
+# PR that these checks gate. workflow_dispatch allows a manual run from the
+# Actions tab.
 on:
   pull_request:
-    branches: [main]
+    branches: [main, develop]
   workflow_dispatch:
 
 concurrency:

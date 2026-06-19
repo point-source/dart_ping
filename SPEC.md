@@ -1,38 +1,38 @@
 # Specification
 
-This document covers eight areas, matching REQUIREMENTS.md:
+This document covers the following areas, matching REQUIREMENTS.md:
 
-1. **iOS SPM migration (#73)** — `§spec:swift-icmp-engine` …
-   `§spec:ios-tests` below (implemented).
-2. **Maintenance & modernization refresh** — the `§spec:dependency-currency`
-   … `§spec:code-audit` sections (complete).
-3. **`base_ping` stream lifecycle robustness (#76)** —
-   `§spec:stream-lifecycle-robustness` (implemented). A focused
-   follow-up to two hang paths deferred from `§spec:code-audit`.
-4. **Continuous integration & coverage expansion (#74, #77)** — the
-   `§spec:ci` … `§spec:coverage-expansion` sections (implemented). This is
-   new work *beyond* the refresh's "fill gaps only" scope, which had
-   deliberately excluded CI (§spec:test-coverage).
-5. **IPv6 / address-family error clarity (#69)** — the
-   `§spec:ipv6-address-family-selector` …
-   `§spec:address-family-error-tests` sections (implemented). A
-   correctness-of-errors fix so address-family and routing failures stop
-   masquerading as "Unknown Host" on IPv6-enabled networks.
-6. **Interface selection (#72)** — `§spec:interface-selection` …
-   `§spec:interface-listing` at the very end (not started). An optional way
-   to pin pings to a chosen network interface or source address on the
-   subprocess platforms, with a helper to enumerate the host's interfaces.
-   Additive on top of the existing `Ping` API.
-7. **Concurrent-ping isolation (#70)** — `§spec:concurrent-isolation`
-   at the very end (implemented). A reported cross-contamination defect
-   between simultaneously-running `Ping` instances.
-8. **Summary statistics (#63)** — the `§spec:stats-event-model` …
-   `§spec:stats-tests` sections at the very end (not started). Surfaces
-   round-trip min / avg / max / stddev, jitter, and packet-loss — in the run
-   summary and live during a run, with iOS parity — via a from-scratch
-   redesign of the stream's event/data classes, folded into the unreleased
-   breaking `dart_ping` 10.0.0 / `dart_ping_ios` 6.0.0 majors. **Supersedes
-   the API-stability promises of areas 1–7.**
+- **iOS SPM migration (#73)** — `§spec:swift-icmp-engine` …
+  `§spec:ios-tests` below (implemented).
+- **Maintenance & modernization refresh** — the `§spec:dependency-currency`
+  … `§spec:code-audit` sections (complete).
+- **`base_ping` stream lifecycle robustness (#76)** —
+  `§spec:stream-lifecycle-robustness` (implemented). A focused
+  follow-up to two hang paths deferred from `§spec:code-audit`.
+- **Continuous integration & coverage expansion (#74, #77)** — the
+  `§spec:ci` … `§spec:coverage-expansion` sections (implemented). This is
+  new work *beyond* the refresh's "fill gaps only" scope, which had
+  deliberately excluded CI (§spec:test-coverage).
+- **IPv6 / address-family error clarity (#69)** — the
+  `§spec:ipv6-address-family-selector` …
+  `§spec:address-family-error-tests` sections (implemented). A
+  correctness-of-errors fix so address-family and routing failures stop
+  masquerading as "Unknown Host" on IPv6-enabled networks.
+- **Interface selection (#72)** — `§spec:interface-selection` …
+  `§spec:interface-listing` at the very end (not started). An optional way
+  to pin pings to a chosen network interface or source address on the
+  subprocess platforms, with a helper to enumerate the host's interfaces.
+  Additive on top of the existing `Ping` API.
+- **Concurrent-ping isolation (#70)** — `§spec:concurrent-isolation`
+  at the very end (implemented). A reported cross-contamination defect
+  between simultaneously-running `Ping` instances.
+- **Summary statistics (#63)** — the `§spec:stats-event-model` …
+  `§spec:stats-tests` sections at the very end (not started). Surfaces
+  round-trip min / avg / max / stddev, jitter, and packet-loss — in the run
+  summary and live during a run, with iOS parity — via a from-scratch
+  redesign of the stream's event/data classes, folded into the unreleased
+  breaking `dart_ping` 10.0.0 / `dart_ping_ios` 6.0.0 majors. **Supersedes
+  the API-stability promises of the preceding areas.**
 
 Solution-space design for issue #73 — native, Swift Package Manager
 (SPM)-compatible iOS support for `dart_ping`.
@@ -696,6 +696,75 @@ identity hash for `hashCode`, so two value-equal summaries (e.g. a
 deserialized one vs. its original) could land in different hash buckets,
 silently breaking `Set`/`Map` membership. The fix is small and clearly
 correct, the kind of latent defect the §spec:code-audit pass targets.
+
+## CI gates pull requests to `develop` §spec:ci-develop
+*Status: implemented*
+
+The repository follows a gitflow model: feature branches merge into a
+long-lived `develop` integration branch, and `develop` periodically merges
+into `main` to cut a release (§req:ci-develop-problem-statement). The CI
+gate (§spec:ci) previously triggered only on pull requests to `main`, which
+in a gitflow model is the wrong checkpoint — a feature branch could land on
+`develop` having never run the suite, so breakage accumulated on the
+integration branch unseen until the `develop`→`main` release PR finally ran
+CI: late, batched across many merges, and hard to attribute to the change
+that caused it. This section moves the gate earlier so `develop` stays
+releasable and a failure shows on the PR that introduced it.
+
+- When a pull request targets `develop`, the CI workflow shall trigger
+  automatically — no manual action — running the same job set a pull
+  request to `main` runs (§req:ci-develop-success-criteria).
+- The jobs run on a `develop` PR shall be at full parity with the `main`
+  gate: the core `dart_ping` suite on Linux, Windows and macOS; the
+  `dart_ping_ios` Dart suite on Linux; the Swift `RunnerTests` suite on
+  macOS; and the informational coverage report — with the same
+  deterministic, live-network-excluded behavior (`dart test -x live`) the
+  `main` gate has (§spec:ci, §req:ci-develop-constraints).
+- Parity shall be structural, not a maintained copy: `develop` and `main`
+  are two triggers on **one** workflow definition, so the two gates cannot
+  drift and there is a single place to change a job
+  (§req:ci-develop-quality-attributes).
+- When a change breaks a gating suite, the failure shall be visible as a
+  failed required check on the `develop` PR, attributable to that change
+  (§req:ci-develop-success-criteria).
+- `develop` shall be branch-protected like `main`: direct pushes are
+  rejected, and a PR into `develop` cannot merge until its required checks
+  are green. This protection is a GitHub repository setting outside the
+  workflow file but is part of this section's done state
+  (§req:ci-develop-constraints).
+- Adding the `develop` trigger shall leave the `main` gate unchanged — PRs
+  to `main` continue to trigger and gate exactly as before, and `main`'s
+  protection is untouched (§req:ci-develop-success-criteria).
+- The manual `workflow_dispatch` path shall remain available
+  (§req:ci-develop-priorities, nice-to-have).
+- No lighter or faster subset gate, coverage-threshold enforcement, or
+  change to which tests are live-excluded shall be introduced
+  (§req:ci-develop-priorities, out of scope).
+
+**Why full parity rather than a lighter fast gate:** "green on `develop`"
+must mean the same thing as "green on `main`," so the `develop`→`main`
+release PR is predictable — green because everything merged into `develop`
+was already green, not a batched red the maintainer has to bisect
+(§req:ci-develop-user-stories). A divergent reduced gate would let a class
+of failure reach the release PR unguarded, defeating the purpose. Running
+the full matrix on both `develop` PRs and the later release PR is an
+accepted cost; runner minutes are not a constraint here
+(§req:ci-develop-quality-attributes).
+
+**Why one workflow with two branch targets rather than a second pipeline:**
+a copied workflow drifts — a job fixed on one path silently rots on the
+other — and the determinism guarantee of §spec:ci is inherited only if the
+`develop` gate *is* that same definition. Extending the existing
+`pull_request.branches` list keeps one source of truth and inherits the
+live-network exclusion by construction rather than by duplicated
+configuration (§req:ci-develop-constraints).
+
+**Why branch protection is in scope despite living in repo settings:** the
+problem is not just "checks run" but "nothing lands on `develop` without
+them." Triggering CI without protecting the branch would still let a red or
+unchecked change merge, leaving the integration branch unguarded — so the
+protection setting, though configured outside `.github/workflows/ci.yml`, is
+part of "done" for this capability (§req:ci-develop-problem-statement).
 
 ---
 
@@ -2065,3 +2134,122 @@ resolver outcome in → synthesized-send or typed-error out) — while the
 end-to-end reachability is verified by hand on an affected device, mirroring
 the suite's established deterministic-seam principle (§spec:ci,
 §spec:ios-tests).
+
+---
+
+# Windows interface-listing round-trip contract
+
+Solution-space design for issue #85 (`§req:windows-roundtrip-*`). A
+clarification of the interface work (#72, `§spec:interface-selection` …
+`§spec:interface-listing`), not a new capability. The listing helper
+(§spec:interface-listing) promises that what it returns "feeds straight back
+into a `Ping`'s `interface` value." A round-trip test encoded a *stronger*
+reading of that promise than the package ever offered — that *every listed
+interface's name* constructs a `Ping` without throwing on *every* platform —
+which the package contradicts on Windows by design (§spec:interface-platform-rejection:
+a bare name is rejected because Windows `ping` binds only by source address).
+
+The contradiction was invisible while the round-trip ran only on hosts whose
+`NetworkInterface.list()` happened to report addresses, and while the gate
+ran the core suite only where the assumption held. Once the cross-OS matrix
+(§spec:ci) ran the core suite on a real Windows runner — which reports a
+named NIC (e.g. `"Ethernet 3"`) — the test fed that name into a Windows
+`Ping`, the constructor correctly threw `UnimplementedError`, and the
+Windows check went red (`195 passed, 1 failed`). The defect is in the test's
+*expectation*, not in Windows behavior: Windows was doing exactly what
+§spec:interface-platform-rejection specifies. This area makes the
+listing↔selection round-trip contract honest per platform and proves it on a
+real Windows host, with no change to any platform's runtime behavior.
+
+## Per-platform round-trip honesty §spec:windows-roundtrip-contract
+*Status: implemented (Batch #85-1) — the round-trip test `dart_ping/test/interface_listing_test.dart` ("each interface has the right shape and round-trips into Ping") now branches the listed-**name** expectation on the platform's binding ability (`Platform.isWindows`): a name round-trips (`returnsNormally`) on name-binding platforms (Linux/Android, macOS) and is expected to throw the catchable `UnimplementedError` on Windows (which `PingWindows` raises at construction), while a listed source **address** round-trips (`returnsNormally`) on every desktop platform. The expectation no longer depends on which names/addresses a runner reports, so it is deterministic on any host and the `core (windows-latest)` job goes green alongside Linux and macOS. The listing helper's dartdoc, the README "Selecting a network interface" section, and the CHANGELOG note that on Windows a listed interface is passed back as its source address, not its name. No runtime, command, stream, or public-API change on any platform. Covered by network-free `dart test` (the full core suite passes `-x live`, 196 tests).*
+
+The handle a developer carries from `listNetworkInterfaces()` back into a
+`Ping(interface: …)` round-trips per the platform's actual binding ability:
+a listed interface's **source address** constructs a `Ping` without throwing
+on every supported desktop platform; a listed interface's **name** does so
+only where the OS `ping` binds by name (Linux/Android, macOS). On Windows a
+listed **name** is rejected with the catchable error already specified, and a
+listed **address** is accepted. Nothing about Windows runtime behavior
+changes — only the contract's wording and the test that asserts it.
+
+- A listed interface's source **address** shall round-trip — feed back into
+  `Ping('…', interface: addr)` and construct without throwing — on **every**
+  supported desktop platform (Linux/Android, macOS, Windows), because every
+  platform's `ping` can bind a source address (§req:windows-roundtrip-success-criteria
+  — round-trip honest per platform; §spec:interface-selection).
+- A listed interface's **name** shall round-trip the same way **only** on the
+  platforms whose `ping` binds by name (Linux/Android, macOS). On **Windows**,
+  passing a listed name shall be rejected by the same explicit, catchable
+  `UnimplementedError` specified in §spec:interface-platform-rejection —
+  Windows `ping` binds only by source address — never a silent default-route
+  ping (§req:windows-roundtrip-success-criteria — round-trip honest per
+  platform; §req:windows-roundtrip-constraints — Windows keeps rejecting bare
+  names).
+- Windows runtime behavior shall be unchanged: source-address selection still
+  binds, a bare name is still rejected loudly, and no other platform's
+  command, stream behavior, or public API changes. Only the contract and the
+  test expectation move (§req:windows-roundtrip-success-criteria — Windows
+  runtime unchanged; §req:windows-roundtrip-constraints — no new public API,
+  no behavior change; §spec:public-api-stability).
+- The round-trip shall be verified by automated tests that pass on a real
+  Windows host and whose pass/fail does **not** depend on which interface
+  names or addresses a particular runner reports. The expectation branches on
+  the platform's binding ability (name-binding vs. address-only), not on the
+  contents of the host's NIC list, so it is deterministic on any runner
+  (§req:windows-roundtrip-success-criteria — deterministic across runners;
+  §req:windows-roundtrip-quality-attributes — determinism, testability).
+- With the expectation corrected, the `core (windows-latest)` job shall pass,
+  so the cross-OS gate (§spec:ci) is green on Linux, Windows, and macOS
+  together and merges are no longer blocked by a test asserting behavior the
+  package intentionally does not have (§req:windows-roundtrip-success-criteria
+  — Windows core CI check passes; §req:windows-roundtrip-user-stories —
+  maintainer).
+- As a nice-to-have, the listing helper's documentation shall note that on
+  Windows a listed interface is passed back as its **source address**, not
+  its name, so the per-platform contract is discoverable at the point of use
+  (§req:windows-roundtrip-priorities — nice-to-have; §spec:interface-listing).
+
+**Why correct the expectation rather than make Windows accept names:** the
+package deliberately rejects a bare interface name on Windows
+(§spec:interface-platform-rejection) because the OS `ping` binds only by
+source address; silently approximating it would defeat the diagnostic the
+interface feature exists for (§spec:interface-selection). The test, not the
+package, was wrong — it asserted a guarantee §spec:interface-listing never
+made (the helper's normative contract is only that what it returns "can be
+fed back into `interface`," which the **address** satisfies everywhere, not
+that the **name** binds everywhere). A red required check that flags correct
+behavior trains maintainers to distrust the gate (§spec:ci — a required
+check must be reliable), so the honest fix is to align the expectation with
+the specified per-platform behavior.
+
+**Why the source address is the universal round-trip handle:** every
+platform's `ping` can bind a source address, while only some bind by name;
+choosing the address as the cross-platform handle is the one form that makes
+"pass one back into a `Ping`" true everywhere without per-platform branching
+at the call site (§req:windows-roundtrip-constraints — decided in discovery).
+
+**Why branch the test on binding ability, not on the host's NIC list:** the
+original failure was runner-dependent — it surfaced only because the Windows
+runner reported a named NIC. Keying the expectation off the platform's
+documented binding ability (does this `ping` bind by name?) rather than off
+whatever names/addresses `NetworkInterface.list()` returns makes the check
+reproducible on any runner and prevents the same contradiction from silently
+returning (§req:windows-roundtrip-quality-attributes — determinism,
+testability).
+
+**Alternative rejected — resolve a Windows interface name to its source
+address so names round-trip everywhere:** explicitly out of scope
+(§req:windows-roundtrip-constraints). It would add a per-platform
+name→address resolution surface — the kind of OS-specific text/lookup logic
+§spec:interface-listing deliberately avoided by building on `dart:io` — to
+paper over a difference the contract can simply state honestly. The cheaper,
+truthful design is to document that Windows round-trips by address.
+
+**Scope boundary:** this refines the interface contract and its tests only.
+The separate Windows IPv6 gap (#71) is not in scope, and no change is made to
+Linux/Android or macOS behavior. Traceability: surfaced by #85 (the CI work
+that ran the core suite on a Windows host), relating to the cross-OS matrix
+(#77, §spec:ci) and interface selection (#72,
+§spec:interface-selection / §spec:interface-platform-rejection /
+§spec:interface-listing).
