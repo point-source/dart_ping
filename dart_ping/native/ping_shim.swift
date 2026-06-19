@@ -99,11 +99,14 @@ private func deliver(_ event: PingEngine.Event,
         codes.withUnsafeBufferPointer { buf in
             var ev = dart_ping_event()
             ev.kind = DART_PING_EVENT_SUMMARY
-            ev.transmitted = Int32(transmitted)
-            ev.received = Int32(received)
+            // Counts are realistically tiny, but use a non-trapping narrowing so an
+            // extreme run can never crash the consuming app via an Int32 overflow
+            // trap (security review #28-1). Int32 cannot hold > ~2.1B regardless.
+            ev.transmitted = Int32(truncatingIfNeeded: transmitted)
+            ev.received = Int32(truncatingIfNeeded: received)
             ev.time_micros = Int64(timeMicros)
             ev.errors = buf.baseAddress
-            ev.errors_len = Int32(buf.count)
+            ev.errors_len = Int32(truncatingIfNeeded: buf.count)
             callback(context, &ev)
         }
     }
