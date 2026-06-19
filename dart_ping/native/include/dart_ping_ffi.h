@@ -27,8 +27,6 @@
 #ifndef DART_PING_FFI_H
 #define DART_PING_FFI_H
 
-#pragma once
-
 #include <stdint.h>
 #include <stdbool.h>
 

@@ -53,14 +53,14 @@ Future<void> _buildIosCodeAsset(
 ) async {
   final code = input.config.code;
   final iosConfig = code.iOS;
-  final targetSdk = iosConfig.targetSdk; // device vs simulator
   final minVersion = iosConfig.targetVersion; // minimum iOS deployment version
   final architecture = code.targetArchitecture;
 
+  // Device vs simulator drives both the SDK name and the triple's environment
+  // suffix; derive it once so the two cannot drift apart.
+  final isSimulator = iosConfig.targetSdk == IOSSdk.iPhoneSimulator;
   // The SDK name `xcrun` understands ("iphoneos" / "iphonesimulator").
-  final sdkName = targetSdk == IOSSdk.iPhoneSimulator
-      ? 'iphonesimulator'
-      : 'iphoneos';
+  final sdkName = isSimulator ? 'iphonesimulator' : 'iphoneos';
 
   // Resolve the SDK sysroot. `xcrun` is the iOS-toolchain entry point and is
   // absent on non-macOS hosts — but this branch only runs for an iOS target,
@@ -81,7 +81,7 @@ Future<void> _buildIosCodeAsset(
   };
 
   // A simulator slice uses the `-simulator` environment in the target triple.
-  final envSuffix = targetSdk == IOSSdk.iPhoneSimulator ? '-simulator' : '';
+  final envSuffix = isSimulator ? '-simulator' : '';
   final targetTriple = '$archName-apple-ios$minVersion$envSuffix';
 
   final nativeDir = input.packageRoot.resolve('native/');
@@ -129,22 +129,18 @@ Future<void> _buildIosCodeAsset(
   );
 
   // Re-run the hook when the native sources or the ABI header change.
-  output.dependencies.add(header);
-  for (final source in sources) {
-    output.dependencies.add(source);
-  }
+  output.dependencies.addAll([header, ...sources]);
 }
 
 /// Runs [executable] with [arguments], throwing with captured stderr on failure.
 Future<String> _run(String executable, List<String> arguments) async {
   final result = await Process.run(executable, arguments);
   if (result.exitCode != 0) {
+    final stderr = (result.stderr as String?)?.trim() ?? '';
     throw ProcessException(
       executable,
       arguments,
-      (result.stderr as String?)?.trim().isNotEmpty == true
-          ? result.stderr as String
-          : 'exited with ${result.exitCode}',
+      stderr.isNotEmpty ? stderr : 'exited with ${result.exitCode}',
       result.exitCode,
     );
   }

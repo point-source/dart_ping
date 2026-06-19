@@ -16,13 +16,9 @@ import '../hook/gating.dart';
 
 void main() {
   group('shouldBuildIosAsset', () {
-    test('builds only for an iOS target that requested code assets', () {
-      expect(
-        shouldBuildIosAsset(buildCodeAssets: true, targetOS: OS.iOS),
-        isTrue,
-      );
-    });
-
+    // The iOS-builds / non-iOS-never-builds matrix is asserted exhaustively by
+    // the 'covers every known OS' case below; the cases here add clearer failure
+    // messages for the common platforms and the no-code-assets short-circuit.
     test('never builds for a non-iOS target (the pure-Dart platforms)', () {
       for (final os in [
         OS.linux,
