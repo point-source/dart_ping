@@ -80,6 +80,15 @@ Interface round-trip clarification (#85, §spec:windows-roundtrip-contract):
   by source address on Windows — a bare interface name is rejected there —
   while the address form round-trips on every platform. No behavior change.
 
+Package consolidation (#28, §spec:ios-code-asset-build-hook):
+
+- The minimum Dart SDK floor is raised to **≥3.10 (Flutter 3.38)**. The
+  consolidation work compiles the native iOS engine into a `dart:ffi` code
+  asset via a build hook, and build hooks / code assets are stable from that
+  floor. `hooks` and `code_assets` are added as **pure-Dart** dependencies —
+  they do **not** pull the `flutter` SDK into `dart_ping`'s dependency graph,
+  preserving the pure-Dart gate (§spec:pure-dart-preserved).
+
 ## 9.2.0
 
 - Add an optional `interface` selection to the `Ping` factory and the platform constructors (#72). Pass either a network interface name (e.g. `eth0`) or a local source IP address (e.g. `192.168.1.5`) to bind the ping to a specific interface or source address.

@@ -39,6 +39,8 @@
   This batch wires the option through at the bridge level; the live native
   synthesis (the engine acting on the flag) is completed in the follow-on
   batch. Requires `dart_ping` ^10.0.0.
+- The minimum Dart SDK floor is raised to **≥3.10** to align with the
+  package-consolidation train (#28).
 
 ## 5.1.0
 
