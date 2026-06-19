@@ -2407,6 +2407,27 @@ the two packages as they are today (§req:consolidation-priorities — the gate
 overrides consolidation). The order is deliberate: a language re-port is a
 smaller retreat than abandoning consolidation, so it is tried first.
 
+**Why hand-write the C-ABI shim rather than generate Swift bindings:** the
+compile step (Layer A — cross-compile Swift to an iOS code asset) and the
+binding step (Layer B — how Dart calls the native symbols) are separate
+problems, and only Layer B has a codegen alternative. There is no first-party
+`native_toolchain_swift`, so *something* must hand-invoke `swiftc`/`xcrun` in
+the hook regardless — the binding generators do not remove that step. For
+Layer B, `dart-lang/native`'s `swift2objc` / `swiftgen` (+ `ffigen`) can
+generate Dart bindings from `@objc`-annotated Swift via generated Objective-C
+headers, replacing the hand-written `@_cdecl` shim. This is **considered and
+not adopted** for this package: the native surface is three entry points
+(`start` / `stop` / one event callback), so generated bindings save little; the
+generators are experimental and would add the `objective_c` runtime bridge on
+the exact async-callback path that must stay valid from a background thread
+(§spec:ios-background-isolate); and a flat C function pointer driven by
+`dart:ffi` `NativeCallable.listen` is the cleanest carrier for that callback.
+The generator route would win only if the native API surface were large or
+needed to expose rich Swift types a flat-C shim cannot carry comfortably —
+neither holds here. So Layer A is hand-rolled `swiftc` (no alternative), and
+Layer B is a hand-written `@_cdecl` flat-C shim (chosen over swift2objc for this
+small surface).
+
 **Tradeoff:** `dart_ping` gains a build hook and a native source tree, raising
 its build complexity and its SDK floor (§spec:pure-dart-preserved owns the
 floor). This is accepted as the price of one package; the hook's target-gated
