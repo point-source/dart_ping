@@ -61,6 +61,18 @@ Sub-millisecond precision / serialization (#63, §spec:stats-precision):
   too small under 10.0.0 (a millisecond magnitude read as microseconds), so do
   not mix serialized round-trip values across the major boundary.
 
+NAT64/IPv6-only reachability (#52, §spec:nat64-option):
+
+- New default-on `nat64Synthesis` boolean on the `Ping` factory. On an
+  IPv6-only (NAT64/DNS64) network an IPv4 literal is otherwise unreachable;
+  enabling synthesis lets the platform reach it. The active behavior is
+  delivered on iOS by `dart_ping_ios` (its native engine synthesizes the
+  IPv6 path); on the subprocess platforms (Linux/Android, macOS, Windows) the
+  option is an inert no-op carried purely for cross-platform parity — it
+  leaves the spawned command and its parameters byte-for-byte unchanged and
+  never raises an error. Passing `nat64Synthesis: false` restores raw
+  pass-through (the family-pinned resolve, no synthesis).
+
 ## 9.2.0
 
 - Add an optional `interface` selection to the `Ping` factory and the platform constructors (#72). Pass either a network interface name (e.g. `eth0`) or a local source IP address (e.g. `192.168.1.5`) to bind the ping to a specific interface or source address.

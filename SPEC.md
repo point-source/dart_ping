@@ -1737,3 +1737,331 @@ discrimination out), so both are fully testable without a live network — the
 deterministic-seam principle the suite already follows (§spec:ci,
 §spec:coverage-expansion). Live ICMP round-trips remain the manual
 acceptance path; they are not where the statistics logic is verified.
+
+---
+
+# NAT64 / IPv6-only IP-literal reachability
+
+Solution-space design for issue #52 (`§req:nat64-*`): make pinging a bare
+IPv4 literal **succeed** on an IPv6-only cellular network, where it fails
+today, by reaching the target through the platform's own NAT64 address
+synthesis. The work is primarily in `dart_ping_ios` (the native Swift
+engine's resolve/send path) plus one new option on the shared `Ping`
+factory; it changes no result shape and no `IpVersion` semantics.
+
+The problem (from §req:nat64-problem-statement): on iOS over mobile data,
+pinging an IPv4 literal (e.g. `13.35.27.1`) fails outright, while the same
+literal works over Wi-Fi and a *hostname* works on the same cellular
+connection. The carrier runs an IPv6-only access network with NAT64/DNS64
+(464XLAT): a hostname is resolved by DNS64 to a synthesized IPv6 (NAT64)
+address that routes to the IPv4 host, but a raw IPv4 literal is handed to
+the stack with no synthesis and has no native IPv4 route. The tell that
+this is fixable, not a carrier wall: third-party ping apps and Apple's
+updated `SimplePing` reach the same literal on the same network once they
+feed it through the system resolver, which returns a synthesized address.
+
+This **revises the scope boundary of #69** (`§spec:address-family-error-honesty`,
+"scope boundary — honesty, not new capability"). #69 made the IPv4-literal
+failure's *error* honest (a typed `noRoute` instead of a phantom
+`unknownHost`) but treated the literal as having "legitimately no route."
+#52's evidence contradicts that premise — the route can be obtained via
+synthesis — so the deliverable here is the capability #69 declined to add:
+the ping actually works. Where synthesis cannot help, #69's honest typed
+error still stands; #52 sits **in front of** #69, not instead of it.
+
+**Why lean on the platform's synthesis rather than build our own:** the
+library does no DNS of its own (§req:nat64-constraints,
+§req:ipfamily-quality-attributes — thinness). The OS resolver already
+performs DNS64/NAT64 synthesis when not told to pin a family; Apple
+documents exactly this path in *"Supporting IPv6 DNS64/NAT64 Networks"*.
+The fix is therefore to stop suppressing synthesis on the literal path, not
+to add a NAT layer — keeping the engine thin and faithful to native
+behavior. A hand-rolled DNS64/NAT64 resolver was rejected: it would
+duplicate the platform stack, drift from carrier behavior, and violate the
+no-DNS constraint.
+
+## IPv4 literals reach IPv6-only networks via NAT64 synthesis §spec:nat64-literal-synthesis
+*Status: implemented (Batch #52-2) — the iOS Swift engine un-pins the resolve for
+the narrow IPv4-literal + synthesis-enabled + `IpVersion.ipv4` case only: it
+calls `getaddrinfo` with `AF_UNSPEC` and no `AI_NUMERICHOST` (gated by the pure
+`PingEngine.shouldSynthesize(family:nat64Synthesis:host:)`, which is true iff
+`nat64Synthesis && family == .v4 && isIPv4Literal(host)`), so the platform may
+return a synthesized NAT64 address on an IPv6-only network (and the plain IPv4
+address on Wi-Fi / dual-stack); it then sends ICMP/ICMPv6 to whichever TRANSPORT
+family the resolver returns while the caller-selected `IpVersion` is unchanged.
+When the resolver returns BOTH a synthesized IPv6 address and the original IPv4
+literal, the engine PREFERS the IPv6 (NAT64) address rather than committing to
+whichever entry `getaddrinfo` sorted first — the bare IPv4 literal has no route
+on an IPv6-only network, so first-entry selection could silently defeat the fix;
+this routable-family choice lives in the pure `PingEngine.synthesizedTransport(hasIPv4:hasIPv6:)`.
+Every other path keeps #69's byte-for-byte family-pinned resolve. The synthesis
+decision and the address-selection policy are offline-covered by the network-free
+`shouldSynthesize` / `isIPv4Literal` / `synthesizedTransport` XCTest cases in the
+example's `RunnerTests` (iOS + macOS targets); the Swift change is not compilable
+on the Linux CI host (hand-verified; macOS CI `xcodebuild test` compiles/runs it).
+The live IPv6-only-cellular reachability leg is an on-device acceptance step
+(§spec:nat64-tests).*
+
+On iOS, pinging an IPv4 literal on an IPv6-only (NAT64/DNS64) cellular
+network produces the **same observable result as pinging it over Wi-Fi** —
+replies with round-trip times and a normal summary — instead of failing
+outright. The library reaches the target through a platform-synthesized
+NAT64 address; the caller's selected family and the result shape are
+unchanged.
+
+- When NAT64 synthesis is enabled (§spec:nat64-option), the selected family
+  is `IpVersion.ipv4`, and the target is an **IPv4 literal**, the iOS engine
+  shall obtain the destination through the system resolver in a way that
+  lets the platform return a **synthesized NAT64 address** on an IPv6-only
+  network (and the plain IPv4 address on a dual-stack / Wi-Fi network), and
+  shall send ICMP/ICMPv6 echo probes to whichever address family the
+  resolver returns (§req:nat64-success-criteria — the literal pings
+  successfully; §req:nat64-problem-statement).
+- On a network where the IPv4 literal fails today, the consumer shall
+  receive responses, round-trip times, and a run summary equivalent to the
+  Wi-Fi result and to what third-party ping tools achieve on the same device
+  (§req:nat64-success-criteria — reachability parity;
+  §req:nat64-quality-attributes — reachability parity).
+- The caller's selected `IpVersion.ipv4` and the IPv4 literal it pinged
+  shall be unchanged by synthesis: that the host is reached via a synthesized
+  IPv6/NAT64 address underneath is an implementation detail and shall not
+  alter the result shape, the reported target, or the selected family
+  (§req:nat64-success-criteria — user-facing family unchanged;
+  §req:nat64-constraints — family selection unchanged).
+- A hostname ping (including a DNS64-synthesized one), a ping over Wi-Fi or
+  a dual-stack network, and an IPv4 literal that already routes shall behave
+  identically with synthesis enabled — synthesis changes only the
+  previously-unreachable IPv6-only-literal case
+  (§req:nat64-success-criteria — regression guard; §spec:ios-ping-behavior).
+
+**Why this scopes to an IPv4 literal under `IpVersion.ipv4`:** the reported
+failure is specific to a bare IPv4 literal — hostnames already get DNS64
+synthesis from the system resolver, an IPv6 literal needs none, and an
+`IpVersion.ipv6` selection is unaffected. Synthesis is therefore engaged
+only on the one path that is broken, leaving every working path untouched
+(§req:nat64-constraints — fallback ordering).
+
+**Why the engine sends to the resolver's returned family, relaxing #69's
+"never the other family" rule here:** #69 pins `ai_family` so a *hostname*
+never silently resolves to a family the caller did not select
+(§spec:address-family-error-honesty). For an IPv4 *literal* with synthesis
+enabled, reaching it via a synthesized IPv6/NAT64 address is not a silent
+family switch — it is NAT64 *transport* to the same IPv4 destination the
+caller named, and it is exactly what every other ping tool on the device
+does. The relaxation is deliberately narrow: IPv4 literal only, synthesis
+enabled only, and it changes the transport address, not the caller-selected
+`IpVersion`. Pinning the family on the literal path (the #69 behavior) is
+what suppresses synthesis and causes the failure; the opt-out
+(§spec:nat64-option) restores that pinned, raw-pass-through behavior for
+callers who want it. This narrow relaxation does not reopen #69's bug,
+whose signature was a *hostname* mislabeled and a routing failure reported
+as `unknownHost` — both still handled honestly here
+(§spec:nat64-error-fallback).
+
+**Why iOS is the primary (and only confirmed) target:** the failure is
+reported and reproducible on iOS over cellular, and Apple documents the
+synthesis path the engine owns. On the subprocess platforms the option is a
+documented no-op (§spec:nat64-option) — their native `ping` binaries do
+their own resolution, and Android's NAT64 handling (464XLAT/clatd) operates
+at the network layer below the binary. Extending active synthesis beyond
+iOS is a nice-to-have deferred to those platforms' own evidence
+(§req:nat64-priorities — nice-to-have; §req:nat64-open-decisions — platform
+reach).
+
+## NAT64 synthesis is an explicit, default-on option §spec:nat64-option
+*Status: implemented (Batch #52-1) — the `Ping` factory accepts a named
+`bool nat64Synthesis` defaulting to enabled, threaded through `BasePing` (a
+stored field) and sent to the iOS bridge over the method channel in the `start`
+invocation alongside `ipVersion`. On the subprocess platforms (Linux/Android,
+macOS, Windows) it is a documented no-op: the field is carried but unread, so
+`params`/`command` stay byte-for-byte identical and the option never raises an
+error, keeping a cross-platform call identical. dartdoc on the factory
+parameter describes what it does, the default, which platform synthesizes (iOS)
+vs. treats it as a no-op, and that disabling restores raw pass-through;
+CHANGELOG (dart_ping 10.0.0 / dart_ping_ios 6.0.0) and the root README document
+it. Covered by network-free tests (`dart_ping/test/nat64_option_test.dart` —
+presence/default/threading plus the `params`/`command` no-op guard — and the
+`dart_ping_ios` bridge `start`-argument assertions). The native engine acting on
+the flag (actual NAT64 synthesis) lands in Batch #52-2,
+§spec:nat64-literal-synthesis / §spec:nat64-error-fallback.*
+
+NAT64 / IPv6-only literal handling is controlled by a single named option
+on the `Ping` factory that is **enabled by default**, so an affected user's
+existing call starts working with no code change, and a caller can disable
+it to restore the prior raw-pass-through behavior.
+
+- The `Ping` factory shall accept a named, documented boolean option (e.g.
+  `nat64Synthesis`) that defaults to **enabled**, threaded to the iOS engine
+  the way `ipVersion` and `interface` already are
+  (§req:nat64-success-criteria — controlled by an explicit, default-on
+  option; §req:nat64-priorities — must-have).
+- With the option at its default, an affected caller's existing
+  IPv4-literal ping shall begin succeeding on an IPv6-only network with **no
+  source change**; with the option disabled, the engine shall use the prior
+  raw behavior (the family-pinned resolve of §spec:address-family-error-honesty,
+  no synthesis), reproducing the pre-#52 outcome
+  (§req:nat64-success-criteria — opt-out restores prior behavior;
+  §req:nat64-user-stories).
+- The option shall be present with the same name and default on every
+  platform; where a platform cannot synthesize, it shall be a documented
+  **no-op** rather than an error, so the cross-platform call stays identical
+  (§req:nat64-success-criteria — consistent presence and default;
+  §req:nat64-quality-attributes — cross-platform consistency;
+  §req:nat64-constraints — platform-dependent, gated by an explicit option).
+- The dartdoc shall describe what the option does, that it defaults to
+  enabled, which platforms actively synthesize (iOS) versus treat it as a
+  no-op, and that disabling it restores raw pass-through
+  (§req:nat64-priorities — high, documentation;
+  §req:nat64-quality-attributes — documented, not surprising).
+
+**Why default-on rather than opt-in:** the affected users cannot reproduce
+the failure on their own Wi-Fi or in the simulator, and the fix should reach
+their existing code without their having to discover and set a flag
+(§req:nat64-problem-statement — expensive to diagnose;
+§req:nat64-priorities — must-have). The behavior also matches user
+expectation — every other ping tool on the device already reaches the
+literal — so "works by default" is the least surprising default. The opt-out
+exists for callers who deliberately want raw pass-through (e.g. to observe
+the un-synthesized failure), preserving backward compatibility as a choice
+rather than the default (§req:nat64-quality-attributes — backward-compatible,
+default-on).
+
+**Why one boolean rather than a richer policy object:** the only decision a
+caller makes is "let the platform synthesize, or pass the literal raw," a
+binary choice; the per-platform capability difference is fixed by the
+platform, not configured. A boolean keeps the surface minimal and the
+default obvious (§req:nat64-constraints — option shape). A multi-valued
+"NAT64 mode" was rejected for the same reason `IpVersion` rejected an
+"auto/dual-stack" value (§spec:ipv6-address-family-selector): named modes
+imply behaviors the library does not offer.
+
+## Synthesis precedes the honest #69 error, and yields to it §spec:nat64-error-fallback
+*Status: implemented (Batch #52-2) — when synthesis cannot produce a routable
+address for the IPv4 literal, the engine surfaces #69's honest typed error:
+an address-family / no-route condition becomes `ErrorType.noRoute`, never a
+phantom `unknownHost` and never a silent hang, and `unknownHost` stays reserved
+for a genuine name miss. With synthesis disabled, or for a genuinely-unreachable
+target, the engine reproduces #69 exactly (the family-pinned resolve), and the
+synchronous literal-vs-family `ArgumentError` is untouched (it fires only on a
+contradicting literal, never on the matching IPv4-literal-under-`IpVersion.ipv4`
+case synthesis operates within). The honest classification is covered by the
+network-free `errorKind(forGetaddrinfoStatus:)` / `errorKind(forSendErrno:)`
+XCTest cases in `RunnerTests` (`EAI_NODATA`/`EAI_ADDRFAMILY`/`EAI_FAMILY` ->
+`.noRoute`, `EAI_NONAME` -> `.unknownHost`;
+`ENETUNREACH`/`EHOSTUNREACH`/`EAFNOSUPPORT`/`EADDRNOTAVAIL` -> `.noRoute`), and
+the Dart mapping seam by `dart_ping_ios/test/ping_event_mapper_test.dart`
+(native `No Route` -> `ErrorType.noRoute`, `Unknown Host` -> `ErrorType.unknownHost`,
+both honest typed errors, never a phantom or null). The Swift classification is
+not compilable on the Linux CI host (hand-verified; macOS CI runs it).*
+
+Synthesis is attempted first; when it cannot produce a routable address —
+synthesis unsupported, no synthesized address available, or a genuine
+no-route — the consumer receives #69's honest typed error, never a phantom
+`unknownHost` and never a silent hang. #69's error honesty and its
+literal-vs-family `ArgumentError` are preserved exactly.
+
+- When the option is enabled but the platform returns no synthesized or
+  otherwise routable address for the IPv4 literal, the engine shall surface
+  the honest typed error from #69 — `ErrorType.noRoute` for an
+  address-family / no-route condition, `unknownHost` only for a genuine
+  name-resolution failure — and shall **never** report a phantom
+  `unknownHost` for a routing failure nor hang/time out silently
+  (§req:nat64-success-criteria — error stays honest when synthesis cannot
+  help; §spec:address-family-error-honesty).
+- When the option is disabled, or the target is genuinely unreachable, the
+  engine shall reproduce #69's honest typed errors exactly, including the
+  reserved meaning of `unknownHost` (§req:nat64-success-criteria — no
+  regression to #69 error honesty; §spec:address-family-error-honesty).
+- Synthesis shall not disturb the synchronous literal-vs-family
+  `ArgumentError`: an `IpVersion.ipv4` selection with an IPv4 literal matches
+  and is never rejected (synthesis operates within this matched case), and a
+  mismatched literal (e.g. `IpVersion.ipv4` with an IPv6 literal) still
+  throws before any stream starts, unchanged by this option
+  (§req:nat64-constraints — do not regress #69;
+  §spec:address-family-mismatch-validation).
+- The user-facing `IpVersion` selection shall be unchanged by the fallback
+  path as well: whether synthesis succeeds or yields to the honest error, the
+  caller's selected family is the one validated and reported
+  (§req:nat64-constraints — family selection unchanged;
+  §req:nat64-open-decisions — interaction with the `IpVersion` selector).
+
+**Why synthesis-first, honest-error-second:** the requirement is to make the
+ping *work* where it can while keeping the *error honest* where it cannot
+(§req:nat64-success-criteria). Attempting synthesis first converts the
+previously-unreachable literal into a reachable one on a NAT64 network;
+falling back to #69's typed error on genuine failure means the consumer
+never loses the diagnostic honesty #69 established. The two are complementary
+layers, not alternatives — #52 adds capability in front of #69's honesty
+without removing it (§spec:address-family-error-honesty — scope boundary,
+now revised).
+
+**Why the `ArgumentError` is untouched:** that guard fires only on a
+literal whose family *contradicts* the selection
+(§spec:address-family-mismatch-validation); #52's case is a *matching*
+IPv4-literal-under-`IpVersion.ipv4`, which the guard lets through. Synthesis
+therefore operates entirely inside the already-valid case and has no reason
+to alter the guard — confirming this is a design invariant, not a new code
+path (§req:nat64-open-decisions — interaction with #69 validation).
+
+## NAT64 reachability tests §spec:nat64-tests
+*Status: implemented offline (Batches #52-1, #52-2); live leg on-device only —
+the option-presence / default-enabled / threading bullet is covered offline
+(Batch #52-1): `dart_ping/test/nat64_option_test.dart` asserts the option
+defaults to enabled on every subprocess class, threads the supplied value, and is
+an inert no-op (`params`/`command` byte-for-byte unchanged), and
+`dart_ping_ios/test/dart_ping_ios_test.dart` asserts the bridge `start` arguments
+carry `nat64Synthesis` (true by default, false when disabled, and forwarded
+verbatim for the IPv4-literal + `IpVersion.ipv4` argument shape). That Dart test
+covers only the bridge's verbatim threading — the synthesis DECISION itself is a
+native concern and is covered by `RunnerTests` below, not by the bridge test. The
+synthesis decision, the routable-address selection, and the fallback-to-honest-
+error mapping land in Batch #52-2: the network-free `shouldSynthesize` /
+`isIPv4Literal` / `synthesizedTransport` (the prefer-IPv6-over-a-co-listed-IPv4-
+literal selection policy) and the `errorKind(forGetaddrinfoStatus:)` /
+`errorKind(forSendErrno:)` XCTest cases in the example's `RunnerTests` (iOS +
+macOS targets) pin the un-pinned-vs-pinned resolve decision, the
+synthesized-family choice, and the honest `.noRoute` / `.unknownHost`
+classification, and
+`dart_ping_ios/test/ping_event_mapper_test.dart` pins the Dart mapping seam
+(native `No Route` / `Unknown Host` -> the honest typed `PingError`, never a
+phantom or null) plus the synthesis-on regression guards (a normal reply still
+maps to an intact `PingResponse` with its stats snapshot). The Dart seams run
+green under `flutter test` on the Linux CI host; the Swift seams are hand-verified
+(not compilable on Linux; macOS CI `xcodebuild test` compiles/runs them). The
+remaining manual step is the live leg — an IPv4 literal actually pinging through
+on an IPv6-only cellular network — an on-device acceptance step, not a CI gate
+(§spec:nat64-literal-synthesis, §spec:nat64-error-fallback).*
+
+The option's on/off behavior and the synthesis-vs-honest-error decision are
+covered by automated tests that need no live IPv6-only cellular network; the
+live end-to-end leg is hand- / on-device-verified, as with #69.
+
+- The option's presence, default-enabled value, and threading to the engine
+  shall be covered by network-free tests over pure input (the constructed
+  `Ping` / bridge arguments), including that the default is enabled and that
+  disabling it selects the raw path
+  (§req:nat64-success-criteria — automated tests offline;
+  §req:nat64-priorities — high; §spec:nat64-option).
+- The synthesis decision and the fallback-to-honest-error mapping shall be
+  covered at the iOS resolve/send seam: with synthesis on, an IPv4 literal
+  drives the un-pinned resolve path; with it off, the family-pinned path;
+  and a resolver outcome that yields no routable address maps to the honest
+  `noRoute` / `unknownHost` error rather than a phantom or a hang — all
+  without a live process (§req:nat64-success-criteria — synthesis decision
+  and on/off verifiable offline; §spec:nat64-literal-synthesis,
+  §spec:nat64-error-fallback).
+- The live leg — an IPv4 literal actually pinging through on an IPv6-only
+  cellular network — shall be an on-device acceptance step, not a CI gate
+  (§req:nat64-success-criteria — live leg on-device-verified;
+  §req:nat64-constraints — not reproducible in CI).
+
+**Why offline seams plus an on-device leg:** a live IPv6-only cellular
+network is unavailable to hosted runners and not reproducible in the
+simulator (§req:nat64-constraints — not reproducible in CI), exactly the
+constraint #69 faced (§spec:address-family-error-tests). The testable
+surface is the pure logic — option default and threading (input in →
+arguments out) and the resolve-path / error-mapping decision (selection +
+resolver outcome in → synthesized-send or typed-error out) — while the
+end-to-end reachability is verified by hand on an affected device, mirroring
+the suite's established deterministic-seam principle (§spec:ci,
+§spec:ios-tests).

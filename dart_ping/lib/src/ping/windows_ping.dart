@@ -15,6 +15,7 @@ class PingWindows extends BasePing implements Ping {
     Encoding encoding = const Utf8Codec(allowMalformed: true),
     bool forceCodepage = false,
     String? interface,
+    bool nat64Synthesis = true,
   }) : super(
           host,
           count,
@@ -26,6 +27,7 @@ class PingWindows extends BasePing implements Ping {
           encoding,
           forceCodepage,
           interface,
+          nat64Synthesis,
         ) {
     // Windows `ping` binds ONLY by source address, never by interface name.
     // Reject a bare name once, up front at construction (consistent with the

@@ -498,4 +498,126 @@ class RunnerTests: XCTestCase {
     XCTAssertNil(ICMPPacket.parseTimeExceededOriginalSequenceV6(truncated))
   }
 
+  // MARK: - §spec:nat64-tests — NAT64 synthesis decision + honest-error fallback
+  //
+  // The NAT64 reachability fix (#52) un-pins the resolve for the ONE narrow case
+  // of an IPv4 literal under IpVersion.ipv4 with synthesis enabled. The decision
+  // itself (`shouldSynthesize`/`isIPv4Literal`) and the honest error
+  // classification on the synthesis-failure path are pure/static, so they are
+  // pinned here WITHOUT a live process — a real IPv6-only NAT64 cellular network
+  // is not reproducible on a hosted runner or the simulator, so the end-to-end
+  // reachability leg is an on-device acceptance step (§spec:nat64-literal-synthesis,
+  // §spec:nat64-error-fallback). These offline seams are the testable surface.
+
+  // MARK: shouldSynthesize(family:nat64Synthesis:host:) — the SOLE relaxation gate
+
+  /// The relaxation engages ONLY for an IPv4 literal, IpVersion.ipv4, synthesis
+  /// enabled — the single previously-broken path. Offline: this is the pure
+  /// decision the engine consults before un-pinning the resolve; no socket needed.
+  func testShouldSynthesizeTrueForIPv4LiteralWithSynthesisEnabled() {
+    XCTAssertTrue(PingEngine.shouldSynthesize(family: .v4, nat64Synthesis: true, host: "13.35.27.1"))
+    // A second IPv4 literal: still engaged.
+    XCTAssertTrue(PingEngine.shouldSynthesize(family: .v4, nat64Synthesis: true, host: "1.1.1.1"))
+  }
+
+  /// Every other combination keeps #69's pinned, raw resolve. Offline rationale:
+  /// the gate is the whole behavioral boundary, so each disqualifying input is
+  /// pinned here rather than discovered on an (unavailable) live NAT64 network.
+  func testShouldSynthesizeFalseForEveryNonEngagedCase() {
+    // Synthesis disabled (opt-out) -> raw, family-pinned path even for a literal.
+    XCTAssertFalse(PingEngine.shouldSynthesize(family: .v4, nat64Synthesis: false, host: "13.35.27.1"))
+    // IpVersion.ipv6 selection is unaffected by the IPv4-literal relaxation.
+    XCTAssertFalse(PingEngine.shouldSynthesize(family: .v6, nat64Synthesis: true, host: "13.35.27.1"))
+    // A hostname already gets DNS64 from the system resolver; not this gate.
+    XCTAssertFalse(PingEngine.shouldSynthesize(family: .v4, nat64Synthesis: true, host: "example.com"))
+    // An IPv6 literal is not an IPv4 literal; no synthesis.
+    XCTAssertFalse(PingEngine.shouldSynthesize(family: .v4, nat64Synthesis: true, host: "2001:4860:4860::8888"))
+  }
+
+  // MARK: isIPv4Literal(_:)
+
+  /// Dotted-quads are IPv4 literals (inet_pton(AF_INET) accepts them). Offline:
+  /// purely numeric classification, no DNS, no socket (§spec:nat64-tests).
+  func testIsIPv4LiteralTrueForDottedQuads() {
+    XCTAssertTrue(PingEngine.isIPv4Literal("13.35.27.1"))
+    XCTAssertTrue(PingEngine.isIPv4Literal("0.0.0.0"))
+    XCTAssertTrue(PingEngine.isIPv4Literal("255.255.255.255"))
+  }
+
+  /// Hostnames, IPv6 literals, the empty string, and a malformed quad (an octet
+  /// > 255) are NOT IPv4 literals, so they never trip the synthesis gate. Offline:
+  /// inet_pton rejects each form deterministically with no network.
+  func testIsIPv4LiteralFalseForNonLiterals() {
+    XCTAssertFalse(PingEngine.isIPv4Literal("example.com"))
+    XCTAssertFalse(PingEngine.isIPv4Literal("2001:4860:4860::8888"))
+    XCTAssertFalse(PingEngine.isIPv4Literal(""))
+    XCTAssertFalse(PingEngine.isIPv4Literal("999.1.1.1")) // 999 > 255: malformed
+  }
+
+  // MARK: honest error classification on the synthesis-failure path
+  // (§spec:nat64-error-fallback)
+  //
+  // When synthesis cannot produce a routable address, the engine must fall back
+  // to #69's honest typed error: an address-family / route failure becomes
+  // .noRoute, and .unknownHost is reserved for a GENUINE name miss — never a
+  // phantom unknownHost for a routing failure, never a silent hang. These reuse
+  // the EXISTING #69 helpers (`errorKind(forGetaddrinfoStatus:)` /
+  // `errorKind(forSendErrno:)`); this test documents that those same classifications
+  // hold on the NAT64 synthesis fallback path. Offline: a pure status/errno ->
+  // PingErrorKind mapping, asserted without a live NAT64 network.
+
+  /// getaddrinfo statuses reachable when the un-pinned (AF_UNSPEC) synthesis
+  /// resolve yields no usable/family-appropriate record map to .noRoute, while a
+  /// genuine name miss stays .unknownHost — the honesty boundary #52 must keep.
+  func testSynthesisFallbackGetaddrinfoStatusesClassifyHonestly() {
+    // No record of a usable family for the resolved literal -> route/family fail.
+    XCTAssertEqual(PingEngine.errorKind(forGetaddrinfoStatus: EAI_NODATA), .noRoute)
+    XCTAssertEqual(PingEngine.errorKind(forGetaddrinfoStatus: EAI_ADDRFAMILY), .noRoute)
+    XCTAssertEqual(PingEngine.errorKind(forGetaddrinfoStatus: EAI_FAMILY), .noRoute)
+    // A genuine name miss is the ONLY thing that stays unknownHost (never phantom).
+    XCTAssertEqual(PingEngine.errorKind(forGetaddrinfoStatus: EAI_NONAME), .unknownHost)
+  }
+
+  /// send(2) errnos for the synthesized/route-failed destination all classify as
+  /// .noRoute — the honest "this family can't be reached here" signal #52 falls
+  /// back to when synthesis does not yield a routable path.
+  func testSynthesisFallbackSendErrnosClassifyAsNoRoute() {
+    XCTAssertEqual(PingEngine.errorKind(forSendErrno: ENETUNREACH), .noRoute)
+    XCTAssertEqual(PingEngine.errorKind(forSendErrno: EHOSTUNREACH), .noRoute)
+    XCTAssertEqual(PingEngine.errorKind(forSendErrno: EAFNOSUPPORT), .noRoute)
+    XCTAssertEqual(PingEngine.errorKind(forSendErrno: EADDRNOTAVAIL), .noRoute)
+  }
+
+  // MARK: synthesizedTransport(hasIPv4:hasIPv6:) — the address-selection policy
+  // (§spec:nat64-literal-synthesis / §spec:nat64-tests)
+  //
+  // The un-pinned (AF_UNSPEC) resolve may return BOTH the synthesized IPv6
+  // (NAT64) address and the original IPv4 literal. The engine must NOT commit to
+  // whichever entry getaddrinfo sorted first — on an IPv6-only network the IPv4
+  // literal is unroutable, and picking it would silently defeat #52. This pure
+  // policy encodes the routable-family preference; it is the offline seam over
+  // the synthesis address selection (a live IPv6-only NAT64 network is not
+  // reproducible on a hosted runner / the simulator).
+
+  /// Both families synthesized -> prefer IPv6 (the routable NAT64 address). This
+  /// is the exact #52 case: a bare IPv4 literal on an IPv6-only network where the
+  /// resolver returns the synthesized v6 alongside the original (unroutable) v4.
+  func testSynthesizedTransportPrefersIPv6WhenBothPresent() {
+    XCTAssertEqual(PingEngine.synthesizedTransport(hasIPv4: true, hasIPv6: true), .v6)
+    // IPv6 alone (pure synthesis) is also v6.
+    XCTAssertEqual(PingEngine.synthesizedTransport(hasIPv4: false, hasIPv6: true), .v6)
+  }
+
+  /// No IPv6 synthesized (dual-stack / Wi-Fi, where the literal already routes)
+  /// -> send over IPv4, unchanged from the pre-#52 behavior.
+  func testSynthesizedTransportUsesIPv4WhenNoIPv6() {
+    XCTAssertEqual(PingEngine.synthesizedTransport(hasIPv4: true, hasIPv6: false), .v4)
+  }
+
+  /// Resolver returned no usable address -> nil, which the resolve path maps to
+  /// the honest `.noRoute` (never a phantom unknownHost, never a hang).
+  func testSynthesizedTransportNilWhenNeitherPresent() {
+    XCTAssertNil(PingEngine.synthesizedTransport(hasIPv4: false, hasIPv6: false))
+  }
+
 }
