@@ -16,9 +16,17 @@
 //  build hook (WS3) via swiftc `-import-objc-header`; the `@_cdecl` signatures
 //  here MUST match that header exactly.
 //
+//  EVENT LIFETIME (#28-2, §spec:ios-ffi-binding, §spec:ios-background-isolate):
+//  each event is HEAP-ALLOCATED here and its ownership is TRANSFERRED to the Dart
+//  receiver, which frees it via the `dart_ping_free_event` entry point after
+//  copying the fields it needs (Swift frees what Swift allocated). This replaces
+//  the earlier callback-scoped stack buffers, which would be freed before an
+//  async `NativeCallable.listen` handler runs (use-after-free).
+//
 //  Compiled into the single iOS code asset alongside PingEngine.swift and
 //  ICMPPacket.swift. iOS-only; not Linux-compilable (the engine imports Darwin
-//  networking). See native/README.md for the macOS hand-verification command.
+//  networking) and therefore NOT built on Linux CI — this shim is hand-verified
+//  on macOS per native/README.md (the standalone swiftc command there).
 //
 
 import Foundation
@@ -44,72 +52,87 @@ private final class PingRun {
 
 // MARK: - Event marshalling
 
-/// Marshal one `PingEngine.Event` into a flat `dart_ping_event` and invoke the C
-/// `callback`. All pointers handed to the callback (the event's `ip` string and
-/// the summary's `errors` array) are valid ONLY for the duration of the
-/// `callback` call — they live on the stack / in `withCString` /
-/// `withUnsafeBufferPointer` scopes that close the instant the callback returns,
-/// matching the lifetime contract documented in `dart_ping_ffi.h`.
+/// `strdup` the given Swift string into a C heap buffer (`malloc`-allocated,
+/// NUL-terminated UTF-8). Returns a pointer that `dart_ping_free_event` later
+/// releases with `free`. Allocator-symmetric: Swift frees what Swift allocated.
+private func heapCopy(_ string: String) -> UnsafeMutablePointer<CChar> {
+    return string.withCString { strdup($0) }
+}
+
+/// Marshal one `PingEngine.Event` into a HEAP-ALLOCATED `dart_ping_event` and
+/// invoke the C `callback`, transferring ownership of the struct (and its `ip`
+/// string and `errors` array) to the receiver.
+///
+/// LIFETIME (§spec:ios-ffi-binding, §spec:ios-background-isolate): the per-event
+/// callback is consumed by a Dart `NativeCallable.listen`, so the C call returns
+/// before the Dart handler runs. A callback-scoped stack buffer (the old
+/// `withCString` / `withUnsafeBufferPointer` approach) would therefore be freed
+/// out from under the async handler (use-after-free). Instead we `malloc` the
+/// event and `strdup`/`malloc`-copy its `ip` and `errors` buffers, hand the
+/// pointer to the callback, and DO NOT free — the receiver releases everything
+/// via `dart_ping_free_event` after copying the fields it needs.
 private func deliver(_ event: PingEngine.Event,
                      to callback: dart_ping_event_callback,
                      context: UnsafeMutableRawPointer?) {
+    // Heap-allocate the event struct; zero-initialize so unspecified fields for
+    // the active kind read as 0 / false / NULL. Ownership transfers to the
+    // receiver, which frees it (and ip/errors) via dart_ping_free_event.
+    let evPtr = UnsafeMutablePointer<dart_ping_event>.allocate(capacity: 1)
+    evPtr.initialize(to: dart_ping_event())
+
     switch event {
 
     case let .response(seq, ttl, timeMicros, ip):
         // .response: seq always present; ttl nullable (v6 may lack hop limit);
-        // ip always present. The `ip` C-string is valid only inside withCString.
-        ip.withCString { ipPtr in
-            var ev = dart_ping_event()
-            ev.kind = DART_PING_EVENT_RESPONSE
-            ev.has_seq = true
-            ev.seq = Int64(seq)
-            ev.has_ttl = (ttl != nil)
-            ev.ttl = Int64(ttl ?? 0)
-            ev.time_micros = Int64(timeMicros)
-            ev.has_ip = true
-            ev.ip = ipPtr
-            callback(context, &ev)
-        }
+        // ip always present (heap-copied so it outlives the async call).
+        evPtr.pointee.kind = DART_PING_EVENT_RESPONSE
+        evPtr.pointee.has_seq = true
+        evPtr.pointee.seq = Int64(seq)
+        evPtr.pointee.has_ttl = (ttl != nil)
+        evPtr.pointee.ttl = Int64(ttl ?? 0)
+        evPtr.pointee.time_micros = Int64(timeMicros)
+        evPtr.pointee.has_ip = true
+        evPtr.pointee.ip = UnsafePointer(heapCopy(ip))
 
     case let .error(kind, seq, ip):
-        // .error: seq and ip both nullable. Build the event, then optionally
-        // wrap the ip in a withCString scope so its pointer stays valid for the
-        // callback; when ip is nil we pass a NULL pointer and has_ip == false.
-        var ev = dart_ping_event()
-        ev.kind = DART_PING_EVENT_ERROR
-        ev.error_kind = cErrorKind(kind)
-        ev.has_seq = (seq != nil)
-        ev.seq = Int64(seq ?? 0)
+        // .error: seq and ip both nullable. Heap-copy the ip when present;
+        // leave ip NULL / has_ip false otherwise.
+        evPtr.pointee.kind = DART_PING_EVENT_ERROR
+        evPtr.pointee.error_kind = cErrorKind(kind)
+        evPtr.pointee.has_seq = (seq != nil)
+        evPtr.pointee.seq = Int64(seq ?? 0)
         if let ip = ip {
-            ip.withCString { ipPtr in
-                ev.has_ip = true
-                ev.ip = ipPtr
-                callback(context, &ev)
-            }
+            evPtr.pointee.has_ip = true
+            evPtr.pointee.ip = UnsafePointer(heapCopy(ip))
         } else {
-            ev.has_ip = false
-            ev.ip = nil
-            callback(context, &ev)
+            evPtr.pointee.has_ip = false
+            evPtr.pointee.ip = nil
         }
 
     case let .summary(transmitted, received, timeMicros, errors):
-        // .summary: carry the errors list as a contiguous Int32 buffer whose
-        // pointer is valid only inside withUnsafeBufferPointer.
+        // .summary: carry the errors list as a heap-allocated contiguous Int32
+        // buffer (NULL when empty) so it outlives the async call.
+        evPtr.pointee.kind = DART_PING_EVENT_SUMMARY
+        // Counts are realistically tiny, but use a non-trapping narrowing so an
+        // extreme run can never crash the consuming app via an Int32 overflow
+        // trap (security review #28-1). Int32 cannot hold > ~2.1B regardless.
+        evPtr.pointee.transmitted = Int32(truncatingIfNeeded: transmitted)
+        evPtr.pointee.received = Int32(truncatingIfNeeded: received)
+        evPtr.pointee.time_micros = Int64(timeMicros)
         let codes: [Int32] = errors.map { Int32(cErrorKind($0).rawValue) }
-        codes.withUnsafeBufferPointer { buf in
-            var ev = dart_ping_event()
-            ev.kind = DART_PING_EVENT_SUMMARY
-            // Counts are realistically tiny, but use a non-trapping narrowing so an
-            // extreme run can never crash the consuming app via an Int32 overflow
-            // trap (security review #28-1). Int32 cannot hold > ~2.1B regardless.
-            ev.transmitted = Int32(truncatingIfNeeded: transmitted)
-            ev.received = Int32(truncatingIfNeeded: received)
-            ev.time_micros = Int64(timeMicros)
-            ev.errors = buf.baseAddress
-            ev.errors_len = Int32(truncatingIfNeeded: buf.count)
-            callback(context, &ev)
+        if codes.isEmpty {
+            evPtr.pointee.errors = nil
+            evPtr.pointee.errors_len = 0
+        } else {
+            let buf = UnsafeMutablePointer<Int32>.allocate(capacity: codes.count)
+            buf.initialize(from: codes, count: codes.count)
+            evPtr.pointee.errors = UnsafePointer(buf)
+            evPtr.pointee.errors_len = Int32(truncatingIfNeeded: codes.count)
         }
     }
+
+    // Hand ownership to the receiver; it frees via dart_ping_free_event.
+    callback(context, evPtr)
 }
 
 /// Map a Swift `PingErrorKind` to its C enum counterpart.
@@ -184,4 +207,24 @@ public func dart_ping_stop(_ handle: UnsafeMutableRawPointer?) {
     guard let handle = handle else { return }
     let box = Unmanaged<PingRun>.fromOpaque(handle).takeRetainedValue()
     box.engine.stop()
+}
+
+/// Free a heap-allocated event previously delivered to the callback
+/// (§spec:ios-ffi-binding). Allocator-symmetric with `deliver`'s `malloc` /
+/// `strdup`: frees the event's `ip` string and `errors` buffer (each if
+/// non-NULL), then the event struct itself. A NULL event is ignored. The Dart
+/// receiver calls this once it has copied the fields it needs out of the
+/// (async, ownership-transferred) event.
+@_cdecl("dart_ping_free_event")
+public func dart_ping_free_event(_ event: UnsafePointer<dart_ping_event>?) {
+    guard let event = event else { return }
+    // `ip` (strdup) and `errors` (malloc) are C heap allocations; free with
+    // `free` to match. Cast away const for `free`, which takes `void *`.
+    if let ip = event.pointee.ip {
+        free(UnsafeMutableRawPointer(mutating: ip))
+    }
+    if let errors = event.pointee.errors {
+        free(UnsafeMutableRawPointer(mutating: errors))
+    }
+    free(UnsafeMutableRawPointer(mutating: event))
 }
