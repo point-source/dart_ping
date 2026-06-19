@@ -14,6 +14,7 @@ class PingLinux extends BasePing implements Ping {
     PingParser? parser,
     Encoding encoding = const Utf8Codec(),
     String? interface,
+    bool nat64Synthesis = true,
   }) : super(
           host,
           count,
@@ -25,6 +26,7 @@ class PingLinux extends BasePing implements Ping {
           encoding,
           false,
           interface,
+          nat64Synthesis,
         );
 
   static PingParser get defaultParser => PingParser(

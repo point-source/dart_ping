@@ -66,39 +66,39 @@ void main() {
       methodCalls.firstWhere((c) => c.method == name);
 
   test('command describes the native engine', () {
-    final ping = DartPingIOS('host', 1, 1, 2, 64, IpVersion.ipv4);
+    final ping = DartPingIOS('host', 1, 1, 2, 64, IpVersion.ipv4, true);
     expect(ping.command, contains('native Swift ICMP engine'));
   });
 
   group('direct construction enforces the address-family guard', () {
     test('an IPv4 literal with IpVersion.ipv6 throws ArgumentError', () {
       expect(
-        () => DartPingIOS('1.2.3.4', 1, 1, 2, 64, IpVersion.ipv6),
+        () => DartPingIOS('1.2.3.4', 1, 1, 2, 64, IpVersion.ipv6, true),
         throwsArgumentError,
       );
     });
 
     test('an IPv6 literal with IpVersion.ipv4 throws ArgumentError', () {
       expect(
-        () => DartPingIOS('::1', 1, 1, 2, 64, IpVersion.ipv4),
+        () => DartPingIOS('::1', 1, 1, 2, 64, IpVersion.ipv4, true),
         throwsArgumentError,
       );
     });
 
     test('a matching literal and a hostname construct normally', () {
       expect(
-        () => DartPingIOS('::1', 1, 1, 2, 64, IpVersion.ipv6),
+        () => DartPingIOS('::1', 1, 1, 2, 64, IpVersion.ipv6, true),
         returnsNormally,
       );
       expect(
-        () => DartPingIOS('example.com', 1, 1, 2, 64, IpVersion.ipv6),
+        () => DartPingIOS('example.com', 1, 1, 2, 64, IpVersion.ipv6, true),
         returnsNormally,
       );
     });
   });
 
   test('parser getter and setter are unsupported on iOS', () {
-    final ping = DartPingIOS('host', 1, 1, 2, 64, IpVersion.ipv4);
+    final ping = DartPingIOS('host', 1, 1, 2, 64, IpVersion.ipv4, true);
     final dummyParser = PingParser(
       responseRgx: RegExp(''),
       summaryRgx: RegExp(''),
@@ -117,13 +117,14 @@ void main() {
     DartPingIOS.register();
 
     expect(Ping.iosFactory, isNotNull);
-    final built = Ping.iosFactory!('host', 1, 1, 2, 64, IpVersion.ipv4, null, utf8);
+    final built =
+        Ping.iosFactory!('host', 1, 1, 2, 64, IpVersion.ipv4, null, utf8, true);
     expect(built, isA<DartPingIOS>());
   });
 
   test('listening starts the native run with the configured arguments',
       () async {
-    final ping = DartPingIOS('example.com', 3, 1, 5, 64, IpVersion.ipv6);
+    final ping = DartPingIOS('example.com', 3, 1, 5, 64, IpVersion.ipv6, true);
     final sub = ping.stream.listen((_) {});
     addTearDown(sub.cancel);
     await pumpEventQueue();
@@ -136,12 +137,31 @@ void main() {
     expect(args['timeout'], 5);
     expect(args['ttl'], 64);
     expect(args['ipVersion'], 'ipv6');
+    // The 8th positional arg (nat64Synthesis) is true here, proving the
+    // default-on option threads onto the native `start` arguments
+    // (§spec:nat64-tests).
+    expect(args['nat64Synthesis'], true);
     expect(args['id'], isNotNull);
+  });
+
+  test('disabling nat64Synthesis threads the raw-path signal to native start',
+      () async {
+    // With the nat64Synthesis positional set to false, the bridge must forward
+    // `nat64Synthesis: false` so the native engine takes the raw, family-pinned
+    // path with no IPv6 synthesis (§spec:nat64-tests).
+    final ping = DartPingIOS('example.com', 3, 1, 5, 64, IpVersion.ipv6, false);
+    final sub = ping.stream.listen((_) {});
+    addTearDown(sub.cancel);
+    await pumpEventQueue();
+
+    final start = callNamed('start');
+    final args = Map<String, dynamic>.from(start.arguments as Map);
+    expect(args['nat64Synthesis'], false);
   });
 
   test('forwards mapped events and closes after the terminal summary',
       () async {
-    final ping = DartPingIOS('host', 2, 1, 2, 64, IpVersion.ipv4);
+    final ping = DartPingIOS('host', 2, 1, 2, 64, IpVersion.ipv4, true);
     final received = <PingEvent>[];
     final done = Completer<void>();
     ping.stream.listen(received.add, onDone: done.complete);
@@ -172,7 +192,7 @@ void main() {
   });
 
   test('ignores events addressed to a different run id', () async {
-    final ping = DartPingIOS('host', 1, 1, 2, 64, IpVersion.ipv4);
+    final ping = DartPingIOS('host', 1, 1, 2, 64, IpVersion.ipv4, true);
     final received = <PingEvent>[];
     ping.stream.listen(received.add);
     await pumpEventQueue();
@@ -192,7 +212,7 @@ void main() {
   });
 
   test('stop() invokes the native stop and resolves to true', () async {
-    final ping = DartPingIOS('host', null, 1, 2, 64, IpVersion.ipv4);
+    final ping = DartPingIOS('host', null, 1, 2, 64, IpVersion.ipv4, true);
     final sub = ping.stream.listen((_) {});
     addTearDown(sub.cancel);
     await pumpEventQueue();
@@ -203,7 +223,7 @@ void main() {
   });
 
   test('cancelling the subscription stops the native run', () async {
-    final ping = DartPingIOS('host', null, 1, 2, 64, IpVersion.ipv4);
+    final ping = DartPingIOS('host', null, 1, 2, 64, IpVersion.ipv4, true);
     final sub = ping.stream.listen((_) {});
     await pumpEventQueue();
     expect(methodCalls.where((c) => c.method == 'stop'), isEmpty);

@@ -33,6 +33,12 @@
   distinguish it from a true name miss).
 - An IPv6 reply whose hop limit cannot be recovered (no `IPV6_HOPLIMIT`
   control message) now reports a null `ttl` instead of a misleading `0`.
+- **NAT64/IPv6-only reachability (#52):** the iOS bridge now forwards the
+  default-on `nat64Synthesis` option to the native engine over the method
+  channel, so an IPv4 literal can be made to reach an IPv6-only/NAT64 network.
+  This batch wires the option through at the bridge level; the live native
+  synthesis (the engine acting on the flag) is completed in the follow-on
+  batch. Requires `dart_ping` ^10.0.0.
 
 ## 5.1.0
 

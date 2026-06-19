@@ -20,6 +20,7 @@ class DartPingIOS implements Ping {
     this._timeout,
     this._ttl,
     this._ipVersion,
+    this._nat64Synthesis,
   ) : _id = _generateId() {
     // Enforce the literal/family guard on direct construction too, not only via
     // the `Ping(...)` factory, so a mismatched literal fails fast with the same
@@ -43,8 +44,17 @@ class DartPingIOS implements Ping {
     IpVersion ipVersion,
     PingParser? parser,
     Encoding encoding,
+    bool nat64Synthesis,
   ) {
-    return DartPingIOS(host, count, interval, timeout, ttl, ipVersion);
+    return DartPingIOS(
+      host,
+      count,
+      interval,
+      timeout,
+      ttl,
+      ipVersion,
+      nat64Synthesis,
+    );
   }
 
   /// MethodChannel used to start/stop native ping runs.
@@ -71,6 +81,12 @@ class DartPingIOS implements Ping {
   final int _timeout;
   final int _ttl;
   final IpVersion _ipVersion;
+
+  /// The NAT64/DNS64 address-synthesis option (§spec:nat64-option), forwarded
+  /// to the native engine over the method channel. Default-on. The native
+  /// engine begins honoring it in a later batch (#52-2); the Dart bridge
+  /// defines and transmits the wire field here.
+  final bool _nat64Synthesis;
 
   /// Unique identifier for this run, used to demultiplex shared events.
   final String _id;
@@ -143,6 +159,10 @@ class DartPingIOS implements Ping {
       // ('ipv4' / 'ipv6'). Native family-faithful resolution lands in a
       // later batch (#69-3); the Dart bridge defines the wire field here.
       'ipVersion': _ipVersion.name,
+      // The NAT64/DNS64 synthesis option (§spec:nat64-option). The native
+      // engine begins honoring it in a later batch (#52-2); the wire field is
+      // defined and sent here.
+      'nat64Synthesis': _nat64Synthesis,
     });
   }
 

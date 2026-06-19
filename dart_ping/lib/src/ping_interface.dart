@@ -71,6 +71,18 @@ abstract class Ping {
     /// flag(s) its `ping` supports (Linux/Android: both; macOS: both; Windows:
     /// address only). Omitting it leaves the produced command unchanged.
     String? interface,
+
+    /// Whether the platform may reach an IPv4 literal on an IPv6-only
+    /// (NAT64/DNS64) network via the platform's own address synthesis
+    /// (§spec:nat64-option).
+    ///
+    /// Defaults to enabled. It is actively honored ONLY on iOS, where the
+    /// native engine synthesizes an IPv6 path to an IPv4 literal. On the
+    /// subprocess platforms (Linux/Android, macOS, Windows) it is a documented
+    /// NO-OP carried purely for cross-platform option parity — it never alters
+    /// the produced command and never raises an error. Disabling it restores
+    /// raw pass-through: the family-pinned resolve with no synthesis.
+    bool nat64Synthesis = true,
   }) {
     // Synchronous address-family guard: if [host] is a literal IP address, its
     // family MUST match the selected [ipVersion]. This runs before any platform
@@ -95,6 +107,7 @@ abstract class Ping {
           parser: parser,
           encoding: encoding,
           interface: interface,
+          nat64Synthesis: nat64Synthesis,
         );
       case 'macos':
         return PingMac(
@@ -107,6 +120,7 @@ abstract class Ping {
           parser: parser,
           encoding: encoding,
           interface: interface,
+          nat64Synthesis: nat64Synthesis,
         );
       case 'windows':
         return PingWindows(
@@ -120,6 +134,7 @@ abstract class Ping {
           encoding: encoding,
           forceCodepage: forceCodepage,
           interface: interface,
+          nat64Synthesis: nat64Synthesis,
         );
       case 'ios':
         throwIfInterfaceUnsupportedOnIos(interface);
@@ -134,6 +149,7 @@ abstract class Ping {
             ipVersion,
             parser,
             encoding,
+            nat64Synthesis,
           );
         }
         throw UnimplementedError(
@@ -153,6 +169,7 @@ abstract class Ping {
     IpVersion ipVersion,
     PingParser? parser,
     Encoding encoding,
+    bool nat64Synthesis,
   )? iosFactory;
 
   /// Parser used to interpret ping process output
