@@ -98,6 +98,10 @@ class IosPing implements Ping {
   /// Guards [_teardown] so it runs exactly once.
   bool _tornDown = false;
 
+  /// Guards the native `dart_ping_stop` so it runs exactly once, no matter how
+  /// many lifecycle paths request it (stop(), cancel, natural completion).
+  bool _stopped = false;
+
   /// Unused on iOS and should not be called.
   @override
   PingParser get parser => throw UnimplementedError();
@@ -125,9 +129,7 @@ class IosPing implements Ping {
     // Stop the engine if a run is active; it emits a terminal summary on its
     // background queue, which [_handleNativeEvent] forwards before closing the
     // stream (the [Ping] contract — stop() keeps the summary).
-    if (_handle != nullptr) {
-      dartPingStop(_handle);
-    }
+    _stopNative();
 
     return true;
   }
@@ -181,27 +183,21 @@ class IosPing implements Ping {
     //    exactly once, after copying.
     freeNativeEvent(evPtr);
 
-    // 3. Map to a sealed PingEvent carrying the running stats snapshot.
+    // 3. Map to a sealed PingEvent carrying the running stats snapshot, forward
+    //    it, and tear down once the terminal summary has been delivered.
     final event = _statsMapper!.map(dto);
+    _forward(event);
+    if (event is PingSummary) _teardown();
+  }
 
-    if (event is PingSummary) {
-      // Terminal event. Forward it unless the run was cancelled (cancel drops
-      // the summary, per the [Ping] contract), then tear down.
-      if (!_cancelled) {
-        final controller = _controller;
-        if (controller != null && !controller.isClosed) {
-          controller.add(event);
-        }
-      }
-      _teardown();
-    } else {
-      // Non-terminal: forward if the stream is still open and not cancelled.
-      if (!_cancelled) {
-        final controller = _controller;
-        if (controller != null && !controller.isClosed) {
-          controller.add(event);
-        }
-      }
+  /// Forwards a mapped event to the stream, unless the run was cancelled (cancel
+  /// drops events — including the terminal summary — per the [Ping] contract) or
+  /// the controller is already closed.
+  void _forward(PingEvent event) {
+    if (_cancelled) return;
+    final controller = _controller;
+    if (controller != null && !controller.isClosed) {
+      controller.add(event);
     }
   }
 
@@ -287,8 +283,19 @@ class IosPing implements Ping {
     // the callable always outlives the last native invocation. Closing it early
     // would crash on a post-stop callback (see the lifecycle caveat in
     // dart_ping_ffi.h).
+    _stopNative();
+  }
+
+  /// Stops the native run and releases its run box, exactly once. `dart_ping_stop`
+  /// is what frees the engine box even on natural completion, and it is safe to
+  /// call on an already-finished/already-stopped engine; the [_stopped] guard
+  /// keeps the multiple lifecycle paths (stop(), cancel, teardown) to one call.
+  void _stopNative() {
+    if (_stopped) return;
+    _stopped = true;
     if (_handle != nullptr) {
       dartPingStop(_handle);
+      _handle = nullptr;
     }
   }
 
@@ -300,12 +307,9 @@ class IosPing implements Ping {
     _tornDown = true;
 
     // On NATURAL completion the engine emits the terminal summary but only
-    // `dart_ping_stop` releases the native run box, so stop here too. It is safe
-    // to stop an already-finished/already-stopped engine. Call it exactly once.
-    if (_handle != nullptr) {
-      dartPingStop(_handle);
-      _handle = nullptr;
-    }
+    // `dart_ping_stop` releases the native run box, so stop here too (a no-op if
+    // stop()/cancel already did).
+    _stopNative();
 
     final controller = _controller;
     if (controller != null && !controller.isClosed) {
