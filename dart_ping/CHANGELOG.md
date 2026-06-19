@@ -1,3 +1,39 @@
+## 10.0.0
+
+**Breaking change (#69):** the ambiguous `ipv6` boolean parameter on `Ping`
+has been replaced by an explicit, exclusive `IpVersion` enum. A boolean `false`
+was reasonably misread as "prefer IPv4 / dual-stack"; the library has always
+selected a single address family exclusively (`ping6` vs `ping`, `-4`/`-6` on
+Windows), and `IpVersion` makes that explicit and self-documenting. `IpVersion`
+has exactly two values, `ipv4` and `ipv6` — there is no dual-stack/auto value,
+and `IpVersion.ipv4` *excludes* IPv6 rather than preferring it.
+
+Migration:
+
+- `Ping(host, ipv6: true)` → `Ping(host, ipVersion: IpVersion.ipv6)`
+- `Ping(host, ipv6: false)` or omitting it → `Ping(host, ipVersion: IpVersion.ipv4)` (the default)
+
+The ping behavior for an equivalent, matched call is unchanged; only the
+selector parameter changes shape. IPv6 remains unsupported on Windows and
+continues to surface an explicit error.
+
+Additional #69 error-honesty refinements:
+
+- The selected family is now **forced**, not merely implied by the binary
+  name: Linux/Android pass an explicit `-4`/`-6` to the unified `ping`, so
+  `IpVersion.ipv4` can no longer resolve to an IPv6 address on a dual-stack
+  host (and vice-versa).
+- macOS IPv6 over the subprocess path now surfaces an explicit "unsupported"
+  error (the IPv4-only `ping` and the differently-flagged/formatted legacy
+  `ping6` cannot be driven reliably). Native iOS IPv6 is unaffected — it is
+  served by `dart_ping_ios`'s Swift engine.
+- More routing/address-family failures map to the typed `ErrorType.noRoute`
+  across platforms (macOS address-family, Windows "Destination net
+  unreachable"); macOS "Host is down" (a liveness condition) maps to
+  `unknown` rather than being mislabelled `noRoute`.
+- The literal/family mismatch guard now fires on direct platform-class /
+  `DartPingIOS` construction too, not only via the `Ping(...)` factory.
+
 ## 9.2.0
 
 - Add an optional `interface` selection to the `Ping` factory and the platform constructors (#72). Pass either a network interface name (e.g. `eth0`) or a local source IP address (e.g. `192.168.1.5`) to bind the ping to a specific interface or source address.

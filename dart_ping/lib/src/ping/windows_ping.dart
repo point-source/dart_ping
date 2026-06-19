@@ -10,7 +10,7 @@ class PingWindows extends BasePing implements Ping {
     int interval,
     int timeout,
     int ttl,
-    bool ipv6, {
+    IpVersion ipVersion, {
     PingParser? parser,
     Encoding encoding = const Utf8Codec(allowMalformed: true),
     bool forceCodepage = false,
@@ -21,7 +21,7 @@ class PingWindows extends BasePing implements Ping {
           interval,
           timeout,
           ttl,
-          ipv6,
+          ipVersion,
           parser ?? defaultParser,
           encoding,
           forceCodepage,
@@ -48,9 +48,15 @@ class PingWindows extends BasePing implements Ping {
         timeoutRgx: RegExp(r'Request timed out'),
         timeToLiveRgx: RegExp(r'Reply from (?<ip>.*): TTL expired in transit'),
         unknownHostStr: RegExp(r'could not find host'),
+        noRouteStrs: [
+          RegExp(r'Destination host unreachable'),
+          // Windows reports an unrouteable network as "Destination net
+          // unreachable"; map it to noRoute too so the family/route-failure
+          // signal is branchable on Windows, not just Linux/macOS (#69).
+          RegExp(r'Destination net unreachable'),
+        ],
         errorStrs: [
           RegExp(r'General failure'),
-          RegExp(r'Destination host unreachable'),
         ],
       );
 
@@ -59,13 +65,13 @@ class PingWindows extends BasePing implements Ping {
 
   @override
   List<String> get params {
-    if (ipv6) throw UnimplementedError('IPv6 not implemented for windows');
-    var params = ['-w', (timeout * 1000).toString(), '-i', ttl.toString()];
-    if (ipv6) {
-      params.add('-6');
-    } else {
-      params.add('-4');
+    // Windows IPv6 is not supported: surface an explicit, honest error rather
+    // than silently pinging IPv4 (§spec:ipv6-address-family-selector).
+    if (ipVersion == IpVersion.ipv6) {
+      throw UnimplementedError('IPv6 not implemented for windows');
     }
+    var params = ['-w', (timeout * 1000).toString(), '-i', ttl.toString()];
+    params.add('-4');
     if (count == null) {
       params.add('-t');
     } else {

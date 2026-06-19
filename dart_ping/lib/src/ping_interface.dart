@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'address_family.dart';
+import 'ip_version.dart';
 import 'models/ping_data.dart';
 import 'models/ping_parser.dart';
 import 'ping/linux_ping.dart';
@@ -42,8 +44,10 @@ abstract class Ping {
     /// How many network hops the packet should travel before expiring
     int ttl = 255,
 
-    /// IPv6 Mode (Not supported on Windows)
-    bool ipv6 = false,
+    /// The IP address family to ping with — an explicit, exclusive selection
+    /// (see [IpVersion]). Defaults to [IpVersion.ipv4] (IPv4 only). IPv6 is
+    /// not supported on Windows.
+    IpVersion ipVersion = IpVersion.ipv4,
 
     /// Custom parser to interpret ping process output
     /// Useful for non-english based platforms
@@ -68,6 +72,15 @@ abstract class Ping {
     /// address only). Omitting it leaves the produced command unchanged.
     String? interface,
   }) {
+    // Synchronous address-family guard: if [host] is a literal IP address, its
+    // family MUST match the selected [ipVersion]. This runs before any platform
+    // dispatch (including the iOS factory path) and before any stream/process
+    // starts. The same guard also runs inside each platform constructor (via
+    // [validateAddressFamily]) so direct construction cannot bypass it; checking
+    // here as well keeps the failure at the documented `Ping(...)` entry point.
+    // A hostname or a matching literal falls straight through — no DNS is done.
+    validateAddressFamily(host, ipVersion);
+
     switch (Platform.operatingSystem) {
       case 'android':
       case 'fuchsia':
@@ -78,7 +91,7 @@ abstract class Ping {
           interval,
           timeout,
           ttl,
-          ipv6,
+          ipVersion,
           parser: parser,
           encoding: encoding,
           interface: interface,
@@ -90,7 +103,7 @@ abstract class Ping {
           interval,
           timeout,
           ttl,
-          ipv6,
+          ipVersion,
           parser: parser,
           encoding: encoding,
           interface: interface,
@@ -102,7 +115,7 @@ abstract class Ping {
           interval,
           timeout,
           ttl,
-          ipv6,
+          ipVersion,
           parser: parser,
           encoding: encoding,
           forceCodepage: forceCodepage,
@@ -118,7 +131,7 @@ abstract class Ping {
             interval,
             timeout,
             ttl,
-            ipv6,
+            ipVersion,
             parser,
             encoding,
           );
@@ -137,7 +150,7 @@ abstract class Ping {
     int interval,
     int timeout,
     int ttl,
-    bool ipv6,
+    IpVersion ipVersion,
     PingParser? parser,
     Encoding encoding,
   )? iosFactory;

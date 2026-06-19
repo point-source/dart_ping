@@ -45,9 +45,10 @@ void main() {
     });
 
     test('an errorStrs match carries the raw line through as the message', () {
-      final res = PingMac.defaultParser.parse('ping: sendto: Host is down');
+      final res =
+          PingWindows.defaultParser.parse('General failure.');
       expect(res?.error?.error, ErrorType.unknown);
-      expect(res?.error?.message, 'ping: sendto: Host is down');
+      expect(res?.error?.message, 'General failure.');
     });
 
     test('a malformed summary (missing tx/rx) throws', () {

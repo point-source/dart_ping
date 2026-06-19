@@ -62,7 +62,7 @@ class TestPing extends PingLinux {
     Object? launchError,
   })  : _process = process,
         _launchError = launchError,
-        super('1.1.1.1', 5, 1000, 1000, 255, false);
+        super('1.1.1.1', 5, 1000, 1000, 255, IpVersion.ipv4);
 
   final FakeProcess? _process;
   final Object? _launchError;
@@ -189,6 +189,33 @@ void main() {
       expect(summary.time, const Duration(milliseconds: 4005));
       // Per-run error list is present and empty on a clean run.
       expect(summary.errors, isEmpty);
+    });
+
+    test('(b2) a typed noRoute event AND the unmapped-exit error both surface',
+        () async {
+      // A noRoute line surfaces a typed PingData(error: noRoute) and the process
+      // also exits non-zero (2, unmapped). The unmapped-exit error is still
+      // surfaced — the exit code is an independent signal from the parsed line,
+      // so it is NOT suppressed (suppressing it would also hide a distinct exit
+      // after unrelated timeouts). The stream still closes exactly once.
+      final ping = TestPing(
+        process: FakeProcess(
+          stderrLines: const ['connect: Network is unreachable'],
+          exit: 2,
+        ),
+      );
+
+      final result = await _drain(ping);
+
+      final errorData = result.data.where((d) => d.error != null).toList();
+      expect(errorData, hasLength(1));
+      expect(errorData.single.error!.error, ErrorType.noRoute,
+          reason: 'the routing failure surfaces as a typed PingData event');
+      expect(result.errors, hasLength(1),
+          reason: 'the unmapped exit still surfaces a catchable error');
+      expect(result.errors.single.toString(),
+          contains('Ping process exited with code: 2'));
+      expect(result.doneCount, 1, reason: 'stream must close exactly once');
     });
 
     group('(d) close-exactly-once across terminal paths', () {

@@ -10,7 +10,7 @@ class PingLinux extends BasePing implements Ping {
     int interval,
     int timeout,
     int ttl,
-    bool ipv6, {
+    IpVersion ipVersion, {
     PingParser? parser,
     Encoding encoding = const Utf8Codec(),
     String? interface,
@@ -20,7 +20,7 @@ class PingLinux extends BasePing implements Ping {
           interval,
           timeout,
           ttl,
-          ipv6,
+          ipVersion,
           parser ?? defaultParser,
           encoding,
           false,
@@ -40,9 +40,11 @@ class PingLinux extends BasePing implements Ping {
         ),
         unknownHostStr:
             RegExp(r'unknown host|service not known|failure in name'),
-        errorStrs: [
+        noRouteStrs: [
           RegExp(r'[Nn]etwork is unreachable'),
           RegExp(r'[Dd]estination [Hh]ost [Uu]nreachable'),
+          RegExp(r'[Nn]o route to host'),
+          RegExp(r'[Aa]ddress family for hostname not supported'),
         ],
       );
 
@@ -51,7 +53,18 @@ class PingLinux extends BasePing implements Ping {
 
   @override
   List<String> get params {
-    var params = ['-O', '-n', '-W $timeout', '-i $interval', '-t $ttl'];
+    // Force the selected family with an explicit `-4`/`-6` on the unified
+    // iputils/toybox `ping`. Relying on the binary name alone left
+    // `IpVersion.ipv4` unforced: plain `ping <host>` on a dual-stack host could
+    // resolve to IPv6, violating the exclusive-family contract.
+    var params = [
+      ipVersion.flag,
+      '-O',
+      '-n',
+      '-W $timeout',
+      '-i $interval',
+      '-t $ttl',
+    ];
     if (count != null) params.add('-c $count');
     // Linux/Android `ping -I` binds either an interface name or a source
     // address. The flag and value are pushed as SEPARATE argv tokens: process

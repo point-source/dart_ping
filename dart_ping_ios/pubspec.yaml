@@ -1,6 +1,6 @@
 name: dart_ping_ios
 description: This package adds iOS support to the dart_ping package via plugin registration.
-version: 5.1.0
+version: 6.0.0
 homepage: https://github.com/point-source/dart_ping
 repository: https://github.com/point-source/dart_ping
 
@@ -10,13 +10,20 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  dart_ping: ^9.0.0
+  dart_ping: ^10.0.0
 
 dev_dependencies:
   flutter_lints: ^6.0.0
   flutter_test:
     sdk: flutter
   test: ^1.31.0
+
+# Resolve dart_ping from the local monorepo source while the IpVersion API
+# (dart_ping 10.0.0, #69) is unreleased. Ignored by downstream consumers,
+# which resolve the published dart_ping per the constraint above.
+dependency_overrides:
+  dart_ping:
+    path: ../dart_ping
 
 flutter:
   plugin:

@@ -90,6 +90,23 @@ To override the character encoding to ignore non-utf characters:
 final ping = Ping('google.com', encoding: Utf8Codec(allowMalformed: true));
 ```
 
+### Address Family (IPv4 / IPv6)
+
+The IP address family is chosen with the `ipVersion` parameter, an **exclusive**
+selection: `IpVersion.ipv4` pings over IPv4 only and `IpVersion.ipv6` over IPv6
+only. There is no "prefer one family" or dual-stack mode — `IpVersion.ipv4`
+*excludes* IPv6 rather than preferring it. The default is `IpVersion.ipv4`.
+
+```dart
+// IPv6 only (uses ping6 / -6 under the hood)
+final ping = Ping('google.com', ipVersion: IpVersion.ipv6);
+```
+
+> **Migrating from the `ipv6` boolean:** the old `ipv6: true` / `ipv6: false`
+> flag has been replaced by `ipVersion`. Map `ipv6: true` → `ipVersion:
+> IpVersion.ipv6`, and `ipv6: false` (or omitting it) → `ipVersion:
+> IpVersion.ipv4`. IPv6 remains unsupported on Windows.
+
 ### macOS Release Build with App Sandbox
 
 When building in release mode with [app sandbox](https://developer.apple.com/documentation/security) enabled, you must ensure you add the following entitlements to the Release.entitlements file in your macos folder:

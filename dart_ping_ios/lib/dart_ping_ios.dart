@@ -17,8 +17,14 @@ class DartPingIOS implements Ping {
     this._interval,
     this._timeout,
     this._ttl,
-    this._ipv6,
-  ) : _id = _generateId();
+    this._ipVersion,
+  ) : _id = _generateId() {
+    // Enforce the literal/family guard on direct construction too, not only via
+    // the `Ping(...)` factory, so a mismatched literal fails fast with the same
+    // ArgumentError on iOS as on every other platform
+    // (§spec:address-family-mismatch-validation).
+    validateAddressFamily(_host, _ipVersion);
+  }
 
   /// Installs the iOS factory on [Ping.iosFactory]. Documented entry point
   /// for enabling iOS support (§spec:public-api-stability).
@@ -32,11 +38,11 @@ class DartPingIOS implements Ping {
     int interval,
     int timeout,
     int ttl,
-    bool ipv6,
+    IpVersion ipVersion,
     PingParser? parser,
     Encoding encoding,
   ) {
-    return DartPingIOS(host, count, interval, timeout, ttl, ipv6);
+    return DartPingIOS(host, count, interval, timeout, ttl, ipVersion);
   }
 
   /// MethodChannel used to start/stop native ping runs.
@@ -62,7 +68,7 @@ class DartPingIOS implements Ping {
   final int _interval;
   final int _timeout;
   final int _ttl;
-  final bool _ipv6;
+  final IpVersion _ipVersion;
 
   /// Unique identifier for this run, used to demultiplex shared events.
   final String _id;
@@ -123,7 +129,10 @@ class DartPingIOS implements Ping {
       'interval': _interval,
       'timeout': _timeout,
       'ttl': _ttl,
-      'ipv6': _ipv6,
+      // The selected address family, sent as the IpVersion enum name
+      // ('ipv4' / 'ipv6'). Native family-faithful resolution lands in a
+      // later batch (#69-3); the Dart bridge defines the wire field here.
+      'ipVersion': _ipVersion.name,
     });
   }
 

@@ -71,7 +71,7 @@ class TestPing extends PingLinux {
     String host, {
     required FakeProcess process,
   })  : _process = process,
-        super(host, null, 1000, 1000, 255, false);
+        super(host, null, 1000, 1000, 255, IpVersion.ipv4);
 
   final FakeProcess _process;
 

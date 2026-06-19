@@ -28,6 +28,24 @@ enum ICMPType {
     static let timeExceeded: UInt8 = 11 // Time Exceeded (TTL hit zero in transit)
 }
 
+/// ICMPv6 message types we care about for IPv6 echo (RFC 4443).
+///
+/// Note on the `SOCK_DGRAM`/`IPPROTO_ICMPV6` ("ping6 socket") path: on Darwin
+/// (macOS/iOS) a datagram ICMPv6 socket does NOT prepend an IPv6 header on
+/// receive (unlike the IPv4 datagram-ICMP path, which delivers the leading IPv4
+/// header). The datagram begins directly at the ICMPv6 message, so the v6
+/// parsers below index from offset 0 with NO header to strip. The reply's hop
+/// limit is therefore only available out-of-band, via an `IPV6_RECVHOPLIMIT`
+/// `recvmsg` control message — see `PingEngine`.
+///
+/// The numeric values differ from IPv4 ICMP: echo request/reply are 128/129
+/// (the high bit marks informational messages) and Time Exceeded is 3.
+enum ICMPv6Type {
+    static let timeExceeded: UInt8 = 3   // Time Exceeded (hop limit hit zero)
+    static let echoRequest: UInt8 = 128  // Echo Request (what we send)
+    static let echoReply: UInt8 = 129    // Echo Reply (the response to our probe)
+}
+
 /// Layout of an ICMP Echo header (8 bytes), big-endian on the wire:
 ///
 ///   byte 0:      type        (UInt8)
@@ -40,6 +58,10 @@ enum ICMPType {
 /// We carry an 8-byte payload holding the send timestamp so RTT can be derived
 /// from the echoed-back bytes if desired; the engine also keeps an authoritative
 /// per-seq send-time table, so the payload is primarily a self-describing marker.
+///
+/// The ICMPv6 echo header (RFC 4443) shares this exact byte layout — only the
+/// type discriminant differs — so the v6 framing/parsing below reuses these
+/// offsets directly.
 enum ICMPHeader {
     static let length = 8           // ICMP echo header is exactly 8 bytes
     static let typeOffset = 0
@@ -95,6 +117,47 @@ public enum ICMPPacket {
         // (header with checksum field zeroed + payload), then store it big-endian.
         let sum = checksum(packet)
         writeUInt16BE(sum, into: &packet, at: ICMPHeader.checksumOffset)
+
+        return packet
+    }
+
+    /// Construct an ICMPv6 Echo Request datagram (RFC 4443, type 128).
+    ///
+    /// The header layout is IDENTICAL to the IPv4 ICMP echo header — type, code,
+    /// checksum, identifier, sequence at the same offsets — and we attach the
+    /// same 8-byte big-endian send-timestamp payload, so the v6 parsers below
+    /// (and the engine's per-seq matching) can share `ICMPHeader`'s offsets.
+    ///
+    /// CHECKSUM: unlike IPv4, the ICMPv6 checksum is computed over a pseudo-header
+    /// that includes the IPv6 source and destination addresses, which we do NOT
+    /// know here (the kernel selects the source address). On the Darwin
+    /// `SOCK_DGRAM`/`IPPROTO_ICMPV6` path the kernel computes and fills in the
+    /// ICMPv6 checksum for us, so we deliberately leave the checksum field zero
+    /// rather than computing a (wrong, address-less) value here.
+    ///
+    /// - Parameters:
+    ///   - identifier: the echo identifier. As with v4, the Darwin datagram
+    ///     socket may overwrite this with its own port-derived id, so callers
+    ///     must not rely on it round-tripping (we match by sequence only).
+    ///   - sequence: the 16-bit sequence number used to match replies.
+    ///   - sendTimeMicros: send timestamp (microseconds) embedded in the payload.
+    /// - Returns: the complete ICMPv6 message bytes (header + payload), checksum 0.
+    public static func echoRequestV6(identifier: UInt16,
+                                     sequence: UInt16,
+                                     sendTimeMicros: UInt64) -> Data {
+        var packet = Data(count: ICMPHeader.length + payloadLength)
+
+        packet[ICMPHeader.typeOffset] = ICMPv6Type.echoRequest
+        packet[ICMPHeader.codeOffset] = 0
+        // Checksum bytes (offset 2..3) are intentionally left zero: the kernel
+        // computes the ICMPv6 checksum over the pseudo-header on the SOCK_DGRAM
+        // path (see the method note above).
+        writeUInt16BE(identifier, into: &packet, at: ICMPHeader.identifierOffset)
+        writeUInt16BE(sequence, into: &packet, at: ICMPHeader.sequenceOffset)
+
+        // Embed the send timestamp big-endian into the 8-byte payload, exactly
+        // as the v4 echo does, so the on-wire payload layout is shared.
+        writeUInt64BE(sendTimeMicros, into: &packet, at: ICMPHeader.length)
 
         return packet
     }
@@ -177,6 +240,66 @@ public enum ICMPPacket {
         return readUInt16BE(data, at: echoStart + ICMPHeader.sequenceOffset)
     }
 
+    /// Attempt to interpret received bytes as an ICMPv6 Echo Reply (type 129).
+    ///
+    /// On the `SOCK_DGRAM`/`IPPROTO_ICMPV6` path the bytes begin at the ICMPv6
+    /// header with NO leading IPv6 header (see the note on `ICMPv6Type`), so the
+    /// header layout is identical to v4 — we reuse `ICMPHeader`'s offsets — and
+    /// only the type discriminant differs (129 instead of 0).
+    ///
+    /// - Returns: the parsed reply, or `nil` if the bytes are too short or are
+    ///   not an ICMPv6 Echo Reply.
+    public static func parseEchoReplyV6(_ data: Data) -> EchoReply? {
+        guard data.count >= ICMPHeader.length else { return nil }
+
+        let base = data.startIndex
+        let type = data[base + ICMPHeader.typeOffset]
+        guard type == ICMPv6Type.echoReply else { return nil }
+
+        let identifier = readUInt16BE(data, at: base + ICMPHeader.identifierOffset)
+        let sequence = readUInt16BE(data, at: base + ICMPHeader.sequenceOffset)
+        return EchoReply(identifier: identifier, sequence: sequence)
+    }
+
+    /// Attempt to interpret received bytes as an ICMPv6 Time Exceeded message
+    /// (type 3, e.g. hop limit reached zero in transit) and extract the sequence
+    /// number of the ORIGINAL Echo Request that triggered it.
+    ///
+    /// On the `SOCK_DGRAM`/`IPPROTO_ICMPV6` path there is NO outer IPv6 header on
+    /// the received message, so the layout is:
+    ///
+    ///   bytes 0..7:    the type-3 ICMPv6 header (type=3, code, checksum, 4 unused)
+    ///   bytes 8..47:   the quoted ORIGINAL IPv6 header. Unlike IPv4 there is no
+    ///                  variable IHL: an IPv6 header is a FIXED 40 bytes. (We do
+    ///                  not chase extension headers here; our own probe carries
+    ///                  none, so the quoted original starts with the base header
+    ///                  immediately followed by the original ICMPv6 echo.)
+    ///   bytes 48..:    the quoted ORIGINAL ICMPv6 Echo header (8 bytes) — we read
+    ///                  its sequence at `+ICMPHeader.sequenceOffset` (offset 48+6).
+    ///
+    /// We match by SEQUENCE only and ignore the identifier, consistent with
+    /// `parseEchoReply`/`parseEchoReplyV6`.
+    ///
+    /// - Returns: the original probe's sequence number, or `nil` if the bytes are
+    ///   not a Time Exceeded message or are too short to contain the quoted echo.
+    public static func parseTimeExceededOriginalSequenceV6(_ data: Data) -> UInt16? {
+        let base = data.startIndex
+
+        // Need at least the 8-byte type-3 header before the quoted IPv6 header.
+        guard data.count >= ICMPHeader.length else { return nil }
+        guard data[base + ICMPHeader.typeOffset] == ICMPv6Type.timeExceeded else { return nil }
+
+        // The quoted original IPv6 header is a fixed 40 bytes and begins right
+        // after the 8-byte type-3 header; the original ICMPv6 echo follows it.
+        let ipv6HeaderLength = 40
+        let echoStart = base + ICMPHeader.length + ipv6HeaderLength
+
+        // We need the full 8-byte original Echo header to reach the sequence field.
+        guard echoStart + ICMPHeader.length <= data.endIndex else { return nil }
+
+        return readUInt16BE(data, at: echoStart + ICMPHeader.sequenceOffset)
+    }
+
     // MARK: - Receive framing (Darwin leading IPv4 header)
 
     /// A received datagram after its leading IPv4 header has been stripped: the
@@ -198,6 +321,9 @@ public enum ICMPPacket {
     /// are not a plausible IPv4 datagram (wrong version nibble, IHL below the
     /// 20-byte minimum) or are too short to hold the IPv4 header plus at least
     /// one ICMP header byte.
+    ///
+    /// IPv4 ONLY: the v6 datagram path delivers no leading IP header, so the
+    /// engine does not call this for v6 (see `PingEngine`).
     public static func stripIPv4Header(_ data: Data) -> ReceivedDatagram? {
         let base = data.startIndex
 

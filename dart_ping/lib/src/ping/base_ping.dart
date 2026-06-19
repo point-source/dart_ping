@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:async/async.dart';
+import 'package:dart_ping/src/address_family.dart';
+import 'package:dart_ping/src/ip_version.dart';
 import 'package:dart_ping/src/models/ping_data.dart';
 import 'package:dart_ping/src/models/ping_error.dart';
 import 'package:dart_ping/src/models/ping_summary.dart';
@@ -15,12 +17,16 @@ abstract class BasePing {
     this.interval,
     this.timeout,
     this.ttl,
-    this.ipv6,
+    this.ipVersion,
     this.parser,
     this.encoding,
     this.forceCodepage,
     this.interface,
   ) {
+    // Enforce the literal/family guard on EVERY construction path, not only the
+    // `Ping(...)` factory — direct construction of a platform class must fail
+    // fast the same way (§spec:address-family-mismatch-validation).
+    validateAddressFamily(host, ipVersion);
     _controller = StreamController<PingData>(
       onListen: _onListen,
       onCancel: _onCancel,
@@ -44,8 +50,9 @@ abstract class BasePing {
   /// How many network hops the packet should travel before expiring
   int ttl;
 
-  /// IPv6 Mode (Not supported on Windows)
-  bool ipv6;
+  /// The IP address family to ping with — an explicit, exclusive selection
+  /// (see [IpVersion]). [IpVersion.ipv6] is not supported on Windows.
+  IpVersion ipVersion;
 
   /// Custom parser to interpret ping process output
   /// Useful for non-english based platforms
@@ -115,9 +122,17 @@ abstract class BasePing {
   /// The command that will be run on the host OS
   String get command => 'ping ${params.join(' ')} $host';
 
+  /// The executable used to launch the ping process. Every supported core
+  /// platform uses the unified `ping` binary: Linux/Android force the family
+  /// with an explicit `-4`/`-6` in [params], while macOS and Windows only run
+  /// `ping` for IPv4 (both reject IPv6 in [params] before launch). No platform
+  /// dispatches to the legacy `ping6` binary. Kept as a getter so a platform
+  /// can still override the executable if needed.
+  String get executable => 'ping';
+
   /// Starts a ping process on the host OS
   Future<Process> get platformProcess async {
-    final ping = ipv6 ? 'ping6' : 'ping';
+    final ping = executable;
 
     return await Process.start(
       forceCodepage ? 'chcp' : ping,
@@ -227,7 +242,14 @@ abstract class BasePing {
           }
         } else {
           // Unmapped non-zero exit: surface the exception rather than
-          // discarding it, so the consumer can catch it.
+          // discarding it, so the consumer can catch it. This fires even when
+          // a typed error (e.g. a `noRoute` line) already surfaced during the
+          // run: the two are independent layers (parsed output vs. process exit
+          // code), and suppressing the exit exception whenever any error
+          // occurred would also hide a genuinely distinct unmapped exit after
+          // unrelated per-probe timeouts, weakening the
+          // §spec:stream-lifecycle-robustness guarantee. A noRoute line plus the
+          // generic exit exception is a tolerable minor redundancy by contrast.
           final ex = throwExit(exitCode);
           if (ex != null) {
             _controller.addError(ex);
