@@ -1,6 +1,6 @@
 # Specification
 
-This document covers seven areas, matching REQUIREMENTS.md:
+This document covers eight areas, matching REQUIREMENTS.md:
 
 1. **iOS SPM migration (#73)** — `§spec:swift-icmp-engine` …
    `§spec:ios-tests` below (implemented).
@@ -26,6 +26,13 @@ This document covers seven areas, matching REQUIREMENTS.md:
 7. **Concurrent-ping isolation (#70)** — `§spec:concurrent-isolation`
    at the very end (implemented). A reported cross-contamination defect
    between simultaneously-running `Ping` instances.
+8. **Summary statistics (#63)** — the `§spec:stats-event-model` …
+   `§spec:stats-tests` sections at the very end (not started). Surfaces
+   round-trip min / avg / max / stddev, jitter, and packet-loss — in the run
+   summary and live during a run, with iOS parity — via a from-scratch
+   redesign of the stream's event/data classes, folded into the unreleased
+   breaking `dart_ping` 10.0.0 / `dart_ping_ios` 6.0.0 majors. **Supersedes
+   the API-stability promises of areas 1–7.**
 
 Solution-space design for issue #73 — native, Swift Package Manager
 (SPM)-compatible iOS support for `dart_ping`.
@@ -1290,3 +1297,406 @@ isolation guarantee is the normative contract; the specific mechanism by
 which each run stays independent (separate processes today, the iOS id
 demux) is implementation detail that may change without invalidating this
 section.
+
+---
+
+# Summary statistics
+
+Solution-space design for issue #63 (`§req:stats-*`): surface the
+round-trip statistics the native `ping` already prints — min / avg / max /
+stddev — plus a jitter figure and a packet-loss percentage, both in the
+terminal run summary and as live running figures during a run, with full
+cross-platform parity including iOS. The work is delivered as a
+from-scratch redesign of the stream's event/data classes, ridden in on the
+already-unreleased breaking majors (`dart_ping` 10.0.0 / `dart_ping_ios`
+6.0.0 — the same majors the #69 address-family work bumped to).
+
+The problem (from §req:stats-problem-statement): the native `ping` binary
+prints a round-trip summary at the end of every session, and that is
+exactly what a diagnostics UI wants to show — but `dart_ping` discards it.
+`PingSummary` exposes only `transmitted` / `received` / total `time` /
+`errors`, so a developer who wants min / avg / max / stddev, jitter, or a
+loss percentage must reconstruct them by hand from the per-probe stream.
+min / max are easy; stddev and jitter are not. Three things make the
+do-it-yourself path worse than it looks: the raw material is lossy
+(per-probe `time` truncates to whole milliseconds through `toMap`), there
+is no running view (stats only make sense at the end today), and the event
+shape resists extension — a single `PingData` with three nullable fields,
+where end-of-run is detected by `summary != null`, cannot carry a
+summary-so-far on every probe without breaking the very signal consumers
+rely on.
+
+This area resolves the four open decisions deferred from discovery
+(§req:stats-open-decisions): the event/value-object shapes
+(§spec:stats-event-model, §spec:stats-round-trip), native-vs-computed
+precedence (§spec:stats-cross-platform), the precision-preserving
+serialization (§spec:stats-precision), and the iOS surfacing mechanism
+(§spec:stats-ios).
+
+**This area supersedes the API-stability promises of the earlier work.**
+Areas 1–7 above each assert the `PingData` / `PingResponse` / `PingSummary`
+/ `PingError` shapes stay unchanged (§spec:public-api-stability and its
+echoes through §spec:concurrent-isolation). Those promises were scoped to
+the same unreleased 10.0.0 / 6.0.0 window and are deliberately overridden
+here: the public event/data shape changes once, in this redesign, as part
+of that major, rather than each earlier area preserving the old shape
+(§req:stats-constraints).
+
+## Sealed ping-event stream §spec:stats-event-model
+*Status: not started*
+
+A `Ping` instance's stream emits a **sealed `PingEvent`** union with three
+explicit variants — a probe response, a probe error, and a terminal run
+summary — replacing the single `PingData` whose three nullable fields
+(`response` / `summary` / `error`) consumers had to disambiguate by hand. A
+consumer branches on the event's type (an exhaustive `switch`) and the
+terminal summary is the identifiable final event of the run.
+
+- The stream shall emit `PingEvent` values of exactly three kinds — a
+  successful-probe response, a probe/run error, and a terminal run summary
+  — and the type of each event shall make its kind explicit, so a consumer
+  distinguishes them without inspecting which fields are null
+  (§req:stats-success-criteria — unambiguous end-of-run;
+  §req:stats-user-stories; §req:stats-priorities — must-have).
+- The run-summary event shall be the final event emitted before the stream
+  closes, and identifiable as terminal by its type alone
+  (§req:stats-success-criteria — terminal event identifiable).
+- A probe that both identifies a probe and reports an error (a timed-out or
+  TTL-exceeded probe carrying a `seq` and/or a hop `ip`) shall remain
+  representable as a single error event that also carries that partial
+  probe information, preserving the existing combined response+error
+  contract (§spec:ios-error-parity, §spec:address-family-error-honesty;
+  §req:stats-success-criteria — no information lost).
+- The per-probe `seq` / `ttl` / `time` / `ip`, the run summary's
+  `transmitted` / `received` / total `time` / `errors`, and the per-run
+  error list shall all remain available after the reshape; no result
+  information is lost (§req:stats-success-criteria — existing information
+  preserved).
+- The redesigned event shape is a **breaking** change to the public Dart
+  surface, shipped in `dart_ping` 10.0.0 / `dart_ping_ios` 6.0.0
+  (§req:stats-constraints; supersedes §spec:public-api-stability).
+
+**Why a sealed union instead of extending `PingData`:** the current
+end-of-run signal *is* `summary != null`, so attaching a summary-so-far to
+every probe — the live-stats requirement (§spec:stats-live) — would make
+every probe look like the end of the run. The nullable-field shape cannot
+grow a running summary without breaking the terminal signal. A sealed
+hierarchy gives each event an explicit type, lets the terminal summary be a
+distinct type rather than "the event where `summary` happens to be set,"
+and lets the compiler enforce exhaustive handling. Dart sealed classes are
+available on the package's SDK floor (≥3.8.0, §spec:sdk-floor), so this
+needs no floor change.
+
+**Why fold it into the unreleased major rather than add fields
+compatibly:** any field-additive workaround (e.g. a parallel
+`runningSummary` field) would carry the ambiguity forward forever. Because
+the next release is already breaking (§req:stats-constraints — the release
+consolidates all post-9.0.1 changes into 10.0.0 / 6.0.0), #63 is the
+occasion to adopt the shape the stream would have if built today, at no
+incremental compatibility cost.
+
+**Tradeoff:** every consumer's stream-handling code must migrate from
+null-checks to a type switch. This is the one-time cost of removing the
+ambiguity; it is paid once, inside a release that already forces a
+migration, and the result is code the compiler checks for completeness.
+
+## Round-trip statistics value object §spec:stats-round-trip
+*Status: not started*
+
+A single reusable value object — `RoundTripStats` — carries the round-trip
+figures: **minimum, average, maximum, standard deviation, jitter**, and the
+**sample count** they were computed from. The same object is used for the
+final summary (§spec:stats-summary) and for the live running snapshot
+(§spec:stats-live), and it is computed incrementally as probes arrive.
+
+- `RoundTripStats` shall expose round-trip `min`, `avg`, `max`, `stddev`,
+  and `jitter` (each a `Duration`) and the count of successful samples they
+  summarize (§req:stats-success-criteria — full statistic set;
+  §req:stats-constraints — single reusable value object).
+- The statistics shall be computed over **successful replies only**: a
+  timed-out, TTL-exceeded, or otherwise errored probe contributes to the
+  counts and to packet loss (§spec:stats-summary) but not to
+  min / avg / max / stddev / jitter (§req:stats-constraints).
+- `stddev` shall be the **population** standard deviation of the successful
+  round-trip times (dividing by the sample count), matching what the native
+  `ping` tools report, so a computed value is comparable to the native
+  number a user may have seen (§req:stats-quality-attributes — native
+  fidelity).
+- `jitter` shall be the **mean of the absolute differences between
+  consecutive successful probe round-trip times** (RFC 3550-style
+  interarrival variation), and this definition shall be documented in the
+  public dartdoc so a consumer knows what they are charting
+  (§req:stats-success-criteria — jitter means probe-to-probe variation,
+  documented; §req:stats-constraints).
+- When a run has **no successful replies**, the round-trip figures
+  (`min` / `avg` / `max` / `stddev` / `jitter`) shall be reported as absent
+  (null) rather than as fabricated zeros, with the sample count zero
+  (§req:stats-success-criteria — zero-reply runs report honestly). With a
+  single successful reply, `jitter` (which needs two samples) is likewise
+  absent.
+
+**Why one value object shared by the summary and the live snapshot:** the
+running figures and the final figures are the same quantities at different
+points in time. Modeling them as one type computed by one incremental
+accumulator guarantees the live view and the final summary can never define
+"avg" or "stddev" differently, and means the math is written and tested
+once (§req:stats-quality-attributes — consistency, testability).
+
+**Why population stddev and an explicit jitter definition:** "stddev" and
+"jitter" are ambiguous across tools — Linux `ping` prints `mdev` (mean
+*deviation*), macOS prints a true standard deviation, Windows prints
+neither, and "jitter" has several field definitions. Pinning stddev to the
+population formula the native tools use, and jitter to the RFC 3550 mean
+consecutive delta, makes the library's numbers well-defined and documented
+rather than "whatever the platform happened to print"
+(§req:stats-quality-attributes; this is what makes uniform cross-platform
+computation, §spec:stats-cross-platform, coherent).
+
+**Why absent rather than zero on an empty sample:** a charted `0 ms` for an
+unreachable host is a misleading data point — it reads as "instant," not
+"no data." Nullable figures force the consumer to handle the no-sample case
+explicitly (§req:stats-success-criteria, §req:stats-user-stories — the
+zero-reply story).
+
+## Run summary reports the full statistic set §spec:stats-summary
+*Status: not started*
+
+The terminal run-summary event reports the complete statistic set: the
+round-trip `RoundTripStats` (§spec:stats-round-trip), a **packet-loss
+percentage**, and the preserved `transmitted` / `received` / total `time` /
+per-run `errors`.
+
+- A completed run's summary shall report round-trip min / avg / max /
+  stddev and jitter (via `RoundTripStats`) and a packet-loss percentage, in
+  addition to `transmitted`, `received`, total `time` (where the platform
+  reports it), and the per-run error list (§req:stats-success-criteria —
+  full set; existing information preserved; §req:stats-priorities —
+  must-have).
+- The packet-loss percentage shall be a **derived view** of `transmitted`
+  and `received`, computed on read, not an independently stored figure — so
+  it can never drift from the counts and adds no redundant serialized field
+  (§req:stats-success-criteria — loss consistent with counts;
+  §req:stats-constraints — loss is a derived view).
+- A zero-reply run shall report 100% loss with `received` zero and the
+  round-trip figures absent (§spec:stats-round-trip;
+  §req:stats-success-criteria — zero-reply honesty).
+
+**Why loss is derived, not stored:** an independently stored loss number is
+a second source of truth that a refactor or a serialization round-trip can
+desynchronize from the counts. Computing `100 × (transmitted − received) /
+transmitted` on read makes inconsistency unrepresentable
+(§req:stats-quality-attributes — the loss-consistency criterion is met by
+construction).
+
+**Why keep `transmitted` / `received` / `time` / `errors`:** the redesign
+must lose no existing result information (§req:stats-success-criteria).
+Counts and the error list still come from where they do today — the native
+summary line and the run's accumulated errors
+(§spec:stream-lifecycle-robustness, §spec:ios-error-parity) — and total
+`time` is reported where the platform provides it, unchanged.
+
+## Live running statistics §spec:stats-live
+*Status: not started*
+
+While a run is in progress, a consumer can observe the statistics evolve:
+every probe event carries a **running `RoundTripStats` snapshot**
+(min / avg / max / stddev / jitter / count so far), updated as each probe
+arrives — not only once at the end.
+
+- Each probe event (a response, and an error that carries probe
+  information) shall carry a running `RoundTripStats` reflecting all
+  successful replies seen so far in the run, so a consumer can display
+  current conditions without waiting for the terminal summary
+  (§req:stats-success-criteria — live stats observable;
+  §req:stats-user-stories — the live-dashboard story; §req:stats-priorities
+  — must-have).
+- The running snapshot shall use the same definitions and the same
+  computation as the final summary (§spec:stats-round-trip), so the last
+  running snapshot of a run is consistent with the summary's figures
+  (§req:stats-quality-attributes — consistency).
+- A running packet-loss view shall be derivable during the run from the
+  counts seen so far, consistent with the terminal loss
+  (§req:stats-success-criteria — loss so far observable).
+
+**Why attach the snapshot to each probe event rather than emit a separate
+periodic stats event:** the natural cadence for "stats so far" is "whenever
+a probe arrives," which is exactly when the figures change. Attaching the
+snapshot to the probe event gives a deterministic, probe-driven update with
+no extra event type and no timer, and lets a consumer read the current
+figures from any event it is already handling. A separate periodic event
+was rejected: it adds a second event kind and a non-deterministic timer
+cadence for no behavior the attached snapshot does not already provide.
+
+**Why this is the requirement that forces the sealed reshape:** carrying a
+summary-so-far on every probe is impossible under the old `summary != null`
+end-of-run signal (§spec:stats-event-model) — it is the concrete reason the
+event model is redesigned rather than extended.
+
+## Statistics computed uniformly across platforms §spec:stats-cross-platform
+*Status: not started*
+
+The round-trip statistics are computed once, at the Dart boundary, from the
+**per-probe round-trip times the platform measured** — the same algorithm
+on Linux/Android, macOS, Windows, and iOS. The native tools' own summary
+*statistics* line (min/avg/max/stddev) is **not** the source of the
+reported figures; the per-probe times that feed the computation are the
+native measurements.
+
+- Every platform shall report the complete statistic set — min / avg / max
+  / stddev, jitter, and loss — including **stddev on Windows** (whose native
+  `ping` omits it) and **every figure on iOS** (whose native engine emits
+  no summary line at all) (§req:stats-success-criteria — same set on every
+  platform; §req:stats-priorities — must-have).
+- The statistics shall be derived from the per-probe round-trip times each
+  platform already produces, normalized to one definition at the Dart
+  boundary, so the figures carry identical semantics on every platform
+  despite the native tools' differing (or absent) summary formats
+  (§req:stats-quality-attributes — cross-platform consistency).
+- `transmitted` and `received` shall continue to come from where they do
+  today (the native summary line on the subprocess platforms,
+  §spec:stream-lifecycle-robustness; the engine's counts on iOS,
+  §spec:ios-error-parity); the successful-reply sample count the statistics
+  summarize equals `received` by construction (§req:stats-success-criteria —
+  loss consistent).
+
+**Why compute rather than parse the native statistics line (resolving the
+native-vs-computed open decision, §req:stats-open-decisions):** preferring
+the native summary figures was the discovery-time starting position, but two
+must-have criteria — the *same set on every platform* and *cross-platform
+consistency* — override it, because the native figures are not the same
+thing across platforms. Linux prints `mdev` (mean deviation), macOS prints a
+true `stddev`, and Windows prints no deviation figure at all; "preferring
+native" would therefore report three different quantities under one `stddev`
+field and leave Windows blank. The native lines also vary in precision
+(Windows is whole-milliseconds) and would add six more locale-sensitive
+number formats to parse per platform — exactly the fragile text-parsing
+surface §spec:ttl-exceeded-parse showed is error-prone. Computing from the
+per-probe times — which *are* the native measurements — keeps native
+fidelity where it is real (the individual RTTs) while guaranteeing one
+definition, full precision (§spec:stats-precision), and the complete set
+everywhere. The native statistics line is consequently left unparsed.
+
+**Why this also makes the live view free:** because the figures are computed
+incrementally from the per-probe times (§spec:stats-round-trip), the live
+running snapshot (§spec:stats-live) and the final summary are the same
+computation at different points — there is no separate "native summary" code
+path the live view could diverge from.
+
+**Tradeoff:** the reported stddev may differ slightly from the number a user
+sees in their terminal on Linux (mdev) — but it will be a *correct,
+consistent* standard deviation, documented as such (§spec:stats-round-trip),
+which is more useful to a cross-platform consumer than faithfully echoing a
+different statistic on each OS.
+
+## Sub-millisecond precision preserved end-to-end §spec:stats-precision
+*Status: not started*
+
+Round-trip times retain the resolution the platform provides —
+sub-millisecond where the native tool reports it — through the in-memory
+models, the statistics, and serialization. They are not truncated to whole
+milliseconds on the way to the consumer.
+
+- A per-probe round-trip `time` and the round-trip statistics derived from
+  it shall retain sub-millisecond resolution end-to-end, including across
+  `toMap` / `fromMap` (and JSON) serialization (§req:stats-success-criteria
+  — precision preserved; §req:stats-quality-attributes — precision;
+  §req:stats-priorities — high).
+- Serialization of round-trip `Duration` values shall not truncate to whole
+  milliseconds; the current `PingResponse.toMap` / `PingSummary.toMap`
+  whole-millisecond truncation is corrected as part of this work
+  (§req:stats-constraints — the `toMap` truncation is corrected;
+  §req:stats-problem-statement — the raw material is lossy;
+  §req:stats-open-decisions — serialization format).
+
+**Why this matters and why now:** for a fast local link, round-trip times
+are well under a millisecond, so a whole-millisecond representation rounds
+stddev and jitter toward zero and makes them meaningless — the precise
+failure the reporter's use case (a latency dashboard) would hit. The values
+already exist sub-millisecond in memory (the subprocess parsers capture
+fractional milliseconds; the iOS engine measures microseconds,
+§spec:stats-ios); only the serialization step discards it. Fixing the
+encoding to carry microsecond resolution is a small, contained change that
+the breaking major (§spec:stats-event-model) lets us make to the wire format
+without a separate compatibility break. The exact on-the-wire encoding is an
+implementation choice; the normative contract is only that the round-trip
+resolution survives a serialization round-trip.
+
+## iOS statistics parity §spec:stats-ios
+*Status: not started*
+
+iOS reports the same statistic set as every other platform, computed by the
+**same shared Dart code**. The native Swift engine has no summary-statistics
+line; it streams per-probe round-trip times, and the Dart bridge computes
+the `RoundTripStats` from them exactly as the core package does.
+
+- iOS shall report the complete statistic set — min / avg / max / stddev,
+  jitter, and loss — and live running statistics during a run, on a par with
+  the subprocess platforms (§req:stats-success-criteria — same set on every
+  platform, including iOS; §req:stats-quality-attributes — consistency).
+- The statistics shall be computed at the Dart boundary by the **same
+  computation** the core `dart_ping` package uses (§spec:stats-round-trip),
+  reused by `dart_ping_ios`, so iOS parity holds by construction rather than
+  by a parallel Swift implementation (§req:stats-quality-attributes —
+  consistency, testability).
+- The native engine shall surface per-probe round-trip times at
+  **microsecond resolution** (it already measures microseconds before
+  rounding), so iOS retains the sub-millisecond precision §spec:stats-precision
+  requires; the engine does not compute min / avg / max / stddev itself
+  (§req:stats-open-decisions — iOS surfacing mechanism;
+  §req:stats-success-criteria — precision).
+
+**Why compute in shared Dart rather than in Swift (resolving the iOS
+surfacing open decision, §req:stats-open-decisions):** the native engine
+already streams each probe's `seq` / `ttl` / `time` / `ip` and accumulates
+`transmitted` / `received` / `errors` (§spec:ios-ping-behavior,
+§spec:ios-error-parity); the only data the stats need is the per-probe
+round-trip time, which it already has. Computing the aggregate figures in
+Swift would duplicate the math on the far side of the method channel and
+risk it drifting from the core package's definitions — the cross-platform
+inconsistency this area exists to remove. Reusing the one Dart
+`RoundTripStats` computation makes iOS identical to the other platforms for
+free, and keeps the native↔Dart channel carrying only raw per-probe data.
+
+**Why send microseconds over the channel:** the engine currently rounds RTT
+to whole milliseconds before sending (the only iOS-side precision loss), so
+on fast links its stddev/jitter would collapse to zero. Surfacing the
+microseconds it already measures is the iOS half of the end-to-end precision
+guarantee (§spec:stats-precision). The channel payload is an implementation
+detail (§spec:ios-ping-behavior); only the resulting `Duration` resolution
+is normative.
+
+## Statistics behavior tests §spec:stats-tests
+*Status: not started*
+
+The statistics and the event contract are covered by automated tests that
+run under `dart test` / `flutter test` without a live network.
+
+- The round-trip computations (min / avg / max / population stddev /
+  jitter) shall be covered by tests over representative per-probe inputs
+  with known expected values, including the single-sample and zero-reply
+  cases (§req:stats-success-criteria — automated tests, zero-reply;
+  §req:stats-priorities — high; §spec:stats-round-trip).
+- The packet-loss derivation and its consistency with `transmitted` /
+  `received`, and the zero-reply 100%-loss / absent-figures case, shall be
+  covered (§req:stats-success-criteria; §spec:stats-summary).
+- The sealed event contract shall be covered: a test shall confirm the
+  terminal summary event is distinguishable by type and is the final event,
+  and that probe-response and probe-error events are distinguishable
+  (§req:stats-success-criteria — terminal event identifiable;
+  §spec:stats-event-model).
+- The sub-millisecond precision round-trip through serialization shall be
+  covered by a test that serializes and deserializes a sub-millisecond
+  round-trip value and asserts no precision is lost
+  (§req:stats-success-criteria — precision; §spec:stats-precision).
+- The iOS mapping shall be covered by Dart-side tests over the
+  native-result → event/stats seam, asserting iOS produces the same
+  statistic set (including stddev) from per-probe inputs as the core package
+  (§req:stats-success-criteria — iOS parity; §spec:stats-ios,
+  §spec:ios-tests).
+
+**Why offline seams only:** the statistic math is pure (per-probe times in →
+figures out) and the event contract is pure (events in → type
+discrimination out), so both are fully testable without a live network — the
+deterministic-seam principle the suite already follows (§spec:ci,
+§spec:coverage-expansion). Live ICMP round-trips remain the manual
+acceptance path; they are not where the statistics logic is verified.
