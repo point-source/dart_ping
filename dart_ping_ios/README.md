@@ -67,6 +67,24 @@ Note that local-network ping does **not** trigger iOS's Local Network privacy
 prompt. That prompt applies to LAN-discovery APIs, not to ICMP echo sent to a
 routable host, so its absence here is expected and not a defect.
 
+### NAT64 IPv4-literal reachability: on-device acceptance step
+
+NAT64 IPv4-literal synthesis (the default-on `nat64Synthesis` option) has a
+**manual on-device acceptance step** that is **not a CI gate** — a live
+IPv6-only cellular network cannot be reproduced on hosted runners or the iOS
+simulator, so this mirrors #69's deterministic-seam principle (the offline
+decision/error seams are covered by network-free `RunnerTests` and Dart tests;
+only the live reachability leg is hand-verified).
+
+On an affected device joined to an **IPv6-only cellular network**:
+
+1. Ping an IPv4 literal (e.g. `13.35.27.1`) under `IpVersion.ipv4` with the
+   default `nat64Synthesis: true`. Expected: replies with round-trip times and a
+   normal run summary — **the same observable result as over Wi-Fi**.
+2. Re-run the same ping with `nat64Synthesis: false`. Expected: the prior honest
+   `noRoute` error (the un-synthesized failure), never a phantom `unknownHost`
+   and never a silent hang.
+
 ## Usage
 
 The key to using this package is to import it and call this method before you use dart_ping:

@@ -26,6 +26,11 @@
 //      ipVersion: a string, the selected address family — "ipv4" or "ipv6"
 //                 (the `IpVersion` enum name). Anything other than "ipv6" maps
 //                 to IPv4. The engine resolves AND sends for this family only.
+//      nat64Synthesis: a bool, default true, gating the NAT64 relaxation. When
+//                 true and the selected family is "ipv4" and the host is an IPv4
+//                 literal, the engine lets the platform synthesize a NAT64
+//                 address so the literal reaches an IPv6-only network; otherwise
+//                 it keeps the family-pinned resolve (§spec:nat64-literal-synthesis).
 //
 //  Threading: `FlutterEventSink` must be invoked on the platform/main thread,
 //  but `PingEngine` delivers events on a background queue, so every sink call
@@ -135,6 +140,9 @@ public class DartPingIosPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         // ("ipv4" / "ipv6"); default to IPv4 for any absent/unexpected value.
         let ipVersion = (args["ipVersion"] as? String) ?? "ipv4"
         let family: IPFamily = (ipVersion == "ipv6") ? .v6 : .v4
+        // Default-on to match the option's default (§spec:nat64-option); the Dart
+        // bridge always sends it, but absence/unexpected falls back to enabled.
+        let nat64Synthesis = (args["nat64Synthesis"] as? Bool) ?? true
 
         let config = PingEngine.Config(
             host: host,
@@ -142,7 +150,8 @@ public class DartPingIosPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             interval: interval,
             timeout: timeout,
             ttl: ttl,
-            family: family
+            family: family,
+            nat64Synthesis: nat64Synthesis
         )
 
         let engine = PingEngine(config: config) { [weak self] event in
