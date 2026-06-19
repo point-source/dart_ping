@@ -68,19 +68,28 @@ public final class PingEngine {
         public let timeout: TimeInterval  // seconds to wait for a reply
         public let ttl: Int               // outgoing hop limit (IP_TTL / IPV6_UNICAST_HOPS)
         public let family: IPFamily       // the selected family; resolved AND sent for
+        // When true (and the selected family is v4 and the host is an IPv4
+        // literal), the engine relaxes #69's pinned resolve so the platform can
+        // synthesize a NAT64 address on an IPv6-only network and reach the
+        // literal via whichever family the resolver returns (the TRANSPORT
+        // family). It never changes the caller-selected `family`
+        // (§spec:nat64-literal-synthesis / §spec:nat64-option).
+        public let nat64Synthesis: Bool
 
         public init(host: String,
                     count: Int?,
                     interval: TimeInterval,
                     timeout: TimeInterval,
                     ttl: Int,
-                    family: IPFamily) {
+                    family: IPFamily,
+                    nat64Synthesis: Bool) {
             self.host = host
             self.count = count
             self.interval = interval
             self.timeout = timeout
             self.ttl = ttl
             self.family = family
+            self.nat64Synthesis = nat64Synthesis
         }
     }
 
@@ -129,6 +138,13 @@ public final class PingEngine {
     /// passed to `sendto`.
     private var destination: sockaddr_storage?
     private var destinationLen: socklen_t = 0
+    /// The family the engine actually opens the socket / sends / parses for. For
+    /// every non-synthesis path this equals `config.family` (zero behavior
+    /// change); only the narrow NAT64 synthesis case can differ — transport may
+    /// be `.v6` (a synthesized NAT64 address) while the caller-selected
+    /// `config.family` stays `.v4` (§spec:nat64-literal-synthesis). Set during
+    /// start() after a successful resolve; touched only on stateQueue.
+    private var transportFamily: IPFamily = .v4
     private let identifier: UInt16 = UInt16(truncatingIfNeeded: getpid())
 
     private var nextSequence: UInt16 = 0        // next seq to send
@@ -171,22 +187,32 @@ public final class PingEngine {
             // 1) Resolve the host for the SELECTED family. On failure: emit the
             //    HONEST kind (unknownHost vs noRoute, classified from the
             //    getaddrinfo status) + empty summary, then stop. We NEVER resolve
-            //    the other family as a fallback (§spec:address-family-error-honesty).
-            let resolution = self.resolve(host: self.config.host, family: self.config.family)
+            //    a hostname to the other family as a fallback
+            //    (§spec:address-family-error-honesty). The ONLY relaxation is the
+            //    narrow NAT64 synthesis case (IPv4 literal, synthesis enabled,
+            //    family .v4), where the resolver may return a synthesized v6
+            //    address and the engine sends for that TRANSPORT family while the
+            //    caller-selected family stays .v4 (§spec:nat64-literal-synthesis).
+            let resolution = self.resolve(host: self.config.host,
+                                          family: self.config.family,
+                                          nat64Synthesis: self.config.nat64Synthesis)
             switch resolution {
             case let .failure(kind):
                 self.emit(.error(kind: kind, seq: nil, ip: nil))
                 self.finishWithSummaryLocked()
                 self.stopped = true
                 return
-            case let .success(addr, addrLen):
+            case let .success(addr, addrLen, transport):
                 self.destination = addr
                 self.destinationLen = addrLen
+                self.transportFamily = transport
             }
 
-            // 2) Open the unprivileged ICMP/ICMPv6 datagram socket for the family.
+            // 2) Open the unprivileged ICMP/ICMPv6 datagram socket for the
+            //    transport family (== the selected family on every non-synthesis
+            //    path; possibly v6 for a synthesized NAT64 destination).
             let fd: Int32
-            switch self.config.family {
+            switch self.transportFamily {
             case .v4:
                 fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP)
             case .v6:
@@ -207,7 +233,7 @@ public final class PingEngine {
             // v4 uses IP_RECVTTL (datum: a single u_char); v6 uses
             // IPV6_RECVHOPLIMIT (datum: an Int32) — see extractTTL.
             var on: Int32 = 1
-            switch self.config.family {
+            switch self.transportFamily {
             case .v4:
                 setsockopt(fd, IPPROTO_IP, IP_RECVTTL, &on, socklen_t(MemoryLayout<Int32>.size))
             case .v6:
@@ -241,7 +267,7 @@ public final class PingEngine {
             // with ICMP(v6) Time Exceeded, which we surface as .timeToLiveExceeded.
             // v4: IP_TTL; v6: IPV6_UNICAST_HOPS (both take an Int32).
             var ttlVal = Int32(self.config.ttl)
-            switch self.config.family {
+            switch self.transportFamily {
             case .v4:
                 setsockopt(fd, IPPROTO_IP, IP_TTL, &ttlVal, socklen_t(MemoryLayout<Int32>.size))
             case .v6:
@@ -285,20 +311,55 @@ public final class PingEngine {
 
     // MARK: - Host resolution
 
-    /// Outcome of resolving the host for the selected family: either a copied
-    /// destination sockaddr (in a `sockaddr_storage`) with its matching socklen,
-    /// or the HONEST error kind that classifies the failure.
+    /// Outcome of resolving the host: either a copied destination sockaddr (in a
+    /// `sockaddr_storage`) with its matching socklen AND the TRANSPORT family the
+    /// engine must open the socket / send / parse for, or the HONEST error kind
+    /// that classifies the failure. The transport family equals the requested
+    /// family on every pinned path; only the NAT64 synthesis path can return a
+    /// different one (e.g. `.v6` for a synthesized address under a `.v4`
+    /// selection — §spec:nat64-literal-synthesis).
     private enum Resolution {
-        case success(sockaddr_storage, socklen_t)
+        case success(sockaddr_storage, socklen_t, IPFamily)
         case failure(PingErrorKind)
     }
 
-    /// Resolve `host` to a destination for the SELECTED `family` using
-    /// getaddrinfo, with `ai_family` pinned to AF_INET or AF_INET6 — NEVER the
-    /// other family. The getaddrinfo status is captured and classified honestly:
-    /// a genuine name miss becomes `.unknownHost`, an address-family/route
-    /// problem becomes `.noRoute` (§spec:address-family-error-honesty).
-    private func resolve(host: String, family: IPFamily) -> Resolution {
+    /// True iff `host` parses as a bare IPv4 literal (e.g. "13.35.27.1").
+    ///
+    /// Pure/static so RunnerTests can exercise the synthesis decision without a
+    /// socket. Uses `inet_pton(AF_INET, ...)`, which succeeds ONLY for a numeric
+    /// dotted-quad — a hostname or an IPv6 literal yields 0.
+    public static func isIPv4Literal(_ host: String) -> Bool {
+        var buf = in_addr()
+        return inet_pton(AF_INET, host, &buf) == 1
+    }
+
+    /// Whether to use the NAT64 un-pinned resolve relaxation: enabled AND the
+    /// selected family is v4 AND the host is an IPv4 literal.
+    ///
+    /// Pure/static so the decision is testable without the network. This is the
+    /// SOLE gate that relaxes #69's pinned resolve; everything else keeps the
+    /// byte-for-byte family-pinned behavior (§spec:nat64-literal-synthesis).
+    public static func shouldSynthesize(family: IPFamily,
+                                        nat64Synthesis: Bool,
+                                        host: String) -> Bool {
+        return nat64Synthesis && family == .v4 && isIPv4Literal(host)
+    }
+
+    /// Resolve `host` to a destination plus the TRANSPORT family to send for.
+    ///
+    /// In the narrow NAT64 synthesis case
+    /// (`Self.shouldSynthesize(family:nat64Synthesis:host:)`) the resolve is
+    /// un-pinned so the platform can synthesize a NAT64 address on an IPv6-only
+    /// network (§spec:nat64-literal-synthesis); otherwise the resolve is pinned
+    /// to AF_INET or AF_INET6 — NEVER the other family — exactly as #69 requires.
+    /// The getaddrinfo status is classified honestly: a genuine name miss becomes
+    /// `.unknownHost`, an address-family/route problem becomes `.noRoute`
+    /// (§spec:address-family-error-honesty).
+    private func resolve(host: String, family: IPFamily, nat64Synthesis: Bool) -> Resolution {
+        if Self.shouldSynthesize(family: family, nat64Synthesis: nat64Synthesis, host: host) {
+            return resolveSynthesized(host: host)
+        }
+
         var hints = addrinfo()
         hints.ai_family = (family == .v4) ? AF_INET : AF_INET6  // pinned; never the other family
         hints.ai_socktype = SOCK_DGRAM
@@ -331,12 +392,68 @@ public final class PingEngine {
                         memcpy(dstBytes, sa, copyLen)
                     }
                 }
-                return .success(out, wantLen)
+                // Pinned path: transport family == the requested family.
+                return .success(out, wantLen, family)
             }
             node = current.pointee.ai_next
         }
         // getaddrinfo succeeded but returned no address of the selected family:
         // there is no route for this family, not a name miss.
+        return .failure(.noRoute)
+    }
+
+    /// Resolve an IPv4 literal WITHOUT pinning the address family, so the system
+    /// resolver can synthesize a NAT64 address on an IPv6-only (DNS64/NAT64)
+    /// network (and return the plain IPv4 address on dual-stack / Wi-Fi) — the
+    /// path Apple documents in "Supporting IPv6 DNS64/NAT64 Networks". We run
+    /// getaddrinfo with `ai_family = AF_UNSPEC` and deliberately do NOT set
+    /// `AI_NUMERICHOST`: that flag would short-circuit the resolver and suppress
+    /// synthesis, which is exactly the pinned behavior this path relaxes.
+    ///
+    /// We take the FIRST result whose family is AF_INET or AF_INET6 and return it
+    /// as the transport family (`.v6` for AF_INET6, else `.v4`).
+    ///
+    /// Honest classification (§spec:nat64-error-fallback): an IPv4 literal that
+    /// yields no routable address is a ROUTE problem, so ANY failure here
+    /// (non-zero status OR no usable address) maps to `.noRoute`, NEVER
+    /// `.unknownHost` — it is a literal, never a name miss.
+    private func resolveSynthesized(host: String) -> Resolution {
+        var hints = addrinfo()
+        hints.ai_family = AF_UNSPEC          // let the resolver synthesize / choose
+        hints.ai_socktype = SOCK_DGRAM
+        // NB: do NOT set AI_NUMERICHOST — see the doc comment above.
+
+        var result: UnsafeMutablePointer<addrinfo>?
+        let status = getaddrinfo(host, nil, &hints, &result)
+        guard status == 0, let first = result else {
+            if result != nil { freeaddrinfo(result) }
+            return .failure(.noRoute)
+        }
+        defer { freeaddrinfo(first) }
+
+        // Walk the list for the first AF_INET / AF_INET6 entry and copy its
+        // sockaddr into a sockaddr_storage with the matching socklen (same
+        // memcpy-with-min-length pattern the pinned resolve uses).
+        var node: UnsafeMutablePointer<addrinfo>? = first
+        while let current = node {
+            let fam = current.pointee.ai_family
+            if (fam == AF_INET || fam == AF_INET6), let sa = current.pointee.ai_addr {
+                let transport: IPFamily = (fam == AF_INET6) ? .v6 : .v4
+                let wantLen = socklen_t((transport == .v4) ? MemoryLayout<sockaddr_in>.size
+                                                           : MemoryLayout<sockaddr_in6>.size)
+                var out = sockaddr_storage()
+                let copyLen = min(Int(wantLen), Int(current.pointee.ai_addrlen))
+                withUnsafeMutablePointer(to: &out) { dst in
+                    dst.withMemoryRebound(to: UInt8.self, capacity: copyLen) { dstBytes in
+                        memcpy(dstBytes, sa, copyLen)
+                    }
+                }
+                return .success(out, wantLen, transport)
+            }
+            node = current.pointee.ai_next
+        }
+        // Resolved but no usable IPv4/IPv6 address: a route problem for this
+        // literal, not a name miss.
         return .failure(.noRoute)
     }
 
@@ -413,9 +530,11 @@ public final class PingEngine {
         nextSequence = nextSequence &+ 1
 
         let nowMicros = Self.nowMicros()
-        // Build the echo for the selected family (ICMP for v4, ICMPv6 for v6).
+        // Build the echo for the TRANSPORT family (ICMP for v4, ICMPv6 for v6) —
+        // == the selected family except in the NAT64 synthesis case, where we
+        // send ICMPv6 to the synthesized address (§spec:nat64-literal-synthesis).
         let packet: Data
-        switch config.family {
+        switch transportFamily {
         case .v4:
             packet = ICMPPacket.echoRequest(identifier: identifier,
                                             sequence: seq,
@@ -491,8 +610,10 @@ public final class PingEngine {
     /// until the socket is closed. Each well-formed Echo Reply is handed to the
     /// state queue for matching.
     private func receiveLoop(fd: Int32) {
-        // The family is fixed for the whole run; capture it once.
-        let family = config.family
+        // The transport family is fixed for the whole run; capture it once. It
+        // drives strip/parse and equals the selected family except in the NAT64
+        // synthesis case (§spec:nat64-literal-synthesis).
+        let family = transportFamily
 
         // Buffers reused across iterations.
         let bufferSize = 1500
@@ -578,11 +699,11 @@ public final class PingEngine {
         // sequence and report it as a TTL-exceeded error for that seq; this is
         // NOT a successful reply (no receivedCount / RTT contribution). The
         // message type and quoted-packet layout differ by family.
-        let timeExceededType: UInt8 = (config.family == .v4) ? ICMPType.timeExceeded
-                                                             : ICMPv6Type.timeExceeded
+        let timeExceededType: UInt8 = (transportFamily == .v4) ? ICMPType.timeExceeded
+                                                               : ICMPv6Type.timeExceeded
         if let first = packet.first, first == timeExceededType {
             let parsedSeq: UInt16?
-            switch config.family {
+            switch transportFamily {
             case .v4:
                 parsedSeq = ICMPPacket.parseTimeExceededOriginalSequence(packet)
             case .v6:
@@ -605,7 +726,7 @@ public final class PingEngine {
         }
 
         let reply: ICMPPacket.EchoReply?
-        switch config.family {
+        switch transportFamily {
         case .v4:
             reply = ICMPPacket.parseEchoReply(packet)
         case .v6:
