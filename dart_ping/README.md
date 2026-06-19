@@ -62,6 +62,8 @@ await for (final event in ping.stream) {
 }
 ```
 
+On Windows you must pass back a source address (e.g. `interfaces.first.addresses.first.address`), not the name, because Windows `ping` binds only by source address; a bare interface name is rejected there. A source address round-trips on every platform.
+
 ### Non-English Language Support
 
 To support OS languages other than English, you can override the parser (Portuguese shown here):
