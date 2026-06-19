@@ -107,7 +107,7 @@ void main() {
         () async {
       // Run A -> a.example: distinct seq/ttl/time/ip, AND carries ONE error
       // (a requestTimedOut on seq=2). Its summary therefore records that error.
-      final pingA = DartPingIOS('a.example', 2, 1, 5, 64, IpVersion.ipv4);
+      final pingA = DartPingIOS('a.example', 2, 1, 5, 64, IpVersion.ipv4, true);
       final receivedA = <PingEvent>[];
       final doneA = Completer<void>();
       pingA.stream.listen(receivedA.add, onDone: doneA.complete);
@@ -115,7 +115,7 @@ void main() {
       // Run B -> b.example: deliberately DIFFERENT ttl/time/ip so any swap or
       // bleed from A is detectable. Run B has NO error, so its summary's error
       // list must stay empty — any error-list bleed from A is detectable.
-      final pingB = DartPingIOS('b.example', 2, 1, 5, 53, IpVersion.ipv4);
+      final pingB = DartPingIOS('b.example', 2, 1, 5, 53, IpVersion.ipv4, true);
       final receivedB = <PingEvent>[];
       final doneB = Completer<void>();
       pingB.stream.listen(receivedB.add, onDone: doneB.complete);
@@ -280,12 +280,12 @@ void main() {
       // own events and close on its own summary. We assert BOTH directions:
       // A's lone event must not be lost in B's noise, AND A's event must not
       // bleed into B.
-      final pingA = DartPingIOS('a.example', 1, 1, 5, 64, IpVersion.ipv4);
+      final pingA = DartPingIOS('a.example', 1, 1, 5, 64, IpVersion.ipv4, true);
       final receivedA = <PingEvent>[];
       final doneA = Completer<void>();
       pingA.stream.listen(receivedA.add, onDone: doneA.complete);
 
-      final pingB = DartPingIOS('b.example', 1, 1, 5, 64, IpVersion.ipv4);
+      final pingB = DartPingIOS('b.example', 1, 1, 5, 64, IpVersion.ipv4, true);
       final receivedB = <PingEvent>[];
       final doneB = Completer<void>();
       pingB.stream.listen(receivedB.add, onDone: doneB.complete);

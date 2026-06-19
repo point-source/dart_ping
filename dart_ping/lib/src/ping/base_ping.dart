@@ -21,6 +21,7 @@ abstract class BasePing {
     this.encoding,
     this.forceCodepage,
     this.interface,
+    this.nat64Synthesis,
   ) {
     // Enforce the literal/family guard on EVERY construction path, not only the
     // `Ping(...)` factory — direct construction of a platform class must fail
@@ -90,6 +91,18 @@ abstract class BasePing {
   bool get interfaceIsAddress =>
       hasInterface &&
       InternetAddress.tryParse(interface!.split('%').first) != null;
+
+  /// Whether the platform may reach an IPv4 literal on an IPv6-only
+  /// (NAT64/DNS64) network via the platform's own address synthesis
+  /// (§spec:nat64-option).
+  ///
+  /// Defaults to enabled. It is actively honored ONLY on iOS, where the native
+  /// engine can synthesize an IPv6 path to an IPv4 literal. On the subprocess
+  /// platforms (Linux/Android, macOS, Windows) it is carried purely for
+  /// cross-platform option parity and is an inert NO-OP: it does NOT alter
+  /// [params] or [command]. Disabling it restores raw pass-through (the
+  /// family-pinned resolve, no synthesis).
+  bool nat64Synthesis;
 
   // Concurrent-isolation invariant (#70): every field below is instance-local
   // mutable state. Each `Ping`/`BasePing` owns its own OS [_process] (and thus
