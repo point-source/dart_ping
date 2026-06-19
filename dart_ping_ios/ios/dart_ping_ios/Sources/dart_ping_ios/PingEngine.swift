@@ -379,20 +379,14 @@ public final class PingEngine {
         // Walk the list for the first entry matching the requested family and
         // copy its sockaddr into a sockaddr_storage with the right socklen.
         let wantFamily: Int32 = (family == .v4) ? AF_INET : AF_INET6
-        let wantLen = socklen_t((family == .v4) ? MemoryLayout<sockaddr_in>.size
-                                                : MemoryLayout<sockaddr_in6>.size)
         var node: UnsafeMutablePointer<addrinfo>? = first
         while let current = node {
             if current.pointee.ai_family == wantFamily,
                let sa = current.pointee.ai_addr {
-                var out = sockaddr_storage()
-                let copyLen = min(Int(wantLen), Int(current.pointee.ai_addrlen))
-                withUnsafeMutablePointer(to: &out) { dst in
-                    dst.withMemoryRebound(to: UInt8.self, capacity: copyLen) { dstBytes in
-                        memcpy(dstBytes, sa, copyLen)
-                    }
-                }
                 // Pinned path: transport family == the requested family.
+                let (out, wantLen) = Self.copyDestination(from: sa,
+                                                          addrLen: current.pointee.ai_addrlen,
+                                                          transport: family)
                 return .success(out, wantLen, family)
             }
             node = current.pointee.ai_next
@@ -432,22 +426,15 @@ public final class PingEngine {
         defer { freeaddrinfo(first) }
 
         // Walk the list for the first AF_INET / AF_INET6 entry and copy its
-        // sockaddr into a sockaddr_storage with the matching socklen (same
-        // memcpy-with-min-length pattern the pinned resolve uses).
+        // sockaddr into a sockaddr_storage via the shared copyDestination helper.
         var node: UnsafeMutablePointer<addrinfo>? = first
         while let current = node {
             let fam = current.pointee.ai_family
             if (fam == AF_INET || fam == AF_INET6), let sa = current.pointee.ai_addr {
                 let transport: IPFamily = (fam == AF_INET6) ? .v6 : .v4
-                let wantLen = socklen_t((transport == .v4) ? MemoryLayout<sockaddr_in>.size
-                                                           : MemoryLayout<sockaddr_in6>.size)
-                var out = sockaddr_storage()
-                let copyLen = min(Int(wantLen), Int(current.pointee.ai_addrlen))
-                withUnsafeMutablePointer(to: &out) { dst in
-                    dst.withMemoryRebound(to: UInt8.self, capacity: copyLen) { dstBytes in
-                        memcpy(dstBytes, sa, copyLen)
-                    }
-                }
+                let (out, wantLen) = Self.copyDestination(from: sa,
+                                                          addrLen: current.pointee.ai_addrlen,
+                                                          transport: transport)
                 return .success(out, wantLen, transport)
             }
             node = current.pointee.ai_next
@@ -455,6 +442,27 @@ public final class PingEngine {
         // Resolved but no usable IPv4/IPv6 address: a route problem for this
         // literal, not a name miss.
         return .failure(.noRoute)
+    }
+
+    /// Copy a resolved entry's `sockaddr` (`ai_addr`/`ai_addrlen`) into a
+    /// `sockaddr_storage` sized for `transport`, returning it with the matching
+    /// socklen for `sendto`. The copy is bounded to `min(wantLen, addrLen)` so a
+    /// short `ai_addr` can never read past the source. This is the load-bearing
+    /// manual pointer copy shared by BOTH resolve paths (pinned and synthesized)
+    /// — kept in one place so the bounds reasoning lives once.
+    private static func copyDestination(from sa: UnsafePointer<sockaddr>,
+                                        addrLen: socklen_t,
+                                        transport: IPFamily) -> (sockaddr_storage, socklen_t) {
+        let wantLen = socklen_t((transport == .v4) ? MemoryLayout<sockaddr_in>.size
+                                                   : MemoryLayout<sockaddr_in6>.size)
+        var out = sockaddr_storage()
+        let copyLen = min(Int(wantLen), Int(addrLen))
+        withUnsafeMutablePointer(to: &out) { dst in
+            dst.withMemoryRebound(to: UInt8.self, capacity: copyLen) { dstBytes in
+                memcpy(dstBytes, sa, copyLen)
+            }
+        }
+        return (out, wantLen)
     }
 
     /// Classify a `getaddrinfo` status code into an honest error kind.
