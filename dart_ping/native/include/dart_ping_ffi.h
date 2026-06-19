@@ -74,9 +74,17 @@ typedef enum {
  * three cases is active, selected by `kind`. Nullable Swift fields are carried
  * as a `has_*` boolean plus the value (or a possibly-NULL pointer for `ip`).
  *
- * LIFETIME: the struct itself, and any pointers it carries (`ip`, `errors`),
- * are valid ONLY for the duration of the callback invocation. The receiver MUST
- * copy anything it needs to retain (see dart_ping_event_callback below).
+ * LIFETIME (finalized by #28-2, §spec:ios-ffi-binding, §spec:ios-background-isolate):
+ * each event is HEAP-ALLOCATED by the shim and OWNED BY THE RECEIVER. The shim
+ * `malloc`s the struct and heap-copies its `ip` string and `errors` buffer, then
+ * hands the pointer to the callback and does NOT free it. The receiver MUST copy
+ * any fields it needs and then call `dart_ping_free_event` (below) to release
+ * the struct and its `ip`/`errors` buffers — Swift frees what Swift allocated.
+ *
+ * This ownership transfer is what makes the asynchronous `NativeCallable.listen`
+ * delivery in #28-2 safe: under `.listen` the C call returns immediately (the
+ * event is queued) and the Dart handler runs LATER, so the payload must outlive
+ * the call rather than living in a callback-scoped stack buffer.
  */
 typedef struct {
   dart_ping_event_kind kind; /* which case is active (read this first) */
@@ -139,15 +147,27 @@ typedef struct {
  * emitted event, in emission order, terminated by a single .summary event.
  *
  *   context: the opaque pointer passed to dart_ping_start, forwarded verbatim.
- *   event:   a pointer to a dart_ping_event valid ONLY for this call. The event
- *            struct and any strings/arrays it references (`ip`, `errors`) are
- *            owned by the shim and freed when this call returns — the receiver
- *            MUST copy anything it needs to outlive the call.
+ *   event:   a pointer to a HEAP-ALLOCATED dart_ping_event whose OWNERSHIP is
+ *            transferred to the receiver (see the struct's LIFETIME note). The
+ *            receiver MUST copy what it needs and then call
+ *            `dart_ping_free_event(event)` to release the struct and its
+ *            `ip`/`errors` buffers. The pointer remains valid until then.
  *
  * The Dart side (#28-2) bridges this to its isolate via a
- * `NativeCallable.listen` (§spec:ios-background-isolate, §spec:ios-ffi-binding).
+ * `NativeCallable.listen` (§spec:ios-background-isolate, §spec:ios-ffi-binding),
+ * which is why ownership is transferred rather than scoped to the call.
  */
 typedef void (*dart_ping_event_callback)(void *context, const dart_ping_event *event);
+
+/*
+ * Free a heap-allocated event previously delivered to a dart_ping_event_callback
+ * (§spec:ios-ffi-binding). The receiver calls this once it has copied the fields
+ * it needs: it frees the event's `ip` string (if non-NULL) and `errors` buffer
+ * (if non-NULL), then the event struct itself. Allocator-symmetric with the
+ * shim's `malloc`/`strdup`. A NULL event is ignored. After this call the event
+ * pointer (and its `ip`/`errors` pointers) are INVALID — do not reuse them.
+ */
+void dart_ping_free_event(const dart_ping_event *event);
 
 /*
  * Opaque handle to a running ping. Returned by dart_ping_start, passed to

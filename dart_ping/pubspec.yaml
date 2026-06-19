@@ -10,6 +10,7 @@ environment:
 dependencies:
   async: ^2.4.2
   collection: ^1.16.0
+  ffi: ^2.1.0
   hooks: ^2.0.2
   code_assets: ^1.2.1
 
