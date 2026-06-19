@@ -14,47 +14,47 @@ void main() {
       final res = PingLinux.defaultParser.parse(
         'From 10.0.0.1 icmp_seq=1 Destination Host Unreachable',
       );
-      expect(res!.error!.error, ErrorType.noRoute);
+      expect((res as PingError).error, ErrorType.noRoute);
     });
 
     test('Linux network is unreachable', () {
       final res =
           PingLinux.defaultParser.parse('connect: Network is unreachable');
-      expect(res!.error!.error, ErrorType.noRoute);
+      expect((res as PingError).error, ErrorType.noRoute);
     });
 
     test('macOS no route to host', () {
       final res =
           PingMac.defaultParser.parse('ping: sendto: No route to host');
-      expect(res!.error!.error, ErrorType.noRoute);
+      expect((res as PingError).error, ErrorType.noRoute);
     });
 
     test('Windows destination host unreachable', () {
       final res = PingWindows.defaultParser.parse(
         'Reply from 10.0.0.1: Destination host unreachable.',
       );
-      expect(res!.error!.error, ErrorType.noRoute);
+      expect((res as PingError).error, ErrorType.noRoute);
     });
 
     test('Windows destination net unreachable', () {
       final res = PingWindows.defaultParser.parse(
         'Reply from 10.0.0.1: Destination net unreachable.',
       );
-      expect(res!.error!.error, ErrorType.noRoute);
+      expect((res as PingError).error, ErrorType.noRoute);
     });
 
     test('macOS address family not supported', () {
       final res = PingMac.defaultParser.parse(
         'ping: cannot resolve foo: Address family for hostname not supported',
       );
-      expect(res!.error!.error, ErrorType.noRoute);
+      expect((res as PingError).error, ErrorType.noRoute);
     });
   });
 
   group('Host-liveness failures are not mislabelled noRoute: ', () {
     test('macOS host is down stays unknown', () {
       final res = PingMac.defaultParser.parse('ping: sendto: Host is down');
-      expect(res!.error!.error, ErrorType.unknown);
+      expect((res as PingError).error, ErrorType.unknown);
     });
   });
 
@@ -62,26 +62,26 @@ void main() {
     test('Linux unknown host', () {
       final res =
           PingLinux.defaultParser.parse('ping: unknown host example.invalid');
-      expect(res!.error!.error, ErrorType.unknownHost);
+      expect((res as PingError).error, ErrorType.unknownHost);
     });
 
     test('macOS unknown host', () {
       final res =
           PingMac.defaultParser.parse('ping: cannot resolve foo: Unknown host');
-      expect(res!.error!.error, ErrorType.unknownHost);
+      expect((res as PingError).error, ErrorType.unknownHost);
     });
 
     test('Windows could not find host', () {
       final res = PingWindows.defaultParser
           .parse('Ping request could not find host foo.');
-      expect(res!.error!.error, ErrorType.unknownHost);
+      expect((res as PingError).error, ErrorType.unknownHost);
     });
   });
 
   group('Ambiguous errors stay ErrorType.unknown: ', () {
     test('Windows general failure', () {
       final res = PingWindows.defaultParser.parse('General failure.');
-      expect(res!.error!.error, ErrorType.unknown);
+      expect((res as PingError).error, ErrorType.unknown);
     });
   });
 }

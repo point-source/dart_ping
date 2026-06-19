@@ -1,26 +1,49 @@
-import 'dart:convert';
+part of 'ping_event.dart';
 
-/// Error code
-class PingError {
-  const PingError(this.error, {this.message});
+/// The probe/run error variant of [PingEvent].
+///
+/// Reused both as the error EVENT on the stream and as the element type of
+/// [PingSummary.errors]. An error that names a specific probe (a timeout, or a
+/// TTL-exceeded hop) carries that probe's [seq] and, when present, the hop [ip]
+/// — so a probe that both identifies itself and reports an error stays a single
+/// event (§spec:ios-error-parity, §spec:address-family-error-honesty).
+final class PingError extends PingEvent {
+  const PingError(this.error, {this.message, this.seq, this.ip});
 
   final ErrorType error;
   final String? message;
+
+  /// Probe sequence id, when the error names a probe (timeout / TTL-exceeded).
+  final int? seq;
+
+  /// Hop ip, when present (TTL-exceeded).
+  final String? ip;
 
   String get _errorStr =>
       error.toString().substring(error.toString().indexOf('.') + 1);
 
   @override
-  String toString() =>
-      message == null ? _errorStr.toString() : '$_errorStr: $message';
+  String toString() {
+    final buff = StringBuffer(
+      message == null ? _errorStr.toString() : '$_errorStr: $message',
+    );
+    if (seq != null) buff.write(', seq:$seq');
+    if (ip != null) buff.write(', ip:$ip');
+
+    return buff.toString();
+  }
 
   PingError copyWith({
     ErrorType? error,
     String? message,
+    int? seq,
+    String? ip,
   }) {
     return PingError(
       error ?? this.error,
       message: message ?? this.message,
+      seq: seq ?? this.seq,
+      ip: ip ?? this.ip,
     );
   }
 
@@ -30,16 +53,23 @@ class PingError {
 
     return other is PingError &&
         other.error == error &&
-        other.message == message;
+        other.message == message &&
+        other.seq == seq &&
+        other.ip == ip;
   }
 
   @override
-  int get hashCode => error.hashCode ^ message.hashCode;
+  int get hashCode =>
+      error.hashCode ^ message.hashCode ^ seq.hashCode ^ ip.hashCode;
 
+  @override
   Map<String, dynamic> toMap() {
     return {
+      'type': 'error',
       'error': error.message,
       'message': message,
+      'seq': seq,
+      'ip': ip,
     };
   }
 
@@ -47,13 +77,13 @@ class PingError {
     return PingError(
       ErrorType.fromMessage(map['error'] ?? ''),
       message: map['message'],
+      seq: map['seq']?.toInt(),
+      ip: map['ip'],
     );
   }
 
-  String toJson() => json.encode(toMap());
-
   factory PingError.fromJson(String source) =>
-      PingError.fromMap(json.decode(source));
+      PingError.fromMap(json.decode(source) as Map<String, dynamic>);
 }
 
 enum ErrorType {

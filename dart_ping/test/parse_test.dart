@@ -18,54 +18,56 @@ void main() {
 
     test('Response', () async {
       final res = parser.parse(strings.response);
-      expect(res, isA<PingData>());
-      expect(res?.response?.seq, 0);
-      expect(res?.response?.ip, '8.8.8.8');
-      expect(res?.response?.ttl, 37);
+      expect(res, isA<PingResponse>());
+      expect((res as PingResponse).seq, 0);
+      expect(res.ip, '8.8.8.8');
+      expect(res.ttl, 37);
     });
 
     test('Summary', () async {
       final res = parser.parse(strings.summary);
-      expect(res, isA<PingData>());
-      expect(res?.summary?.transmitted, 4);
-      expect(res?.summary?.received, 3);
+      expect(res, isA<PingSummary>());
+      expect((res as PingSummary).transmitted, 4);
+      expect(res.received, 3);
     });
 
     test('Timeout', () async {
       final res = parser.parse(strings.timeout);
-      expect(res, isA<PingData>());
-      expect(res?.error?.error, ErrorType.requestTimedOut);
+      expect(res, isA<PingError>());
+      expect((res as PingError).error, ErrorType.requestTimedOut);
+      expect(res.seq, 0);
     });
 
     test('Unknown Host', () async {
       final res = parser.parse(strings.unknownHost);
-      expect(res, isA<PingData>());
-      expect(res?.error?.error, ErrorType.unknownHost);
+      expect(res, isA<PingError>());
+      expect((res as PingError).error, ErrorType.unknownHost);
     });
 
     test('TTL Exceeded', () async {
       final res = parser.parse(strings.exceedTtl);
-      expect(res, isA<PingData>());
-      expect(res?.error?.error, ErrorType.timeToLiveExceeded);
+      expect(res, isA<PingError>());
+      expect((res as PingError).error, ErrorType.timeToLiveExceeded);
+      expect(res.ip, '172.17.0.1');
     });
 
     test('No route to host', () async {
       final res = parser.parse('ping: sendto: No route to host');
-      expect(res, isA<PingData>());
-      expect(res?.error?.error, ErrorType.noRoute);
+      expect(res, isA<PingError>());
+      expect((res as PingError).error, ErrorType.noRoute);
     });
 
     test('Host is down maps to unknown (host liveness, not a routing failure)',
         () async {
       final res = parser.parse('ping: sendto: Host is down');
-      expect(res, isA<PingData>());
-      expect(res?.error?.error, ErrorType.unknown);
+      expect(res, isA<PingError>());
+      expect((res as PingError).error, ErrorType.unknown);
     });
 
     test('Network is unreachable (macOS)', () async {
       final res = parser.parse('ping: sendto: Network is unreachable');
-      expect(res, isA<PingData>());
-      expect(res?.error?.error, ErrorType.noRoute);
+      expect(res, isA<PingError>());
+      expect((res as PingError).error, ErrorType.noRoute);
     });
   });
 
@@ -84,49 +86,51 @@ void main() {
 
     test('Response', () async {
       final res = parser.parse(strings.response);
-      expect(res, isA<PingData>());
-      expect(res?.response?.seq, 1);
-      expect(res?.response?.ip, '8.8.8.8');
-      expect(res?.response?.ttl, 37);
+      expect(res, isA<PingResponse>());
+      expect((res as PingResponse).seq, 1);
+      expect(res.ip, '8.8.8.8');
+      expect(res.ttl, 37);
     });
 
     test('Summary', () async {
       final res = parser.parse(strings.summary);
-      expect(res, isA<PingData>());
-      expect(res?.summary?.transmitted, 4);
-      expect(res?.summary?.received, 3);
+      expect(res, isA<PingSummary>());
+      expect((res as PingSummary).transmitted, 4);
+      expect(res.received, 3);
     });
 
-    test('Timeout', () async {
+    test('Timeout carries the probe seq on a single PingError', () async {
       final res = parser.parse(strings.timeout);
-      expect(res, isA<PingData>());
-      expect(res?.response?.seq, 1);
-      expect(res?.error?.error, ErrorType.requestTimedOut);
+      expect(res, isA<PingError>());
+      expect((res as PingError).error, ErrorType.requestTimedOut);
+      expect(res.seq, 1);
     });
 
     test('Unknown Host', () async {
       final res = parser.parse(strings.unknownHost);
-      expect(res, isA<PingData>());
-      expect(res?.error?.error, ErrorType.unknownHost);
+      expect(res, isA<PingError>());
+      expect((res as PingError).error, ErrorType.unknownHost);
     });
 
-    test('TTL Exceeded', () async {
+    test('TTL Exceeded carries seq and hop ip on a single PingError', () async {
       final res = parser.parse(strings.exceedTtl);
-      expect(res, isA<PingData>());
-      expect(res?.error?.error, ErrorType.timeToLiveExceeded);
+      expect(res, isA<PingError>());
+      expect((res as PingError).error, ErrorType.timeToLiveExceeded);
+      expect(res.seq, 1);
+      expect(res.ip, contains('172.17.0.1'));
     });
 
     test('Network is unreachable (Linux)', () async {
       final res = parser.parse('ping: connect: Network is unreachable');
-      expect(res, isA<PingData>());
-      expect(res?.error?.error, ErrorType.noRoute);
+      expect(res, isA<PingError>());
+      expect((res as PingError).error, ErrorType.noRoute);
     });
 
     test('Destination host unreachable (Linux)', () async {
       final res = parser.parse(
           'From 192.168.1.1 icmp_seq=1 Destination Host Unreachable');
-      expect(res, isA<PingData>());
-      expect(res?.error?.error, ErrorType.noRoute);
+      expect(res, isA<PingError>());
+      expect((res as PingError).error, ErrorType.noRoute);
     });
   });
 
@@ -143,57 +147,57 @@ void main() {
 
     test('Response', () async {
       final res = parser.parse(strings.response);
-      expect(res, isA<PingData>());
-      expect(res?.response?.seq, null);
-      expect(res?.response?.ip, '8.8.8.8');
-      expect(res?.response?.ttl, 37);
+      expect(res, isA<PingResponse>());
+      expect((res as PingResponse).seq, null);
+      expect(res.ip, '8.8.8.8');
+      expect(res.ttl, 37);
     });
 
     test('Summary', () async {
       final res = parser.parse(strings.summary);
-      expect(res, isA<PingData>());
-      expect(res?.summary?.transmitted, 4);
-      expect(res?.summary?.received, 3);
+      expect(res, isA<PingSummary>());
+      expect((res as PingSummary).transmitted, 4);
+      expect(res.received, 3);
     });
 
     test('Timeout', () async {
       final res = parser.parse(strings.timeout);
-      expect(res, isA<PingData>());
-      expect(res?.error?.error, ErrorType.requestTimedOut);
+      expect(res, isA<PingError>());
+      expect((res as PingError).error, ErrorType.requestTimedOut);
     });
 
     test('Unknown Host', () async {
       final res = parser.parse(strings.unknownHost);
-      expect(res, isA<PingData>());
-      expect(res?.error?.error, ErrorType.unknownHost);
+      expect(res, isA<PingError>());
+      expect((res as PingError).error, ErrorType.unknownHost);
     });
 
     test('TTL Exceeded', () async {
       final res = parser.parse(strings.exceedTtl);
-      expect(res, isA<PingData>());
-      expect(res?.error?.error, ErrorType.timeToLiveExceeded);
+      expect(res, isA<PingError>());
+      expect((res as PingError).error, ErrorType.timeToLiveExceeded);
     });
 
     test('General Failure', () async {
       final res = parser.parse('General failure.');
-      expect(res, isA<PingData>());
-      expect(res?.error?.error, ErrorType.unknown);
-      expect(res?.error?.message ?? '', isNotEmpty);
+      expect(res, isA<PingError>());
+      expect((res as PingError).error, ErrorType.unknown);
+      expect(res.message ?? '', isNotEmpty);
     });
 
     test('Transmit Failed', () async {
       final res = parser.parse('PING: transmit failed. General failure.');
-      expect(res, isA<PingData>());
-      expect(res?.error?.error, ErrorType.unknown);
-      expect(res?.error?.message ?? '', isNotEmpty);
+      expect(res, isA<PingError>());
+      expect((res as PingError).error, ErrorType.unknown);
+      expect(res.message ?? '', isNotEmpty);
     });
 
     test('Host Unreachable', () async {
       final res =
           parser.parse('Reply from 10.20.61.15: Destination host unreachable.');
-      expect(res, isA<PingData>());
-      expect(res?.error?.error, ErrorType.noRoute);
-      expect(res?.error?.message ?? '', isNotEmpty);
+      expect(res, isA<PingError>());
+      expect((res as PingError).error, ErrorType.noRoute);
+      expect(res.message ?? '', isNotEmpty);
     });
   });
 }

@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'address_family.dart';
 import 'ip_version.dart';
-import 'models/ping_data.dart';
+import 'models/ping_event.dart';
 import 'models/ping_parser.dart';
 import 'ping/linux_ping.dart';
 import 'ping/mac_ping.dart';
@@ -161,13 +161,19 @@ abstract class Ping {
   /// The command that will be run on the host OS
   String get command;
 
-  /// Stream of [PingData] which spawns a ping process on listen and
+  /// Stream of [PingEvent]s which spawns a ping process on listen and
   /// kills it on cancellation. The stream closes when the process ends.
+  ///
+  /// Each event is one variant of the sealed [PingEvent] union — a successful
+  /// probe [PingResponse], a probe/run [PingError], or the terminal
+  /// [PingSummary]. Consumers branch with an exhaustive `switch`; the terminal
+  /// [PingSummary] is the final event and is identifiable by type alone
+  /// (`is PingSummary`).
   ///
   /// Note that if you cancel the subscription, you will not receive
   /// the ping summary data. If you want to prematurely halt the process
   /// and still receive summary output, use the [stop] method.
-  Stream<PingData> get stream;
+  Stream<PingEvent> get stream;
 
   /// Kills ping process and closes stream.
   ///

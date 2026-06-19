@@ -119,8 +119,7 @@ void main() {
           time: Duration(microseconds: 170000),
           ip: '154.16.146.45',
         ),
-        // The timeout line yields a response (seq only) paired with an error.
-        const PingResponse(seq: 2),
+        // The timeout line yields a single PingError (seq=2), not a response.
       ],
       expectedTransmitted: 2,
       expectedReceived: 1,
@@ -160,11 +159,8 @@ void main() {
 
     /// Asserts a drained run reflects ONLY [fixture]'s own canned data — no
     /// field copied from a concurrently-running sibling.
-    void expectIsolated(List<PingData> data, _HostFixture fixture) {
-      final responses = data
-          .where((d) => d.response != null)
-          .map((d) => d.response!)
-          .toList();
+    void expectIsolated(List<PingEvent> data, _HostFixture fixture) {
+      final responses = data.whereType<PingResponse>().toList();
       expect(
         responses,
         fixture.expectedResponses,
@@ -172,8 +168,7 @@ void main() {
             'its own canned input, not the sibling run',
       );
 
-      final summaries =
-          data.where((d) => d.summary != null).map((d) => d.summary!).toList();
+      final summaries = data.whereType<PingSummary>().toList();
       expect(summaries, hasLength(1),
           reason: '${fixture.host} must emit exactly one summary');
       final summary = summaries.single;
@@ -203,7 +198,7 @@ void main() {
 
       // Drain both streams CONCURRENTLY so their interleaved events pass through
       // the shared parse/accumulate path at the same time.
-      final results = await Future.wait(<Future<List<PingData>>>[
+      final results = await Future.wait(<Future<List<PingEvent>>>[
         pingA.stream.toList(),
         pingB.stream.toList(),
       ]).timeout(
