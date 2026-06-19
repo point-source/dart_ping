@@ -2295,7 +2295,10 @@ These sections reuse the iOS SPM migration's native engine
 (§spec:swift-icmp-engine) and
 preserve every observable iOS behavior it specifies
 (§spec:ios-ping-behavior, §spec:ios-error-parity, §spec:ios-ttl,
-§spec:stats-ios). What changes is the *binding* (platform channels → FFI) and
+§spec:stats-ios) — including the NAT64 IPv4-literal synthesis the engine gained
+for #52 (§spec:nat64-literal-synthesis), driven by the default-on
+`nat64Synthesis` factory option (§spec:nat64-option). What changes is the
+*binding* (platform channels → FFI) and
 the *package boundary* (two packages → one). Where this contradicts the prior
 iOS packaging — the separate federated plugin of §spec:spm-distribution, the
 channel wiring described in §spec:ios-ping-behavior, the `register()` entry
@@ -2484,6 +2487,12 @@ call. The observable `stream` contract is unchanged — the same sealed
   Reply, probe error, and the terminal summary shall arrive as the same
   `PingResponse` / `PingError` / `PingSummary` events produced today over the
   channel (§spec:ios-ping-behavior, §spec:ios-error-parity, §spec:ios-ttl).
+- The FFI start call shall carry the full run configuration the channel `start`
+  invocation carries today — host, count, interval, timeout, ttl, the selected
+  `ipVersion`, and the `nat64Synthesis` option (§spec:nat64-option) — so iOS
+  NAT64 IPv4-literal synthesis (§spec:nat64-literal-synthesis) is preserved
+  across the seam change rather than silently dropped when the channel is
+  replaced.
 - Per-probe events shall reach Dart through a native-to-Dart callback that can
   be invoked from the engine's background thread and delivered to the owning
   isolate's event loop, so events are not marshalled through the Flutter binary

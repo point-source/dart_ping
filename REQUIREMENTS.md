@@ -1,78 +1,85 @@
 # Requirements
 
-This document tracks ten areas of work:
+This document tracks the following areas of work:
 
-1. **iOS SPM migration (#73)** — *shipped in `dart_ping_ios` 5.0.0.*
-   Replace the `flutter_icmp_ping` dependency with a native Swift ICMP
-   engine and ship under Swift Package Manager. Captured in the
-   `§req:problem-statement` … `§req:priorities` sections below.
-2. **Maintenance & modernization refresh** — a cross-package pass to bring
-   dependencies, SDK constraints, documentation, and test coverage current,
-   and to surface bugs / security flaws / improvements across the Dart and
-   native Swift code. Captured in the `§req:refresh-*` sections.
-3. **`base_ping` stream lifecycle robustness (#76)** — fix two edge paths
-   in the core `dart_ping` stream where a consumer can hang forever
-   instead of seeing an error: an unmapped non-zero exit code, and a
-   failed process launch (e.g. a missing `ping` binary). Surfaced by the
-   Dart code audit (`§spec:code-audit`). Captured in the
-   `§req:robustness-*` sections.
-4. **IPv6 / address-family error clarity (#69)** — on IPv6-enabled
-   networks (notably mobile data), pinging an IP can fail with a
-   misleading "Unknown Host" error when the `ipv6` flag and the target's
-   address family disagree, or when the network/adapter cannot route the
-   selected family. Treat `ipv6` as an exclusive address-family selector,
-   validate obvious literal mismatches up front, and surface honest,
-   consistent errors instead of mislabeling them. Captured in the
-   `§req:ipfamily-*` sections at the end.
-5. **Interface selection (#72)** — let a developer choose which network
-   interface (by interface name or by local source address) pings
-   originate from, on the desktop platforms (Linux/Android, macOS,
-   Windows), with a nice-to-have helper to enumerate the available
-   interfaces. Captured in the `§req:interface-*` sections at the end.
-6. **Concurrent-ping isolation (#70)** — a reported defect where two or
-   more `Ping` instances run at the same time report the same round-trip
-   results instead of each host's own, first seen on Android. Fix so that
-   concurrent `Ping` instances are fully independent. Captured in the
-   `§req:concurrent-*` sections at the end.
-7. **Summary statistics (#63)** — surface the richer round-trip
-   statistics the native `ping` already prints (min / avg / max / stddev),
-   plus a mean-consecutive-delta jitter figure and packet-loss %, both in
-   the run summary and as live running stats during a run, with full
-   cross-platform parity including iOS. Delivered via a from-scratch
-   redesign of the stream's event/data classes (a sealed event union plus a
-   reusable round-trip-stats value object), folded into the
-   already-unreleased breaking `dart_ping` 10.0.0 / `dart_ping_ios` 6.0.0
-   majors. Captured in the `§req:stats-*` sections at the end.
-8. **NAT64 / IPv6-only IP-literal reachability (#52)** — on iOS over
-   cellular (mobile data), pinging a bare IPv4 literal fails outright,
-   while a hostname works and the same literal works over Wi-Fi, because
-   the carrier runs an IPv6-only (NAT64/DNS64) network that synthesizes a
-   routable address for hostnames but not for raw IP literals. Make the
-   literal ping actually succeed via the platform's NAT64 address
-   synthesis (as Apple's own guidance and third-party ping apps do),
-   behind an explicit option that is enabled by default — extending the
-   #69 scope boundary, which made the error honest but declined to make
-   the ping work. Captured in the `§req:nat64-*` sections at the end.
-9. **Windows interface-listing round-trip contract (#85)** — the
-   interface-selection helper (#72) promised a listed interface could be
-   "passed back into a `Ping`," and a test read that as *every interface
-   name* round-tripping on *every* platform. That is false on Windows by
-   the package's own design: Windows `ping` binds only by source address
-   and a bare interface name is rejected. Once CI ran the core suite on a
-   real Windows host, the contradiction turned the Windows check red. Make
-   the round-trip contract honest per platform — the source **address**
-   round-trips everywhere, the **name** only where the OS binds by name —
-   without changing any platform's runtime behavior. Captured in the
-   `§req:windows-roundtrip-*` sections at the end.
-10. **CI on PRs to `develop`** — the repository follows a gitflow model
-    where feature branches merge into a `develop` integration branch, which
-    periodically merges to `main` for release. The existing CI
-    (`§spec:ci`) gates only PRs to `main`, so a feature branch merges into
-    `develop` with no checks and breakage accumulates there unseen until the
-    `develop`→`main` release PR runs CI — late, batched, and hard to
-    attribute. Extend CI so the same gate runs on PRs targeting `develop`,
-    and protect `develop` like `main`. Captured in the `§req:ci-develop-*`
-    sections at the end.
+- **iOS SPM migration (#73)** — *shipped in `dart_ping_ios` 5.0.0.*
+  Replace the `flutter_icmp_ping` dependency with a native Swift ICMP
+  engine and ship under Swift Package Manager. Captured in the
+  `§req:problem-statement` … `§req:priorities` sections below.
+- **Maintenance & modernization refresh** — a cross-package pass to bring
+  dependencies, SDK constraints, documentation, and test coverage current,
+  and to surface bugs / security flaws / improvements across the Dart and
+  native Swift code. Captured in the `§req:refresh-*` sections.
+- **`base_ping` stream lifecycle robustness (#76)** — fix two edge paths
+  in the core `dart_ping` stream where a consumer can hang forever
+  instead of seeing an error: an unmapped non-zero exit code, and a
+  failed process launch (e.g. a missing `ping` binary). Surfaced by the
+  Dart code audit (`§spec:code-audit`). Captured in the
+  `§req:robustness-*` sections.
+- **IPv6 / address-family error clarity (#69)** — on IPv6-enabled
+  networks (notably mobile data), pinging an IP can fail with a
+  misleading "Unknown Host" error when the `ipv6` flag and the target's
+  address family disagree, or when the network/adapter cannot route the
+  selected family. Treat `ipv6` as an exclusive address-family selector,
+  validate obvious literal mismatches up front, and surface honest,
+  consistent errors instead of mislabeling them. Captured in the
+  `§req:ipfamily-*` sections at the end.
+- **Interface selection (#72)** — let a developer choose which network
+  interface (by interface name or by local source address) pings
+  originate from, on the desktop platforms (Linux/Android, macOS,
+  Windows), with a nice-to-have helper to enumerate the available
+  interfaces. Captured in the `§req:interface-*` sections at the end.
+- **Concurrent-ping isolation (#70)** — a reported defect where two or
+  more `Ping` instances run at the same time report the same round-trip
+  results instead of each host's own, first seen on Android. Fix so that
+  concurrent `Ping` instances are fully independent. Captured in the
+  `§req:concurrent-*` sections at the end.
+- **Summary statistics (#63)** — surface the richer round-trip
+  statistics the native `ping` already prints (min / avg / max / stddev),
+  plus a mean-consecutive-delta jitter figure and packet-loss %, both in
+  the run summary and as live running stats during a run, with full
+  cross-platform parity including iOS. Delivered via a from-scratch
+  redesign of the stream's event/data classes (a sealed event union plus a
+  reusable round-trip-stats value object), folded into the
+  already-unreleased breaking `dart_ping` 10.0.0 / `dart_ping_ios` 6.0.0
+  majors. Captured in the `§req:stats-*` sections at the end.
+- **NAT64 / IPv6-only IP-literal reachability (#52)** — on iOS over
+  cellular (mobile data), pinging a bare IPv4 literal fails outright,
+  while a hostname works and the same literal works over Wi-Fi, because
+  the carrier runs an IPv6-only (NAT64/DNS64) network that synthesizes a
+  routable address for hostnames but not for raw IP literals. Make the
+  literal ping actually succeed via the platform's NAT64 address
+  synthesis (as Apple's own guidance and third-party ping apps do),
+  behind an explicit option that is enabled by default — extending the
+  #69 scope boundary, which made the error honest but declined to make
+  the ping work. Captured in the `§req:nat64-*` sections at the end.
+- **Windows interface-listing round-trip contract (#85)** — the
+  interface-selection helper (#72) promised a listed interface could be
+  "passed back into a `Ping`," and a test read that as *every interface
+  name* round-tripping on *every* platform. That is false on Windows by
+  the package's own design: Windows `ping` binds only by source address
+  and a bare interface name is rejected. Once CI ran the core suite on a
+  real Windows host, the contradiction turned the Windows check red. Make
+  the round-trip contract honest per platform — the source **address**
+  round-trips everywhere, the **name** only where the OS binds by name —
+  without changing any platform's runtime behavior. Captured in the
+  `§req:windows-roundtrip-*` sections at the end.
+- **CI on PRs to `develop`** — the repository follows a gitflow model
+  where feature branches merge into a `develop` integration branch, which
+  periodically merges to `main` for release. The existing CI
+  (`§spec:ci`) gates only PRs to `main`, so a feature branch merges into
+  `develop` with no checks and breakage accumulates there unseen until the
+  `develop`→`main` release PR runs CI — late, batched, and hard to
+  attribute. Extend CI so the same gate runs on PRs targeting `develop`,
+  and protect `develop` like `main`. Captured in the `§req:ci-develop-*`
+  sections at the end.
+- **Package consolidation — one `dart_ping` with FFI-backed iOS (#28, #48)** —
+  fold `dart_ping_ios` into a single pure-Dart `dart_ping` that carries the
+  native iOS engine as a build-hook code asset and drives it over `dart:ffi`,
+  retiring the second package and the `register()` step (#28) and fixing iOS
+  ping inside background isolates (#48), without losing pure-Dart support on
+  hosts with no Flutter SDK. Folds into the unreleased `dart_ping` 10.0.0
+  train. Captured in the `§req:consolidation-*` sections at the end.
 
 ---
 
