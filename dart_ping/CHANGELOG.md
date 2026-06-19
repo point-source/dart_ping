@@ -34,6 +34,20 @@ Additional #69 error-honesty refinements:
 - The literal/family mismatch guard now fires on direct platform-class /
   `DartPingIOS` construction too, not only via the `Ping(...)` factory.
 
+Live running statistics (#63, §spec:stats-live):
+
+- Probe events now carry running stats. Every emitted probe event — both
+  `PingResponse` and `PingError` — gains an additive nullable
+  `RoundTripStats? stats` carrying a running snapshot of the round-trip
+  figures over all successful replies seen so far in the run. Consumers can
+  drive a live latency view, and derive packet-loss-so-far (received from
+  `stats.sampleCount`, transmitted by counting probe events), without waiting
+  for the terminal summary. The snapshot reuses the same accumulator that
+  builds the terminal summary, so the last probe event's snapshot equals
+  `summary.stats`. The field is null on events not produced by the live run
+  path (e.g. a bare parsed/deserialized event), so existing behavior is
+  unchanged.
+
 ## 9.2.0
 
 - Add an optional `interface` selection to the `Ping` factory and the platform constructors (#72). Pass either a network interface name (e.g. `eth0`) or a local source IP address (e.g. `192.168.1.5`) to bind the ping to a specific interface or source address.

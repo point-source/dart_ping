@@ -160,7 +160,13 @@ void main() {
     /// Asserts a drained run reflects ONLY [fixture]'s own canned data — no
     /// field copied from a concurrently-running sibling.
     void expectIsolated(List<PingEvent> data, _HostFixture fixture) {
-      final responses = data.whereType<PingResponse>().toList();
+      // Emitted responses now carry a running `stats` snapshot (§spec:stats-live);
+      // that is not what this isolation test asserts, so compare only the
+      // identifying fields by stripping `stats` to a bare response.
+      final responses = data
+          .whereType<PingResponse>()
+          .map((r) => PingResponse(seq: r.seq, ttl: r.ttl, time: r.time, ip: r.ip))
+          .toList();
       expect(
         responses,
         fixture.expectedResponses,

@@ -1496,7 +1496,7 @@ summary line and the run's accumulated errors
 `time` is reported where the platform provides it, unchanged.
 
 ## Live running statistics §spec:stats-live
-*Status: not started*
+*Status: implemented (dart_ping 10.0.0) — both `PingResponse` and `PingError` gain an additive nullable `RoundTripStats? stats` (null on events not from the live run path, so existing serialization/model round-trips are unchanged) participating in `copyWith`/`==`/`hashCode`/`toMap`/`fromMap`. `BasePing` attaches `_rttStats.snapshot()` to every emitted probe event — a response adds its own RTT THEN snapshots so the snapshot includes the current reply; an error snapshots the successful replies so far (errors never contribute to RTT figures) — reusing the same `RoundTripStatsAccumulator` as the terminal summary, so the last running snapshot equals `summary.stats`. The summary's `errors` list still stores the bare errors (their serialization is unchanged). Loss-so-far is derivable from `stats.sampleCount` (received-so-far) plus counted probe events (transmitted-so-far), consistent with the terminal `packetLoss`. Covered by network-free `dart test` cases.*
 
 While a run is in progress, a consumer can observe the statistics evolve:
 every probe event carries a **running `RoundTripStats` snapshot**

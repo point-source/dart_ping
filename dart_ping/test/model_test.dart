@@ -55,6 +55,7 @@ void main() {
           'message': 'm',
           'seq': null,
           'ip': null,
+          'stats': null,
         },
       );
     });
