@@ -23,11 +23,22 @@ void main() {
         expect(iface.name, isNotEmpty);
         expect(iface.addresses, isA<List<InternetAddress>>());
 
-        // The loop closes: a returned name feeds back into a Ping selection.
-        expect(
-          () => Ping('127.0.0.1', interface: iface.name, count: 1),
-          returnsNormally,
-        );
+        // The loop closes per the platform's binding ability: a returned name
+        // only feeds back into a Ping selection where the OS `ping` binds by
+        // name. Windows `ping` binds only by source address, so PingWindows
+        // rejects a bare interface name synchronously in its constructor
+        // (UnimplementedError) — there the name round-trips by address instead.
+        if (Platform.isWindows) {
+          expect(
+            () => Ping('127.0.0.1', interface: iface.name, count: 1),
+            throwsA(isA<UnimplementedError>()),
+          );
+        } else {
+          expect(
+            () => Ping('127.0.0.1', interface: iface.name, count: 1),
+            returnsNormally,
+          );
+        }
 
         // And so does a returned address string, when one is present.
         if (iface.addresses.isNotEmpty) {
