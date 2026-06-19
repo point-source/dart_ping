@@ -78,9 +78,7 @@ final class PingResponse extends PingEvent {
     return PingResponse(
       seq: map['seq']?.toInt(),
       ttl: map['ttl']?.toInt(),
-      time: map['time'] != null
-          ? Duration(microseconds: (map['time'] as num).toInt())
-          : null,
+      time: _durationFromMicros(map['time']),
       ip: map['ip'],
     );
   }

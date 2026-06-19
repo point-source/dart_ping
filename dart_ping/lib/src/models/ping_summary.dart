@@ -113,9 +113,7 @@ final class PingSummary extends PingEvent {
     return PingSummary(
       transmitted: map['transmitted']?.toInt() ?? 0,
       received: map['received']?.toInt() ?? 0,
-      time: map['time'] != null
-          ? Duration(microseconds: (map['time'] as num).toInt())
-          : null,
+      time: _durationFromMicros(map['time']),
       stats: map['stats'] != null ? RoundTripStats.fromMap(map['stats']) : null,
       errors: map['errors'] is List
           ? map['errors'].map<PingError>((e) => PingError.fromMap(e)).toList()
