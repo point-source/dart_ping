@@ -46,7 +46,7 @@ void main() {
       expect(
         json,
         equals(
-          '{"type":"response","seq":2,"ttl":5,"time":8,"ip":"127.0.0.1"}',
+          '{"type":"response","seq":2,"ttl":5,"time":8000,"ip":"127.0.0.1"}',
         ),
       );
       final deserialized = PingResponse.fromJson(json);
@@ -58,7 +58,7 @@ void main() {
       expect(
         json,
         equals(
-          '{"type":"summary","transmitted":43,"received":8,"time":3957,"stats":null,"errors":[{"type":"error","error":"Request Timed Out","message":"Test","seq":null,"ip":null}]}',
+          '{"type":"summary","transmitted":43,"received":8,"time":3957000,"stats":null,"errors":[{"type":"error","error":"Request Timed Out","message":"Test","seq":null,"ip":null}]}',
         ),
       );
       final deserialized = PingSummary.fromJson(json);
@@ -78,6 +78,53 @@ void main() {
       final deserialized = PingSummary.fromJson(summary.toJson());
       expect(deserialized, equals(summary));
       expect(deserialized.stats, equals(stats));
+    });
+
+    test('PingResponse sub-millisecond time survives round-trip', () {
+      final resp = PingResponse(
+        seq: 1,
+        ttl: 64,
+        time: const Duration(microseconds: 1234),
+        ip: '127.0.0.1',
+      );
+      final deserialized = PingResponse.fromJson(resp.toJson());
+      expect(deserialized, equals(resp));
+      expect(deserialized.time!.inMicroseconds, equals(1234));
+
+      final resp2 = PingResponse(
+        seq: 2,
+        ttl: 64,
+        time: const Duration(microseconds: 8500),
+        ip: '127.0.0.1',
+      );
+      final deserialized2 = PingResponse.fromJson(resp2.toJson());
+      expect(deserialized2, equals(resp2));
+      expect(deserialized2.time!.inMicroseconds, equals(8500));
+    });
+
+    test('PingSummary stats sub-millisecond figures survive round-trip', () {
+      final stats = RoundTripStats.fromSamples([
+        const Duration(microseconds: 1100),
+        const Duration(microseconds: 2300),
+        const Duration(microseconds: 900),
+      ]);
+      final summary = PingSummary(
+        transmitted: 3,
+        received: 3,
+        time: const Duration(microseconds: 4500),
+        stats: stats,
+      );
+      final deserialized = PingSummary.fromJson(summary.toJson());
+      expect(deserialized, equals(summary));
+      expect(deserialized.stats, equals(stats));
+      expect(deserialized.time!.inMicroseconds, equals(4500));
+
+      final ds = deserialized.stats!;
+      expect(ds.min!.inMicroseconds, equals(stats.min!.inMicroseconds));
+      expect(ds.avg!.inMicroseconds, equals(stats.avg!.inMicroseconds));
+      expect(ds.max!.inMicroseconds, equals(stats.max!.inMicroseconds));
+      expect(ds.stddev!.inMicroseconds, equals(stats.stddev!.inMicroseconds));
+      expect(ds.jitter!.inMicroseconds, equals(stats.jitter!.inMicroseconds));
     });
 
     test('PingEvent.fromJson dispatches across variants', () {
