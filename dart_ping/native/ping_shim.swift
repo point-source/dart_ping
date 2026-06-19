@@ -54,8 +54,10 @@ private final class PingRun {
 
 /// `strdup` the given Swift string into a C heap buffer (`malloc`-allocated,
 /// NUL-terminated UTF-8). Returns a pointer that `dart_ping_free_event` later
-/// releases with `free`. Allocator-symmetric: Swift frees what Swift allocated.
-private func heapCopy(_ string: String) -> UnsafeMutablePointer<CChar> {
+/// releases with `free` (malloc/free symmetric). Returns NULL only if `strdup`
+/// fails to allocate; callers then leave `has_ip` false so the invariant
+/// `has_ip == true ⇒ ip != NULL` always holds.
+private func heapCopy(_ string: String) -> UnsafeMutablePointer<CChar>? {
     return string.withCString { strdup($0) }
 }
 
@@ -74,10 +76,14 @@ private func heapCopy(_ string: String) -> UnsafeMutablePointer<CChar> {
 private func deliver(_ event: PingEngine.Event,
                      to callback: dart_ping_event_callback,
                      context: UnsafeMutableRawPointer?) {
-    // Heap-allocate the event struct; zero-initialize so unspecified fields for
-    // the active kind read as 0 / false / NULL. Ownership transfers to the
-    // receiver, which frees it (and ip/errors) via dart_ping_free_event.
-    let evPtr = UnsafeMutablePointer<dart_ping_event>.allocate(capacity: 1)
+    // Heap-allocate the event struct with C `malloc` (NOT Swift's
+    // `UnsafeMutablePointer.allocate`, whose contract pairs with `.deallocate`,
+    // not `free`) so `dart_ping_free_event`'s `free` is allocator-symmetric
+    // (security review #28-2). Zero-initialize so unspecified fields for the
+    // active kind read as 0 / false / NULL. Ownership transfers to the receiver,
+    // which frees it (and ip/errors) via dart_ping_free_event.
+    let evPtr = malloc(MemoryLayout<dart_ping_event>.stride)!
+        .assumingMemoryBound(to: dart_ping_event.self)
     evPtr.initialize(to: dart_ping_event())
 
     switch event {
@@ -91,22 +97,24 @@ private func deliver(_ event: PingEngine.Event,
         evPtr.pointee.has_ttl = (ttl != nil)
         evPtr.pointee.ttl = Int64(ttl ?? 0)
         evPtr.pointee.time_micros = Int64(timeMicros)
-        evPtr.pointee.has_ip = true
-        evPtr.pointee.ip = UnsafePointer(heapCopy(ip))
+        // ip is always present for a response; heap-copy it. If strdup fails
+        // (OOM), leave the zero-init has_ip=false/ip=nil rather than store NULL
+        // with has_ip=true.
+        if let ipPtr = heapCopy(ip) {
+            evPtr.pointee.has_ip = true
+            evPtr.pointee.ip = UnsafePointer(ipPtr)
+        }
 
     case let .error(kind, seq, ip):
         // .error: seq and ip both nullable. Heap-copy the ip when present;
-        // leave ip NULL / has_ip false otherwise.
+        // the zero-initialized struct already has has_ip=false / ip=nil.
         evPtr.pointee.kind = DART_PING_EVENT_ERROR
         evPtr.pointee.error_kind = cErrorKind(kind)
         evPtr.pointee.has_seq = (seq != nil)
         evPtr.pointee.seq = Int64(seq ?? 0)
-        if let ip = ip {
+        if let ip = ip, let ipPtr = heapCopy(ip) {
             evPtr.pointee.has_ip = true
-            evPtr.pointee.ip = UnsafePointer(heapCopy(ip))
-        } else {
-            evPtr.pointee.has_ip = false
-            evPtr.pointee.ip = nil
+            evPtr.pointee.ip = UnsafePointer(ipPtr)
         }
 
     case let .summary(transmitted, received, timeMicros, errors):
@@ -124,7 +132,10 @@ private func deliver(_ event: PingEngine.Event,
             evPtr.pointee.errors = nil
             evPtr.pointee.errors_len = 0
         } else {
-            let buf = UnsafeMutablePointer<Int32>.allocate(capacity: codes.count)
+            // C `malloc` (not Swift `.allocate`) so `dart_ping_free_event`'s
+            // `free` is allocator-symmetric (security review #28-2).
+            let buf = malloc(codes.count * MemoryLayout<Int32>.stride)!
+                .assumingMemoryBound(to: Int32.self)
             buf.initialize(from: codes, count: codes.count)
             evPtr.pointee.errors = UnsafePointer(buf)
             evPtr.pointee.errors_len = Int32(truncatingIfNeeded: codes.count)

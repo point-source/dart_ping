@@ -148,21 +148,30 @@ class IosPing implements Ping {
     final family =
         _ipVersion == IpVersion.ipv6 ? DartPingFamily.v6 : DartPingFamily.v4;
 
-    _handle = dartPingStart(
-      hostPtr,
-      _count ?? -1,
-      _interval.toDouble(),
-      _timeout.toDouble(),
-      _ttl,
-      family,
-      _nat64Synthesis,
-      _callable!.nativeFunction,
-      nullptr,
-    );
-
-    // The shim copies the host into the Swift Config, so the C string is no
-    // longer needed once start has returned.
-    malloc.free(hostPtr);
+    try {
+      _handle = dartPingStart(
+        hostPtr,
+        _count ?? -1,
+        _interval.toDouble(),
+        _timeout.toDouble(),
+        _ttl,
+        family,
+        _nat64Synthesis,
+        _callable!.nativeFunction,
+        nullptr,
+      );
+    } catch (error, stack) {
+      // dartPingStart only throws if the native asset failed to link (a non-iOS
+      // / mis-built target). Surface the error and release the callable instead
+      // of leaking the trampoline; the host string is freed in `finally`.
+      _controller?.addError(error, stack);
+      _teardown();
+      return;
+    } finally {
+      // The shim copies the host into the Swift Config, so the C string is no
+      // longer needed once start has returned (or thrown).
+      malloc.free(hostPtr);
+    }
 
     if (_handle == nullptr) {
       // C returns null only on a null host/callback — a programming error.
@@ -176,14 +185,20 @@ class IosPing implements Ping {
 
   /// Runs on this isolate's event loop (the native C call has already returned).
   void _handleNativeEvent(Pointer<Void> ctx, Pointer<DartPingEvent> evPtr) {
-    // 1. Copy EVERYTHING we need out of the heap-owned struct now.
-    final dto = _decodeEvent(evPtr.ref);
+    // 1. Copy EVERYTHING we need out of the heap-owned struct, then free it
+    //    exactly once. The event is heap-owned by us (WS1's lifetime contract),
+    //    so the free is in a `finally`: a decode failure (e.g. a malformed IP
+    //    string on a probe event) must never leak the native payload. Such a
+    //    failure only affects non-terminal events — the summary carries no IP —
+    //    so a dropped probe never skips teardown.
+    final NativePingEvent dto;
+    try {
+      dto = _decodeEvent(evPtr.ref);
+    } finally {
+      freeNativeEvent(evPtr);
+    }
 
-    // 2. The event is heap-owned by us (WS1's lifetime contract); free it
-    //    exactly once, after copying.
-    freeNativeEvent(evPtr);
-
-    // 3. Map to a sealed PingEvent carrying the running stats snapshot, forward
+    // 2. Map to a sealed PingEvent carrying the running stats snapshot, forward
     //    it, and tear down once the terminal summary has been delivered.
     final event = _statsMapper!.map(dto);
     _forward(event);
