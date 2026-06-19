@@ -1666,7 +1666,7 @@ detail (§spec:ios-ping-behavior); only the resulting `Duration` resolution
 is normative.
 
 ## Statistics behavior tests §spec:stats-tests
-*Status: not started*
+*Status: partially implemented (dart_ping 10.0.0; iOS mapping tests land with §spec:stats-ios) — `dart_ping/test/stats_event_test.dart` covers the round-trip computations over known per-probe inputs (incl. single-sample and zero-reply), the packet-loss derivation and the zero-reply 100%-loss / absent-figures case, and the sealed event contract (terminal summary distinguishable by type and final, responses vs. errors distinguishable). `dart_ping/test/live_stats_test.dart` adds the live-consistency coverage: every probe event (`PingResponse` and per-probe `PingError`) carries a non-null running `RoundTripStats` snapshot; the running snapshot tracks the same computation as the summary step by step (the i-th response equals `RoundTripStats.fromSamples([rtt_0..rtt_i])`, and a timeout carries the snapshot of the successful replies seen so far); the last running snapshot equals the terminal `summary.stats` for a run ending in a reply, a run whose last probe is a timeout, and the zero-reply run; and loss-so-far derived from probe-event count (transmitted) and `stats.sampleCount` (received) matches the terminal `summary.packetLoss`. All offline via the `FakeProcess`/`TestPing` harness. The sub-millisecond serialization precision test and the iOS mapping tests remain outstanding.*
 
 The statistics and the event contract are covered by automated tests that
 run under `dart test` / `flutter test` without a live network.
