@@ -9,7 +9,9 @@ import 'src/ping_event_mapper.dart';
 /// iOS implementation of the [Ping] interface.
 ///
 /// Drives a native Swift ICMP engine over a Flutter method/event channel,
-/// mapping native results back onto the cross-platform [PingData] models.
+/// mapping native results back onto the cross-platform sealed [PingEvent]
+/// models and stamping each event with a running [RoundTripStats] snapshot via
+/// [NativeEventStatsMapper] (§spec:stats-ios).
 class DartPingIOS implements Ping {
   DartPingIOS(
     this._host,
@@ -73,8 +75,14 @@ class DartPingIOS implements Ping {
   /// Unique identifier for this run, used to demultiplex shared events.
   final String _id;
 
-  StreamController<PingData>? _controller;
+  StreamController<PingEvent>? _controller;
   StreamSubscription<dynamic>? _eventSub;
+
+  /// Per-run seam that maps native events onto sealed [PingEvent]s and stamps
+  /// each with a running [RoundTripStats] snapshot, reusing the core
+  /// computation so iOS stats match the other platforms by construction
+  /// (§spec:stats-ios).
+  final NativeEventStatsMapper _statsMapper = NativeEventStatsMapper();
 
   /// Unused on iOS and should not be called
   @override
@@ -87,14 +95,16 @@ class DartPingIOS implements Ping {
   @override
   String get command => 'Ping on iOS is provided by a native Swift ICMP engine';
 
-  /// Stream of [PingData] events. One for each response, error, or summary.
+  /// Stream of sealed [PingEvent]s: a [PingResponse] per reply, a [PingError]
+  /// per failed probe / run error, and the terminal [PingSummary]. Each event
+  /// carries the running [RoundTripStats] snapshot (§spec:stats-ios).
   ///
   /// On listen, subscribes to the shared native event stream (filtered to
   /// this run's id) and then starts the native run. The stream closes once
-  /// the terminal `summary` event has been forwarded.
+  /// the terminal [PingSummary] event has been forwarded.
   @override
-  Stream<PingData> get stream {
-    _controller ??= StreamController<PingData>(
+  Stream<PingEvent> get stream {
+    _controller ??= StreamController<PingEvent>(
       onListen: _onListen,
       onCancel: _onCancel,
     );
@@ -109,7 +119,7 @@ class DartPingIOS implements Ping {
     _eventSub = _events
         .where((event) => event is Map && event['id'] == _id)
         .listen((event) {
-      final data = mapNativeEvent(event as Map);
+      final data = _statsMapper.map(event as Map);
       if (data == null) return;
 
       if (!controller.isClosed) {
@@ -117,7 +127,7 @@ class DartPingIOS implements Ping {
       }
 
       // The summary is terminal: the run is done once it has been delivered.
-      if (data.summary != null && !controller.isClosed) {
+      if (data is PingSummary && !controller.isClosed) {
         controller.close();
       }
     });

@@ -31,11 +31,11 @@ class MyHomePage extends StatefulWidget {
 }
 
 class MyHomePageState extends State<MyHomePage> {
-  final List<PingData> _events = [];
+  final List<PingEvent> _events = [];
   final TextEditingController _controller =
       TextEditingController(text: 'google.com');
   final TextEditingController _ttlController = TextEditingController(text: '64');
-  StreamSubscription<PingData>? _subscription;
+  StreamSubscription<PingEvent>? _subscription;
 
   void _startPing() {
     final ttl = int.tryParse(_ttlController.text) ?? 64;

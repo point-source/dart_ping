@@ -1533,7 +1533,7 @@ end-of-run signal (§spec:stats-event-model) — it is the concrete reason the
 event model is redesigned rather than extended.
 
 ## Statistics computed uniformly across platforms §spec:stats-cross-platform
-*Status: implemented for the subprocess platforms (dart_ping 10.0.0; iOS lands in its own batch — §spec:stats-ios) — `BasePing` feeds every successful probe's RTT into a single `RoundTripStatsAccumulator` and, at `_cleanup`, builds the terminal summary's `RoundTripStats` from that per-probe accumulation rather than from any native `ping` stats line (the native min/avg/max/stddev line is not parsed). Because the same accumulator code runs on Linux/Android, macOS, and Windows, every subprocess platform reports the identical figure set — including a computed standard deviation on Windows, whose native `ping` does not emit one. Covered by network-free `dart test` cases in `dart_ping/test/stats_event_test.dart` (per-probe → populated stats incl. non-null stddev, and the end-to-end BasePing path via a fake process).*
+*Status: implemented on every platform incl. iOS (dart_ping 10.0.0 for the subprocess platforms; the iOS portion landed in Batch #63-4 — §spec:stats-ios — where `dart_ping_ios`'s `NativeEventStatsMapper` feeds the per-probe times into the SAME core `RoundTripStatsAccumulator`, so the figures are identical by construction) — `BasePing` feeds every successful probe's RTT into a single `RoundTripStatsAccumulator` and, at `_cleanup`, builds the terminal summary's `RoundTripStats` from that per-probe accumulation rather than from any native `ping` stats line (the native min/avg/max/stddev line is not parsed). Because the same accumulator code runs on Linux/Android, macOS, and Windows, every subprocess platform reports the identical figure set — including a computed standard deviation on Windows, whose native `ping` does not emit one. Covered by network-free `dart test` cases in `dart_ping/test/stats_event_test.dart` (per-probe → populated stats incl. non-null stddev, and the end-to-end BasePing path via a fake process).*
 
 The round-trip statistics are computed once, at the Dart boundary, from the
 **per-probe round-trip times the platform measured** — the same algorithm
@@ -1599,7 +1599,10 @@ preserves sub-millisecond resolution. The map key stays `'time'`; only the
 numeric scale changed, which the unreleased breaking 10.0.0 major absorbs.
 Covered by network-free round-trip tests in
 `dart_ping/test/serialization_test.dart` (§spec:stats-tests). The iOS
-microseconds-over-channel half remains tracked under §spec:stats-ios.*
+microseconds-over-channel half landed in Batch #63-4 (§spec:stats-ios): the
+Swift engine now sends each probe's RTT (and the summary total) in microseconds
+instead of rounding to whole milliseconds, and `ping_event_mapper_test.dart`
+asserts a sub-millisecond round-trip value survives the native→event mapping.*
 
 Round-trip times retain the resolution the platform provides —
 sub-millisecond where the native tool reports it — through the in-memory
@@ -1632,7 +1635,7 @@ implementation choice; the normative contract is only that the round-trip
 resolution survives a serialization round-trip.
 
 ## iOS statistics parity §spec:stats-ios
-*Status: not started*
+*Status: implemented (Batch #63-4) — the Dart bridge maps native results onto the sealed `PingEvent`s (`ping_event_mapper.dart`: `mapNativeEvent` returns a bare variant; a timed-out / TTL-exceeded probe is a single `PingError` carrying its own `seq`/`ip`, matching the core parser) and computes `RoundTripStats` (incl. population stddev) + the live running snapshot via a `NativeEventStatsMapper` that **reuses the core `RoundTripStatsAccumulator`** — the same code and math as `BasePing` — so the iOS live snapshot and terminal summary match the subprocess platforms by construction (no parallel Swift computation). `DartPingIOS.stream` is now `Stream<PingEvent>` and stamps every event with the running snapshot. The native Swift engine surfaces each probe's RTT (and the summary total) at **microsecond** resolution over the channel (the `(rttMicros+500)/1000` whole-ms rounding is removed; the engine still streams only raw per-probe data and computes no aggregates). Dart-side covered by network-free `dart_ping_ios/test/ping_event_mapper_test.dart` (sealed-event mapping incl. the full ErrorType set + microsecond/sub-ms precision, and the `NativeEventStatsMapper` seam asserting per-event live snapshots and the terminal summary equal the core `RoundTripStats.fromSamples`, plus the zero-reply 100%-loss case); green under `flutter test` on the Linux host. The Swift microsecond change is not compilable on the Linux CI host — hand-verified; macOS CI (`xcodebuild test`) compiles/runs it. Live ICMP round-trips remain the manual example-app acceptance path.*
 
 iOS reports the same statistic set as every other platform, computed by the
 **same shared Dart code**. The native Swift engine has no summary-statistics
@@ -1695,8 +1698,12 @@ equals the terminal `summary.stats` for a run ending in a reply, a run whose
 last probe is a timeout, and the zero-reply run; and loss-so-far derived from
 probe-event count (transmitted) and `stats.sampleCount` (received) matches the
 terminal `summary.packetLoss` — all offline via the `FakeProcess`/`TestPing`
-harness. The iOS native-result → event/stats mapping tests remain tracked
-under §spec:stats-ios / §spec:ios-tests.*
+harness. The iOS native-result → event/stats mapping tests landed in Batch
+#63-4 (`dart_ping_ios/test/ping_event_mapper_test.dart`): over the
+`NativeEventStatsMapper` seam they assert iOS produces the same statistic set
+(including population stddev) and the same per-event live snapshots from
+per-probe inputs as the core `RoundTripStats.fromSamples`, plus the zero-reply
+100%-loss case (§spec:stats-ios).*
 
 The statistics and the event contract are covered by automated tests that
 run under `dart test` / `flutter test` without a live network.

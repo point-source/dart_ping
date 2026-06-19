@@ -94,8 +94,13 @@ void main() {
 
     /// All response payloads a run collected, in order. Used to assert a run
     /// saw only its own id's responses, never a sibling's.
-    List<PingResponse> responsesOf(List<PingData> data) =>
-        data.where((d) => d.response != null).map((d) => d.response!).toList();
+    List<PingResponse> responsesOf(List<PingEvent> data) => data
+        .whereType<PingResponse>()
+        // Strip the running stats snapshot every live event now carries so the
+        // equality assertions compare only the per-probe fields the isolation
+        // test cares about (seq/ttl/time/ip).
+        .map((r) => PingResponse(seq: r.seq, ttl: r.ttl, time: r.time, ip: r.ip))
+        .toList();
 
     test(
         'two concurrent runs over the shared event channel stay fully isolated',
@@ -103,7 +108,7 @@ void main() {
       // Run A -> a.example: distinct seq/ttl/time/ip, AND carries ONE error
       // (a requestTimedOut on seq=2). Its summary therefore records that error.
       final pingA = DartPingIOS('a.example', 2, 1, 5, 64, IpVersion.ipv4);
-      final receivedA = <PingData>[];
+      final receivedA = <PingEvent>[];
       final doneA = Completer<void>();
       pingA.stream.listen(receivedA.add, onDone: doneA.complete);
 
@@ -111,7 +116,7 @@ void main() {
       // bleed from A is detectable. Run B has NO error, so its summary's error
       // list must stay empty — any error-list bleed from A is detectable.
       final pingB = DartPingIOS('b.example', 2, 1, 5, 53, IpVersion.ipv4);
-      final receivedB = <PingData>[];
+      final receivedB = <PingEvent>[];
       final doneB = Completer<void>();
       pingB.stream.listen(receivedB.add, onDone: doneB.complete);
 
@@ -130,7 +135,7 @@ void main() {
         'type': 'response',
         'seq': 1,
         'ttl': 57,
-        'time': 170,
+        'time': 170000,
         'ip': '154.16.146.45',
       });
       emitNativeEvent({
@@ -138,10 +143,11 @@ void main() {
         'type': 'response',
         'seq': 1,
         'ttl': 53,
-        'time': 236,
+        'time': 236000,
         'ip': '187.188.169.169',
       });
-      // A's timeout on seq=2: a combined response (seq only) + error.
+      // A's timeout on seq=2: a single PingError carrying its own seq (the
+      // sealed model has no separate response for a timed-out probe).
       emitNativeEvent({
         'id': idA,
         'type': 'error',
@@ -153,7 +159,7 @@ void main() {
         'type': 'response',
         'seq': 2,
         'ttl': 53,
-        'time': 240,
+        'time': 240000,
         'ip': '187.188.169.169',
       });
       // Terminal summaries (each closes its OWN controller).
@@ -162,7 +168,7 @@ void main() {
         'type': 'summary',
         'transmitted': 2,
         'received': 1,
-        'time': 1001,
+        'time': 1001000,
         'errors': [
           {'error': 'Request Timed Out', 'message': null},
         ],
@@ -172,7 +178,7 @@ void main() {
         'type': 'summary',
         'transmitted': 2,
         'received': 2,
-        'time': 1002,
+        'time': 1002000,
         'errors': <dynamic>[],
       });
 
@@ -196,14 +202,19 @@ void main() {
             time: Duration(milliseconds: 170),
             ip: '154.16.146.45',
           ),
-          // The timeout yields a response (seq only) paired with an error.
-          PingResponse(seq: 2),
         ],
         reason: 'a.example responses (seq/ttl/time/ip) must be its own, never '
             "b.example's",
       );
+      // A's timed-out probe surfaces as its own PingError(seq=2), not a
+      // response — and never reaches b.example (asserted below).
+      expect(
+        receivedA.whereType<PingError>().map((e) => (e.error, e.seq)).toList(),
+        const [(ErrorType.requestTimedOut, 2)],
+        reason: "a.example's timeout must be its own error event",
+      );
       final summariesA =
-          receivedA.where((d) => d.summary != null).map((d) => d.summary!);
+          receivedA.whereType<PingSummary>();
       expect(summariesA, hasLength(1),
           reason: 'a.example must emit exactly one summary');
       final summaryA = summariesA.single;
@@ -238,7 +249,7 @@ void main() {
             "a.example's",
       );
       final summariesB =
-          receivedB.where((d) => d.summary != null).map((d) => d.summary!);
+          receivedB.whereType<PingSummary>();
       expect(summariesB, hasLength(1),
           reason: 'b.example must emit exactly one summary');
       final summaryB = summariesB.single;
@@ -255,7 +266,7 @@ void main() {
       // Cross-check: run B must NEVER have seen any error at all (combined
       // response+error from A, nor a summary error).
       expect(
-        receivedB.where((d) => d.error != null),
+        receivedB.whereType<PingError>(),
         isEmpty,
         reason: "no error event from a.example may reach b.example",
       );
@@ -270,12 +281,12 @@ void main() {
       // A's lone event must not be lost in B's noise, AND A's event must not
       // bleed into B.
       final pingA = DartPingIOS('a.example', 1, 1, 5, 64, IpVersion.ipv4);
-      final receivedA = <PingData>[];
+      final receivedA = <PingEvent>[];
       final doneA = Completer<void>();
       pingA.stream.listen(receivedA.add, onDone: doneA.complete);
 
       final pingB = DartPingIOS('b.example', 1, 1, 5, 64, IpVersion.ipv4);
-      final receivedB = <PingData>[];
+      final receivedB = <PingEvent>[];
       final doneB = Completer<void>();
       pingB.stream.listen(receivedB.add, onDone: doneB.complete);
 
@@ -314,7 +325,7 @@ void main() {
       expect(responsesA.single.ip, '9.9.9.9');
 
       final summaryA =
-          receivedA.firstWhere((d) => d.summary != null).summary!;
+          receivedA.whereType<PingSummary>().first;
       expect(summaryA.transmitted, 1);
       expect(summaryA.received, 1);
 
@@ -331,7 +342,7 @@ void main() {
             'slipped-in event must not bleed across the shared channel',
       );
       final summaryB =
-          receivedB.firstWhere((d) => d.summary != null).summary!;
+          receivedB.whereType<PingSummary>().first;
       expect(summaryB.transmitted, 2);
       expect(summaryB.received, 2);
     });
