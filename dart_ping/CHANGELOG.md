@@ -110,6 +110,23 @@ Package consolidation (#28, §spec:ios-code-asset-build-hook):
   `DartPingIOS.register()`). The registration step and the separate
   `dart_ping_ios` package are removed in a later change.
 
+Package consolidation (#28, #48):
+
+- The separate `dart_ping_ios` package and its `register()` step are retired:
+  iOS is now built into `dart_ping` and auto-wires when the build target is
+  iOS. For existing `dart_ping_ios` users, migration is a few concrete steps:
+- Remove the `dart_ping_ios` dependency from your `pubspec.yaml`.
+- Delete the `DartPingIOS.register()` call and the matching
+  `import 'package:dart_ping_ios/...';`.
+- Raise your SDK floor to the consolidation baseline — Dart 3.10 / Flutter
+  3.38 (`sdk: ">=3.10.0 <4.0.0"`).
+- No other source change is required: the public `Ping` API and the event
+  model (`PingResponse`, `PingError`, `PingSummary`) are otherwise unchanged.
+  iOS now auto-wires, so the `register()` step is simply gone, and ping works
+  from any isolate (closes #48) because the Dart↔Swift seam moved from Flutter
+  platform channels to `dart:ffi`. This removal of `register()` is the one
+  intentional public-API break beyond the 10.0.0 model redesign.
+
 ## 9.2.0
 
 - Add an optional `interface` selection to the `Ping` factory and the platform constructors (#72). Pass either a network interface name (e.g. `eth0`) or a local source IP address (e.g. `192.168.1.5`) to bind the ping to a specific interface or source address.
