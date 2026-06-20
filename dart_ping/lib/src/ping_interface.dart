@@ -5,6 +5,7 @@ import 'address_family.dart';
 import 'ip_version.dart';
 import 'models/ping_event.dart';
 import 'models/ping_parser.dart';
+import 'ping/ios/ios_ping.dart';
 import 'ping/linux_ping.dart';
 import 'ping/mac_ping.dart';
 import 'ping/windows_ping.dart';
@@ -138,39 +139,25 @@ abstract class Ping {
         );
       case 'ios':
         throwIfInterfaceUnsupportedOnIos(interface);
-        Function? ios = iosFactory;
-        if (iosFactory != null) {
-          return ios!(
-            host,
-            count,
-            interval,
-            timeout,
-            ttl,
-            ipVersion,
-            parser,
-            encoding,
-            nat64Synthesis,
-          );
-        }
-        throw UnimplementedError(
-          'iOS support has not been enabled. Please see the docs at https://pub.dev/packages/dart_ping',
+        // iOS dispatches to the FFI-backed implementation directly, exactly as
+        // the other branches construct their platform `Ping`s. No `iosFactory`
+        // indirection and no `register()` step — `dart:ffi` is part of the core
+        // SDK, so referencing `IosPing` from shared Dart code pulls no native
+        // symbols into non-iOS builds; the native library is only *opened* on
+        // this branch, which only runs on iOS (§spec:ios-auto-wiring).
+        return IosPing(
+          host,
+          count,
+          interval,
+          timeout,
+          ttl,
+          ipVersion,
+          nat64Synthesis,
         );
       default:
         throw UnimplementedError('Ping not supported on this platform');
     }
   }
-
-  static Ping Function(
-    String host,
-    int? count,
-    int interval,
-    int timeout,
-    int ttl,
-    IpVersion ipVersion,
-    PingParser? parser,
-    Encoding encoding,
-    bool nat64Synthesis,
-  )? iosFactory;
 
   /// Parser used to interpret ping process output
   late PingParser parser;

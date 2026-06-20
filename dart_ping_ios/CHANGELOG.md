@@ -1,3 +1,20 @@
+## Discontinued
+
+This package is **discontinued**. iOS support now ships in
+[`dart_ping`](https://pub.dev/packages/dart_ping) (>= 10.0.0) directly, delivered
+over `dart:ffi` as a bundled native code asset, so a second package is no longer
+required to ping from iOS. Existing consumers migrate by:
+
+- removing the `dart_ping_ios` dependency,
+- deleting the `DartPingIOS.register()` call, and
+- raising their SDK floor to the `dart_ping` 10.0.0 baseline (Dart 3.10 /
+  Flutter 3.38).
+
+No other source change is needed: the public `Ping` API and the `PingEvent`
+event model are otherwise unchanged. Prior channel-based releases of
+`dart_ping_ios` remain **published and resolvable** for consumers who cannot
+adopt the raised SDK floor.
+
 ## 6.0.0
 
 - **Breaking change (#63):** the iOS `Ping.stream` now emits the sealed

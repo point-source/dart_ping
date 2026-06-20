@@ -1,3 +1,12 @@
+> **⚠️ Discontinued.** This package is no longer maintained. iOS support now
+> lives in [`dart_ping`](https://pub.dev/packages/dart_ping) directly (a single
+> package, delivered over `dart:ffi` as a bundled native code asset) — there is
+> no separate `dart_ping_ios` dependency and no `DartPingIOS.register()` call to
+> make. See the [`dart_ping` README](https://pub.dev/packages/dart_ping) and its
+> [CHANGELOG](https://pub.dev/packages/dart_ping/changelog) for the migration
+> notes. The content below is retained as a historical record of the final
+> channel-based release.
+
 This package adds iOS support to the [dart_ping](https://pub.dev/packages/dart_ping) package via registration.
 
 The [dart_ping](https://pub.dev/packages/dart_ping) package is required for use.

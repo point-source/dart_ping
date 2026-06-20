@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:dart_ping/dart_ping.dart';
 import 'package:dart_ping/src/ping/ios/ios_ping.dart';
 import 'package:test/test.dart';
@@ -9,7 +7,7 @@ import 'package:test/test.dart';
 // Off iOS, the native code asset is NOT linked, so any FFI entry point would
 // fail to link. We therefore exercise ONLY what is reachable without the asset:
 // construction, the address-family guard, the static command/parser members,
-// the `fromFactory` adapter, and isolation-by-construction. We never touch
+// and isolation-by-construction. We never touch
 // `.stream`/listen, `stop()`, or any FFI function — doing so would attempt to
 // open the native asset.
 void main() {
@@ -72,62 +70,6 @@ void main() {
         () => IosPing('::1', 1, 1, 2, 255, IpVersion.ipv6, true),
         returnsNormally,
       );
-    });
-  });
-
-  group('fromFactory adapter', () {
-    test('returns an IosPing', () {
-      final ping = IosPing.fromFactory(
-        '1.2.3.4',
-        1,
-        1,
-        2,
-        255,
-        IpVersion.ipv4,
-        null,
-        utf8,
-        true,
-      );
-      expect(ping, isA<IosPing>());
-    });
-
-    test('ignores parser and encoding (signature parity only)', () {
-      // A non-default encoding must not affect behavior: the native engine emits
-      // typed events directly, so parser/encoding are dropped. Construction
-      // succeeds and the command is unchanged regardless of these arguments.
-      final ping = IosPing.fromFactory(
-        '1.2.3.4',
-        3,
-        2,
-        5,
-        64,
-        IpVersion.ipv4,
-        null,
-        latin1,
-        false,
-      );
-      expect(ping, isA<IosPing>());
-      expect(
-        ping.command,
-        'Ping on iOS is provided by a native Swift ICMP engine',
-      );
-    });
-
-    test('matches the Ping.iosFactory typedef shape', () {
-      // Assigning fromFactory to the iosFactory seam must type-check; this is
-      // exactly how WS4 wires the registrar.
-      final Ping Function(
-        String,
-        int?,
-        int,
-        int,
-        int,
-        IpVersion,
-        PingParser?,
-        Encoding,
-        bool,
-      ) factory = IosPing.fromFactory;
-      expect(factory, isNotNull);
     });
   });
 
