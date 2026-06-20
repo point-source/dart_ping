@@ -39,10 +39,7 @@ void main() {
       });
 
       test('IPv6 literal (::1) + ipv6', () {
-        expect(
-          () => Ping('::1', ipVersion: IpVersion.ipv6),
-          returnsNormally,
-        );
+        expect(() => Ping('::1', ipVersion: IpVersion.ipv6), returnsNormally);
       });
     });
 

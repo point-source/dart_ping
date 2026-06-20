@@ -45,11 +45,16 @@ void main() async {
 }
 ```
 
-Instead of listening to a stream, you can perform a single ping and immediately return the result like so:
+Instead of listening to a stream, you can perform a single ping and immediately return the first event like so:
 
 ```dart
-final result = await Ping('google.com', count: 1).stream.first;
+final event = await Ping('google.com', count: 1).stream.first;
 ```
+
+`stream.first` yields whatever [PingEvent] arrives first — a `PingResponse` on
+success, but a `PingError` if that first probe times out or the host is
+unreachable — so branch on the type (or be ready for `first` to surface an
+error) rather than assuming a successful reply.
 
 To print the underlying ping command that will be used
 (useful for debugging):

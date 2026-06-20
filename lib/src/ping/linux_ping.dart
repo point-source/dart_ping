@@ -16,39 +16,38 @@ class PingLinux extends BasePing implements Ping {
     String? interface,
     bool nat64Synthesis = true,
   }) : super(
-          host,
-          count,
-          interval,
-          timeout,
-          ttl,
-          ipVersion,
-          parser ?? defaultParser,
-          encoding,
-          false,
-          interface,
-          nat64Synthesis,
-        );
+         host,
+         count,
+         interval,
+         timeout,
+         ttl,
+         ipVersion,
+         parser ?? defaultParser,
+         encoding,
+         false,
+         interface,
+         nat64Synthesis,
+       );
 
   static PingParser get defaultParser => PingParser(
-        responseRgx: RegExp(
-          r'bytes from (?:.*)(?<ip>\b(?:\d{1,3}\.){3}\d{1,3}\b)\)?: icmp_seq=(?<seq>\d+) ttl=(?<ttl>\d+) time=(?<time>(\d+).?(\d+))',
-        ),
-        summaryRgx: RegExp(
-          r'(?<tx>\d+) packets transmitted, (?<rx>\d+) received,.*time (?<time>\d+)ms',
-        ),
-        timeoutRgx: RegExp(r'no answer yet for icmp_seq=(?<seq>\d+)'),
-        timeToLiveRgx: RegExp(
-          r'From (?<ip>.*)(?:.*) icmp_seq=(?<seq>\d+) Time to live exceeded',
-        ),
-        unknownHostStr:
-            RegExp(r'unknown host|service not known|failure in name'),
-        noRouteStrs: [
-          RegExp(r'[Nn]etwork is unreachable'),
-          RegExp(r'[Dd]estination [Hh]ost [Uu]nreachable'),
-          RegExp(r'[Nn]o route to host'),
-          RegExp(r'[Aa]ddress family for hostname not supported'),
-        ],
-      );
+    responseRgx: RegExp(
+      r'bytes from (?:.*)(?<ip>\b(?:\d{1,3}\.){3}\d{1,3}\b)\)?: icmp_seq=(?<seq>\d+) ttl=(?<ttl>\d+) time=(?<time>(\d+).?(\d+))',
+    ),
+    summaryRgx: RegExp(
+      r'(?<tx>\d+) packets transmitted, (?<rx>\d+) received,.*time (?<time>\d+)ms',
+    ),
+    timeoutRgx: RegExp(r'no answer yet for icmp_seq=(?<seq>\d+)'),
+    timeToLiveRgx: RegExp(
+      r'From (?<ip>.*)(?:.*) icmp_seq=(?<seq>\d+) Time to live exceeded',
+    ),
+    unknownHostStr: RegExp(r'unknown host|service not known|failure in name'),
+    noRouteStrs: [
+      RegExp(r'[Nn]etwork is unreachable'),
+      RegExp(r'[Dd]estination [Hh]ost [Uu]nreachable'),
+      RegExp(r'[Nn]o route to host'),
+      RegExp(r'[Aa]ddress family for hostname not supported'),
+    ],
+  );
 
   @override
   Map<String, String> get locale => {'LC_ALL': 'C'};

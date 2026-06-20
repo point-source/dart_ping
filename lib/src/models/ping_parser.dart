@@ -50,8 +50,9 @@ class PingParser {
     // Timeout
     match = timeoutRgx.firstMatch(data);
     if (match != null) {
-      var seq =
-          match.groupNames.contains('seq') ? match.namedGroup('seq') : null;
+      var seq = match.groupNames.contains('seq')
+          ? match.namedGroup('seq')
+          : null;
 
       return PingError(
         ErrorType.requestTimedOut,
@@ -62,8 +63,9 @@ class PingParser {
     // Successful response
     match = responseRgx.firstMatch(data);
     if (match != null) {
-      var seq =
-          match.groupNames.contains('seq') ? match.namedGroup('seq') : null;
+      var seq = match.groupNames.contains('seq')
+          ? match.namedGroup('seq')
+          : null;
       var ttl = match.namedGroup('ttl');
       var time = match.namedGroup('time');
 
@@ -73,9 +75,7 @@ class PingParser {
         ttl: ttl == null ? null : int.parse(ttl),
         time: time == null
             ? null
-            : Duration(
-                microseconds: ((double.parse(time)) * 1000).floor(),
-              ),
+            : Duration(microseconds: ((double.parse(time)) * 1000).floor()),
       );
     }
 
@@ -103,8 +103,9 @@ class PingParser {
     // TTL Exceeded
     match = timeToLiveRgx.firstMatch(data);
     if (match != null) {
-      var seq =
-          match.groupNames.contains('seq') ? match.namedGroup('seq') : null;
+      var seq = match.groupNames.contains('seq')
+          ? match.namedGroup('seq')
+          : null;
 
       return PingError(
         ErrorType.timeToLiveExceeded,

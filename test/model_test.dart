@@ -27,10 +27,9 @@ void main() {
     });
 
     test('copyWith overrides each field', () {
-      final updated = PingError(ErrorType.noReply).copyWith(
-        error: ErrorType.unknownHost,
-        message: 'changed',
-      );
+      final updated = PingError(
+        ErrorType.noReply,
+      ).copyWith(error: ErrorType.unknownHost, message: 'changed');
       expect(updated.error, ErrorType.unknownHost);
       expect(updated.message, 'changed');
     });
@@ -47,30 +46,31 @@ void main() {
     });
 
     test('toMap serializes the human-readable error message', () {
-      expect(
-        PingError(ErrorType.timeToLiveExceeded, message: 'm').toMap(),
-        {
-          'type': 'error',
-          'error': 'Time To Live Exceeded',
-          'message': 'm',
-          'seq': null,
-          'ip': null,
-          'stats': null,
-        },
-      );
+      expect(PingError(ErrorType.timeToLiveExceeded, message: 'm').toMap(), {
+        'type': 'error',
+        'error': 'Time To Live Exceeded',
+        'message': 'm',
+        'seq': null,
+        'ip': null,
+        'stats': null,
+      });
     });
 
     test('toString appends seq and ip when present', () {
       expect(
-        PingError(ErrorType.timeToLiveExceeded, seq: 3, ip: '1.2.3.4')
-            .toString(),
+        PingError(
+          ErrorType.timeToLiveExceeded,
+          seq: 3,
+          ip: '1.2.3.4',
+        ).toString(),
         'timeToLiveExceeded, seq:3, ip:1.2.3.4',
       );
     });
 
     test('copyWith overrides seq and ip', () {
-      final updated = PingError(ErrorType.requestTimedOut)
-          .copyWith(seq: 5, ip: '9.9.9.9');
+      final updated = PingError(
+        ErrorType.requestTimedOut,
+      ).copyWith(seq: 5, ip: '9.9.9.9');
       expect(updated.seq, 5);
       expect(updated.ip, '9.9.9.9');
     });
@@ -183,9 +183,10 @@ void main() {
     });
 
     test('copyWith carries stats over and overrides it', () {
-      final stats = RoundTripStats.fromSamples(
-        [const Duration(milliseconds: 1), const Duration(milliseconds: 3)],
-      );
+      final stats = RoundTripStats.fromSamples([
+        const Duration(milliseconds: 1),
+        const Duration(milliseconds: 3),
+      ]);
       final original = PingSummary(transmitted: 2, received: 2, stats: stats);
       expect(original.copyWith().stats, stats);
       final other = RoundTripStats.fromSamples([const Duration(seconds: 1)]);
@@ -193,7 +194,9 @@ void main() {
     });
 
     test('equality and toMap include stats', () {
-      final stats = RoundTripStats.fromSamples([const Duration(milliseconds: 5)]);
+      final stats = RoundTripStats.fromSamples([
+        const Duration(milliseconds: 5),
+      ]);
       final a = PingSummary(transmitted: 1, received: 1, stats: stats);
       final b = PingSummary(transmitted: 1, received: 1, stats: stats);
       final c = PingSummary(transmitted: 1, received: 1);
@@ -283,10 +286,7 @@ void main() {
     });
 
     test('fromMap throws on an unknown type', () {
-      expect(
-        () => PingEvent.fromMap({'type': 'bogus'}),
-        throwsArgumentError,
-      );
+      expect(() => PingEvent.fromMap({'type': 'bogus'}), throwsArgumentError);
     });
   });
 }

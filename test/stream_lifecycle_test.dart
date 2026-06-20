@@ -22,13 +22,13 @@ class FakeProcess implements Process {
     List<String> stdoutLines = const [],
     List<String> stderrLines = const [],
     required int exit,
-  })  : _stdout = Stream<List<int>>.fromIterable(
-          stdoutLines.map((l) => utf8.encode('$l\n')),
-        ),
-        _stderr = Stream<List<int>>.fromIterable(
-          stderrLines.map((l) => utf8.encode('$l\n')),
-        ),
-        _exitCode = Future<int>.value(exit);
+  }) : _stdout = Stream<List<int>>.fromIterable(
+         stdoutLines.map((l) => utf8.encode('$l\n')),
+       ),
+       _stderr = Stream<List<int>>.fromIterable(
+         stderrLines.map((l) => utf8.encode('$l\n')),
+       ),
+       _exitCode = Future<int>.value(exit);
 
   final Stream<List<int>> _stdout;
   final Stream<List<int>> _stderr;
@@ -57,12 +57,10 @@ class FakeProcess implements Process {
 /// configured [FakeProcess] or a launch failure. All parsing and exit-code
 /// interpretation are inherited from [PingLinux] unchanged.
 class TestPing extends PingLinux {
-  TestPing({
-    FakeProcess? process,
-    Object? launchError,
-  })  : _process = process,
-        _launchError = launchError,
-        super('1.1.1.1', 5, 1000, 1000, 255, IpVersion.ipv4);
+  TestPing({FakeProcess? process, Object? launchError})
+    : _process = process,
+      _launchError = launchError,
+      super('1.1.1.1', 5, 1000, 1000, 255, IpVersion.ipv4);
 
   final FakeProcess? _process;
   final Object? _launchError;
@@ -123,11 +121,16 @@ void main() {
 
       final result = await _drain(ping);
 
-      expect(result.errors, hasLength(1),
-          reason: 'exactly one error event expected on launch failure');
+      expect(
+        result.errors,
+        hasLength(1),
+        reason: 'exactly one error event expected on launch failure',
+      );
       expect(result.errors.single.toString(), contains('ping binary'));
-      expect(result.errors.single.toString(),
-          contains('Could not find ping binary'));
+      expect(
+        result.errors.single.toString(),
+        contains('Could not find ping binary'),
+      );
       expect(result.doneCount, 1, reason: 'stream must close exactly once');
     });
 
@@ -145,10 +148,15 @@ void main() {
 
       final result = await _drain(ping);
 
-      expect(result.errors, isNotEmpty,
-          reason: 'unmapped non-zero exit must surface an error');
-      expect(result.errors.first.toString(),
-          contains('Ping process exited with code: 2'));
+      expect(
+        result.errors,
+        isNotEmpty,
+        reason: 'unmapped non-zero exit must surface an error',
+      );
+      expect(
+        result.errors.first.toString(),
+        contains('Ping process exited with code: 2'),
+      );
       expect(result.doneCount, 1, reason: 'stream must close exactly once');
     });
 
@@ -166,8 +174,11 @@ void main() {
 
       final result = await _drain(ping);
 
-      expect(result.errors, isEmpty,
-          reason: 'a clean run must not surface an error');
+      expect(
+        result.errors,
+        isEmpty,
+        reason: 'a clean run must not surface an error',
+      );
       expect(result.doneCount, 1, reason: 'stream must close exactly once');
 
       final responses = result.data.whereType<PingResponse>().toList();
@@ -190,32 +201,42 @@ void main() {
       expect(summary.errors, isEmpty);
     });
 
-    test('(b2) a typed noRoute event AND the unmapped-exit error both surface',
-        () async {
-      // A noRoute line surfaces a typed PingError(noRoute) and the process
-      // also exits non-zero (2, unmapped). The unmapped-exit error is still
-      // surfaced — the exit code is an independent signal from the parsed line,
-      // so it is NOT suppressed (suppressing it would also hide a distinct exit
-      // after unrelated timeouts). The stream still closes exactly once.
-      final ping = TestPing(
-        process: FakeProcess(
-          stderrLines: const ['connect: Network is unreachable'],
-          exit: 2,
-        ),
-      );
+    test(
+      '(b2) a typed noRoute event AND the unmapped-exit error both surface',
+      () async {
+        // A noRoute line surfaces a typed PingError(noRoute) and the process
+        // also exits non-zero (2, unmapped). The unmapped-exit error is still
+        // surfaced — the exit code is an independent signal from the parsed line,
+        // so it is NOT suppressed (suppressing it would also hide a distinct exit
+        // after unrelated timeouts). The stream still closes exactly once.
+        final ping = TestPing(
+          process: FakeProcess(
+            stderrLines: const ['connect: Network is unreachable'],
+            exit: 2,
+          ),
+        );
 
-      final result = await _drain(ping);
+        final result = await _drain(ping);
 
-      final errorData = result.data.whereType<PingError>().toList();
-      expect(errorData, hasLength(1));
-      expect(errorData.single.error, ErrorType.noRoute,
-          reason: 'the routing failure surfaces as a typed PingError event');
-      expect(result.errors, hasLength(1),
-          reason: 'the unmapped exit still surfaces a catchable error');
-      expect(result.errors.single.toString(),
-          contains('Ping process exited with code: 2'));
-      expect(result.doneCount, 1, reason: 'stream must close exactly once');
-    });
+        final errorData = result.data.whereType<PingError>().toList();
+        expect(errorData, hasLength(1));
+        expect(
+          errorData.single.error,
+          ErrorType.noRoute,
+          reason: 'the routing failure surfaces as a typed PingError event',
+        );
+        expect(
+          result.errors,
+          hasLength(1),
+          reason: 'the unmapped exit still surfaces a catchable error',
+        );
+        expect(
+          result.errors.single.toString(),
+          contains('Ping process exited with code: 2'),
+        );
+        expect(result.doneCount, 1, reason: 'stream must close exactly once');
+      },
+    );
 
     group('(d) close-exactly-once across terminal paths', () {
       test('normal completion closes once', () async {
@@ -290,9 +311,7 @@ void main() {
     });
   });
 
-  group(
-      'bad-interface error-then-close (§spec:interface-platform-rejection)',
-      () {
+  group('bad-interface error-then-close (§spec:interface-platform-rejection)', () {
     // A chosen interface / source address that does not exist (or has no
     // connectivity) is NOT a new failure mode: the OS `ping` binary refuses
     // the bind and exits non-zero. That non-zero exit is already routed
@@ -304,13 +323,10 @@ void main() {
     // surfaced verbatim as an exit exception. The live-hardware variant is
     // the manual @Tags(['live']) path and stays out of scope here.
 
-    test('bad interface (refused bind) emits error then closes once',
-        () async {
+    test('bad interface (refused bind) emits error then closes once', () async {
       final ping = TestPing(
         process: FakeProcess(
-          stderrLines: const [
-            'ping: SO_BINDTODEVICE: No such device',
-          ],
+          stderrLines: const ['ping: SO_BINDTODEVICE: No such device'],
           exit: 2,
         ),
       );
@@ -319,45 +335,54 @@ void main() {
 
       // (1) The consumer receives at least one catchable error event, and it
       // is the surfaced exit exception (its text contains the exit code).
-      expect(result.errors, isNotEmpty,
-          reason: 'a refused bind / non-existent interface must surface an '
-              'error on the stream');
-      expect(result.errors.first.toString(),
-          contains('Ping process exited with code: 2'));
+      expect(
+        result.errors,
+        isNotEmpty,
+        reason:
+            'a refused bind / non-existent interface must surface an '
+            'error on the stream',
+      );
+      expect(
+        result.errors.first.toString(),
+        contains('Ping process exited with code: 2'),
+      );
 
       // (2) The stream then closes exactly once within the hard timeout —
       // no hang.
       expect(result.doneCount, 1, reason: 'stream must close exactly once');
     });
 
-    test('bad source address (cannot assign) emits error then closes once',
-        () async {
+    test(
+      'bad source address (cannot assign) emits error then closes once',
+      () async {
+        final ping = TestPing(
+          process: FakeProcess(
+            stderrLines: const ['ping: bind: Cannot assign requested address'],
+            exit: 2,
+          ),
+        );
+
+        final result = await _drain(ping);
+
+        expect(
+          result.errors,
+          isNotEmpty,
+          reason:
+              'a source address with no connectivity must surface an '
+              'error on the stream',
+        );
+        expect(
+          result.errors.first.toString(),
+          contains('Ping process exited with code: 2'),
+        );
+        expect(result.doneCount, 1, reason: 'stream must close exactly once');
+      },
+    );
+
+    test('awaiting consumer returns within timeout on bad interface', () async {
       final ping = TestPing(
         process: FakeProcess(
-          stderrLines: const [
-            'ping: bind: Cannot assign requested address',
-          ],
-          exit: 2,
-        ),
-      );
-
-      final result = await _drain(ping);
-
-      expect(result.errors, isNotEmpty,
-          reason: 'a source address with no connectivity must surface an '
-              'error on the stream');
-      expect(result.errors.first.toString(),
-          contains('Ping process exited with code: 2'));
-      expect(result.doneCount, 1, reason: 'stream must close exactly once');
-    });
-
-    test('awaiting consumer returns within timeout on bad interface',
-        () async {
-      final ping = TestPing(
-        process: FakeProcess(
-          stderrLines: const [
-            'ping: SO_BINDTODEVICE: No such device',
-          ],
+          stderrLines: const ['ping: SO_BINDTODEVICE: No such device'],
           exit: 2,
         ),
       );
@@ -400,11 +425,18 @@ void main() {
 
       // (finding 3) A terminal PingSummary is emitted and is the FINAL event.
       final summaries = result.data.whereType<PingSummary>().toList();
-      expect(summaries, hasLength(1),
-          reason: 'a terminal summary must be emitted even without a native '
-              'summary line');
-      expect(result.data.last, isA<PingSummary>(),
-          reason: 'the summary is the final event of the run');
+      expect(
+        summaries,
+        hasLength(1),
+        reason:
+            'a terminal summary must be emitted even without a native '
+            'summary line',
+      );
+      expect(
+        result.data.last,
+        isA<PingSummary>(),
+        reason: 'the summary is the final event of the run',
+      );
 
       // (finding 2) Counts are reconstructed consistently: received equals the
       // successful-reply sample count, transmitted adds the one probe failure,
@@ -412,16 +444,23 @@ void main() {
       // reply.
       final summary = summaries.single;
       expect(summary.received, 1);
-      expect(summary.received, summary.stats?.sampleCount,
-          reason: 'received must equal the stats sample count');
-      expect(summary.transmitted, 2,
-          reason: '1 reply + 1 timed-out probe');
+      expect(
+        summary.received,
+        summary.stats?.sampleCount,
+        reason: 'received must equal the stats sample count',
+      );
+      expect(summary.transmitted, 2, reason: '1 reply + 1 timed-out probe');
       expect(summary.packetLoss, 50.0);
-      expect(summary.time, isNull,
-          reason: 'no OS wall-clock without the native summary line');
+      expect(
+        summary.time,
+        isNull,
+        reason: 'no OS wall-clock without the native summary line',
+      );
       // The unmapped exit still surfaces a catchable error.
-      expect(result.errors.single.toString(),
-          contains('Ping process exited with code: 2'));
+      expect(
+        result.errors.single.toString(),
+        contains('Ping process exited with code: 2'),
+      );
       expect(result.doneCount, 1);
     });
 
@@ -439,9 +478,13 @@ void main() {
       final result = await _drain(ping);
 
       final summaries = result.data.whereType<PingSummary>().toList();
-      expect(summaries, hasLength(1),
-          reason: 'a clean run with no parsed summary line still terminates '
-              'with a PingSummary');
+      expect(
+        summaries,
+        hasLength(1),
+        reason:
+            'a clean run with no parsed summary line still terminates '
+            'with a PingSummary',
+      );
       expect(result.data.last, isA<PingSummary>());
       final summary = summaries.single;
       expect(summary.received, 1);

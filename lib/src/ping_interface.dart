@@ -33,6 +33,7 @@ abstract class Ping {
   factory Ping(
     /// Hostname, domain, or IP which you would like to ping
     String host, {
+
     /// How many times the host should be pinged before the process ends
     int? count,
 

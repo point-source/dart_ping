@@ -30,9 +30,12 @@ class MyHomePage extends StatefulWidget {
 
 class MyHomePageState extends State<MyHomePage> {
   final List<PingEvent> _events = [];
-  final TextEditingController _controller =
-      TextEditingController(text: 'google.com');
-  final TextEditingController _ttlController = TextEditingController(text: '64');
+  final TextEditingController _controller = TextEditingController(
+    text: 'google.com',
+  );
+  final TextEditingController _ttlController = TextEditingController(
+    text: '64',
+  );
   StreamSubscription<PingEvent>? _subscription;
 
   void _startPing() {
@@ -72,9 +75,7 @@ class MyHomePageState extends State<MyHomePage> {
         : _events.map((e) => e.toString()).join('\n');
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('DartPing Flutter Demo'),
-      ),
+      appBar: AppBar(title: const Text('DartPing Flutter Demo')),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[

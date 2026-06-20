@@ -20,10 +20,7 @@ void main() {
       // Population stddev = sqrt(((10-20)^2 + 0 + (30-20)^2)/3) ms
       //                   = sqrt(200/3) ms ~= 8.16497 ms.
       final expectedStddevMicros = math.sqrt(200 / 3) * 1000;
-      expect(
-        stats.stddev!.inMicroseconds,
-        closeTo(expectedStddevMicros, 2),
-      );
+      expect(stats.stddev!.inMicroseconds, closeTo(expectedStddevMicros, 2));
 
       // Jitter = (|20-10| + |30-20|) / 2 = 10 ms.
       expect(stats.jitter, const Duration(milliseconds: 10));
@@ -49,8 +46,9 @@ void main() {
     });
 
     test('single sample', () {
-      final stats =
-          RoundTripStats.fromSamples(const [Duration(milliseconds: 42)]);
+      final stats = RoundTripStats.fromSamples(const [
+        Duration(milliseconds: 42),
+      ]);
 
       expect(stats.sampleCount, 1);
       expect(stats.min, const Duration(milliseconds: 42));
@@ -167,8 +165,11 @@ void main() {
       acc.add(const Duration(microseconds: 3000));
       final after = acc.snapshot();
 
-      expect(identical(before, after), isFalse,
-          reason: 'a new sample must invalidate the memoized snapshot');
+      expect(
+        identical(before, after),
+        isFalse,
+        reason: 'a new sample must invalidate the memoized snapshot',
+      );
       expect(after.sampleCount, 2);
       // The recomputed snapshot equals a fresh batch computation over the
       // same samples — memoization changes nothing observable.

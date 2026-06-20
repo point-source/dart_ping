@@ -57,12 +57,14 @@ void main() {
       expect((res as PingError).error, ErrorType.noRoute);
     });
 
-    test('Host is down maps to unknown (host liveness, not a routing failure)',
-        () async {
-      final res = parser.parse('ping: sendto: Host is down');
-      expect(res, isA<PingError>());
-      expect((res as PingError).error, ErrorType.unknown);
-    });
+    test(
+      'Host is down maps to unknown (host liveness, not a routing failure)',
+      () async {
+        final res = parser.parse('ping: sendto: Host is down');
+        expect(res, isA<PingError>());
+        expect((res as PingError).error, ErrorType.unknown);
+      },
+    );
 
     test('Network is unreachable (macOS)', () async {
       final res = parser.parse('ping: sendto: Network is unreachable');
@@ -128,7 +130,8 @@ void main() {
 
     test('Destination host unreachable (Linux)', () async {
       final res = parser.parse(
-          'From 192.168.1.1 icmp_seq=1 Destination Host Unreachable');
+        'From 192.168.1.1 icmp_seq=1 Destination Host Unreachable',
+      );
       expect(res, isA<PingError>());
       expect((res as PingError).error, ErrorType.noRoute);
     });
@@ -204,8 +207,9 @@ void main() {
     });
 
     test('Host Unreachable', () async {
-      final res =
-          parser.parse('Reply from 10.20.61.15: Destination host unreachable.');
+      final res = parser.parse(
+        'Reply from 10.20.61.15: Destination host unreachable.',
+      );
       expect(res, isA<PingError>());
       expect((res as PingError).error, ErrorType.noRoute);
       expect(res.message ?? '', isNotEmpty);

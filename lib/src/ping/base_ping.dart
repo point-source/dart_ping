@@ -170,9 +170,10 @@ abstract class BasePing {
   ///
   /// Each raw stream is decoded and line-split independently before merging, so
   /// interleaved stderr/stdout writes cannot corrupt or split a line.
-  Stream<PingEvent> get _parsedOutput =>
-      StreamGroup.merge([_lines(_process!.stderr), _lines(_process!.stdout)])
-          .transform<PingEvent>(parser.transformParser);
+  Stream<PingEvent> get _parsedOutput => StreamGroup.merge([
+    _lines(_process!.stderr),
+    _lines(_process!.stdout),
+  ]).transform<PingEvent>(parser.transformParser);
 
   Future<void> _onListen() async {
     _started = true;
@@ -234,11 +235,11 @@ abstract class BasePing {
       _process?.kill(ProcessSignal.sigint);
       final mappedError =
           (error is ProcessException && error.errorCode == 2) ||
-                  error.toString().contains('No such file')
-              ? Exception(
-                  'Could not find ping binary on this system. Please ensure it is installed',
-                )
-              : error;
+              error.toString().contains('No such file')
+          ? Exception(
+              'Could not find ping binary on this system. Please ensure it is installed',
+            )
+          : error;
       _controller.addError(mappedError, stackTrace);
       await _closeController();
     }
@@ -305,9 +306,11 @@ abstract class BasePing {
         // wall-clock comes only from the (absent) native summary line.
         final received = stats.sampleCount;
         final probeFailures = _errors
-            .where((e) =>
-                e.error == ErrorType.requestTimedOut ||
-                e.error == ErrorType.timeToLiveExceeded)
+            .where(
+              (e) =>
+                  e.error == ErrorType.requestTimedOut ||
+                  e.error == ErrorType.timeToLiveExceeded,
+            )
             .length;
         summary = PingSummary(
           transmitted: received + probeFailures,

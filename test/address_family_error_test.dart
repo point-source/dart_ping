@@ -18,14 +18,14 @@ void main() {
     });
 
     test('Linux network is unreachable', () {
-      final res =
-          PingLinux.defaultParser.parse('connect: Network is unreachable');
+      final res = PingLinux.defaultParser.parse(
+        'connect: Network is unreachable',
+      );
       expect((res as PingError).error, ErrorType.noRoute);
     });
 
     test('macOS no route to host', () {
-      final res =
-          PingMac.defaultParser.parse('ping: sendto: No route to host');
+      final res = PingMac.defaultParser.parse('ping: sendto: No route to host');
       expect((res as PingError).error, ErrorType.noRoute);
     });
 
@@ -60,20 +60,23 @@ void main() {
 
   group('Genuine name-resolution failures stay ErrorType.unknownHost: ', () {
     test('Linux unknown host', () {
-      final res =
-          PingLinux.defaultParser.parse('ping: unknown host example.invalid');
+      final res = PingLinux.defaultParser.parse(
+        'ping: unknown host example.invalid',
+      );
       expect((res as PingError).error, ErrorType.unknownHost);
     });
 
     test('macOS unknown host', () {
-      final res =
-          PingMac.defaultParser.parse('ping: cannot resolve foo: Unknown host');
+      final res = PingMac.defaultParser.parse(
+        'ping: cannot resolve foo: Unknown host',
+      );
       expect((res as PingError).error, ErrorType.unknownHost);
     });
 
     test('Windows could not find host', () {
-      final res = PingWindows.defaultParser
-          .parse('Ping request could not find host foo.');
+      final res = PingWindows.defaultParser.parse(
+        'Ping request could not find host foo.',
+      );
       expect((res as PingError).error, ErrorType.unknownHost);
     });
   });

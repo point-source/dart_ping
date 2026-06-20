@@ -26,7 +26,7 @@ IpVersion? ipLiteralFamily(String host) {
 /// (§spec:address-family-mismatch-validation).
 ///
 /// Centralised here so every entry point — the [Ping] factory, the core
-/// platform classes (via `BasePing`), and the iOS `DartPingIOS` bridge — fails
+/// platform classes (via `BasePing`), and the iOS `IosPing` constructor — fails
 /// fast with the identical error, instead of the guard living only in the
 /// factory and being bypassed by direct construction.
 void validateAddressFamily(String host, IpVersion ipVersion) {

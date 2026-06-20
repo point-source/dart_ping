@@ -17,18 +17,18 @@ class PingWindows extends BasePing implements Ping {
     String? interface,
     bool nat64Synthesis = true,
   }) : super(
-          host,
-          count,
-          interval,
-          timeout,
-          ttl,
-          ipVersion,
-          parser ?? defaultParser,
-          encoding,
-          forceCodepage,
-          interface,
-          nat64Synthesis,
-        ) {
+         host,
+         count,
+         interval,
+         timeout,
+         ttl,
+         ipVersion,
+         parser ?? defaultParser,
+         encoding,
+         forceCodepage,
+         interface,
+         nat64Synthesis,
+       ) {
     // Windows `ping` binds ONLY by source address, never by interface name.
     // Reject a bare name once, up front at construction (consistent with the
     // iOS rejection), rather than throwing lazily from the `command`/`params`
@@ -42,29 +42,28 @@ class PingWindows extends BasePing implements Ping {
   }
 
   static PingParser get defaultParser => PingParser(
-        // `bytes=` and `TTL=` are optional: Windows IPv4 replies carry both
-        // ("Reply from 8.8.8.8: bytes=32 time=6ms TTL=37"), but IPv6 replies
-        // carry neither ("Reply from ::1: time<1ms"), so the IPv6 hop has no
-        // reported TTL (#71).
-        responseRgx: RegExp(
-          r'Reply from (?<ip>.*): (?:bytes=(?:\d+) )?time(?:=|<)(?<time>\d+)ms(?: TTL=(?<ttl>\d+))?',
-        ),
-        summaryRgx:
-            RegExp(r'Sent = (?<tx>\d+), Received = (?<rx>\d+), Lost = (?:\d+)'),
-        timeoutRgx: RegExp(r'Request timed out'),
-        timeToLiveRgx: RegExp(r'Reply from (?<ip>.*): TTL expired in transit'),
-        unknownHostStr: RegExp(r'could not find host'),
-        noRouteStrs: [
-          RegExp(r'Destination host unreachable'),
-          // Windows reports an unrouteable network as "Destination net
-          // unreachable"; map it to noRoute too so the family/route-failure
-          // signal is branchable on Windows, not just Linux/macOS (#69).
-          RegExp(r'Destination net unreachable'),
-        ],
-        errorStrs: [
-          RegExp(r'General failure'),
-        ],
-      );
+    // `bytes=` and `TTL=` are optional: Windows IPv4 replies carry both
+    // ("Reply from 8.8.8.8: bytes=32 time=6ms TTL=37"), but IPv6 replies
+    // carry neither ("Reply from ::1: time<1ms"), so the IPv6 hop has no
+    // reported TTL (#71).
+    responseRgx: RegExp(
+      r'Reply from (?<ip>.*): (?:bytes=(?:\d+) )?time(?:=|<)(?<time>\d+)ms(?: TTL=(?<ttl>\d+))?',
+    ),
+    summaryRgx: RegExp(
+      r'Sent = (?<tx>\d+), Received = (?<rx>\d+), Lost = (?:\d+)',
+    ),
+    timeoutRgx: RegExp(r'Request timed out'),
+    timeToLiveRgx: RegExp(r'Reply from (?<ip>.*): TTL expired in transit'),
+    unknownHostStr: RegExp(r'could not find host'),
+    noRouteStrs: [
+      RegExp(r'Destination host unreachable'),
+      // Windows reports an unrouteable network as "Destination net
+      // unreachable"; map it to noRoute too so the family/route-failure
+      // signal is branchable on Windows, not just Linux/macOS (#69).
+      RegExp(r'Destination net unreachable'),
+    ],
+    errorStrs: [RegExp(r'General failure')],
+  );
 
   @override
   Map<String, String> get locale => {'LANG': 'en_US'};
@@ -95,9 +94,9 @@ class PingWindows extends BasePing implements Ping {
 
   @override
   PingError? interpretExitCode(int exitCode) => PingError(
-        ErrorType.unknown,
-        message: 'Ping process exited with code: $exitCode',
-      );
+    ErrorType.unknown,
+    message: 'Ping process exited with code: $exitCode',
+  );
 
   @override
   Exception throwExit(int exitCode) =>

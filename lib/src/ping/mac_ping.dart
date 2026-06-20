@@ -16,43 +16,41 @@ class PingMac extends BasePing implements Ping {
     String? interface,
     bool nat64Synthesis = true,
   }) : super(
-          host,
-          count,
-          interval,
-          timeout,
-          ttl,
-          ipVersion,
-          parser ?? defaultParser,
-          encoding,
-          false,
-          interface,
-          nat64Synthesis,
-        );
+         host,
+         count,
+         interval,
+         timeout,
+         ttl,
+         ipVersion,
+         parser ?? defaultParser,
+         encoding,
+         false,
+         interface,
+         nat64Synthesis,
+       );
 
   static PingParser get defaultParser => PingParser(
-        responseRgx: RegExp(
-          r'bytes from (?<ip>.*): icmp_seq=(?<seq>\d+) ttl=(?<ttl>\d+) time=(?<time>(\d+).?(\d+))',
-        ),
-        summaryRgx: RegExp(
-          r'(?<tx>\d+) packets transmitted, (?<rx>\d+) packets received',
-        ),
-        timeoutRgx: RegExp(r'Request timeout for icmp_seq (?<seq>\d+)'),
-        timeToLiveRgx: RegExp(r'from (?<ip>.*): Time to live exceeded'),
-        unknownHostStr: RegExp(r'Unknown host'),
-        noRouteStrs: [
-          RegExp(r'[Nn]o route to host'),
-          RegExp(r'[Nn]etwork is unreachable'),
-          // Family-unavailable failures, matching the Linux parser's coverage
-          // so cross-platform code can branch on noRoute consistently (#69).
-          RegExp(r'[Aa]ddress family .*not supported'),
-        ],
-        // "Host is down" (EHOSTDOWN) is a host-liveness condition, not a
-        // routing/address-family failure, so it is NOT a noRoute; it falls
-        // through to the catch-all unknown rather than being mislabelled.
-        errorStrs: [
-          RegExp(r'[Hh]ost is down'),
-        ],
-      );
+    responseRgx: RegExp(
+      r'bytes from (?<ip>.*): icmp_seq=(?<seq>\d+) ttl=(?<ttl>\d+) time=(?<time>(\d+).?(\d+))',
+    ),
+    summaryRgx: RegExp(
+      r'(?<tx>\d+) packets transmitted, (?<rx>\d+) packets received',
+    ),
+    timeoutRgx: RegExp(r'Request timeout for icmp_seq (?<seq>\d+)'),
+    timeToLiveRgx: RegExp(r'from (?<ip>.*): Time to live exceeded'),
+    unknownHostStr: RegExp(r'Unknown host'),
+    noRouteStrs: [
+      RegExp(r'[Nn]o route to host'),
+      RegExp(r'[Nn]etwork is unreachable'),
+      // Family-unavailable failures, matching the Linux parser's coverage
+      // so cross-platform code can branch on noRoute consistently (#69).
+      RegExp(r'[Aa]ddress family .*not supported'),
+    ],
+    // "Host is down" (EHOSTDOWN) is a host-liveness condition, not a
+    // routing/address-family failure, so it is NOT a noRoute; it falls
+    // through to the catch-all unknown rather than being mislabelled.
+    errorStrs: [RegExp(r'[Hh]ost is down')],
+  );
 
   @override
   Map<String, String> get locale => {'LC_ALL': 'C'};
