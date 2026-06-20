@@ -131,17 +131,26 @@ void main() {
       expect(ping.locale, {'LC_ALL': 'C'});
     });
 
-    test('interpretExitCode maps 1/68 and ignores the rest', () {
+    test('interpretExitCode maps 1/2/68 and ignores the rest', () {
+      // BSD `ping` reports "no echo reply" with BOTH exit 1 (pure silence) and
+      // exit 2 (ICMP errors back, e.g. TTL-exceeded), so both map to noReply
+      // (§spec:mac-all-timeout-summary).
       expect(ping.interpretExitCode(1)?.error, ErrorType.noReply);
+      expect(ping.interpretExitCode(2)?.error, ErrorType.noReply);
       expect(ping.interpretExitCode(68)?.error, ErrorType.unknownHost);
       expect(ping.interpretExitCode(0), isNull);
-      expect(ping.interpretExitCode(2), isNull);
+      expect(ping.interpretExitCode(3), isNull);
     });
 
-    test('throwExit ignores 1 and 68 but throws for other failures', () {
-      expect(ping.throwExit(2), isA<Exception>());
+    test('throwExit ignores 1/2/68 but throws for genuinely-unmapped codes', () {
+      // Exit 2 is now a recognized no-reply outcome, so it no longer throws.
+      expect(ping.throwExit(2), isNull);
       expect(ping.throwExit(68), isNull);
       expect(ping.throwExit(1), isNull);
+      expect(ping.throwExit(0), isNull);
+      // A genuinely-unmapped code still surfaces a catchable exception
+      // (§spec:stream-lifecycle-robustness).
+      expect(ping.throwExit(3), isA<Exception>());
     });
 
     test('interface name appends -b <name> (boundif) as separate tokens', () {

@@ -48,7 +48,7 @@ This document covers the following areas, matching REQUIREMENTS.md:
   §spec:ios-error-parity, §spec:ios-ttl, §spec:stats-ios) while replacing the
   binding mechanism and the package boundary of §spec:spm-distribution.
 - **macOS all-timeout summary (#92)** — `§spec:mac-all-timeout-summary`
-  at the very end (not started). A focused refinement of
+  at the very end (implemented). A focused refinement of
   `§spec:stream-lifecycle-robustness`: a macOS run where every probe
   times out but the first hop returns TTL-exceeded ICMP errors (native
   exit `2`) yields a deterministic 100%-loss summary instead of a thrown
@@ -2674,7 +2674,7 @@ environment-dependent non-determinism is why the existing TTL-exceeded
 test is tagged `live` and excluded from CI, where it would be flaky.
 
 ## macOS all-timeout yields a summary §spec:mac-all-timeout-summary
-*Status: not started*
+*Status: implemented*
 
 On macOS, a run in which every probe fails terminates with a terminal
 `PingSummary` reporting 100% packet loss — never a thrown exception —

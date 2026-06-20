@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:dart_ping/dart_ping.dart';
 import 'package:dart_ping/src/ping/linux_ping.dart';
+import 'package:dart_ping/src/ping/mac_ping.dart';
 import 'package:test/test.dart';
 
 /// Hard ceiling for every awaited completion. A hung stream never closes, so
@@ -74,6 +75,20 @@ class TestPing extends PingLinux {
     : _process = process,
       _launchError = launchError,
       super('1.1.1.1', 5, 1000, 1000, 255, .ipv4);
+}
+
+/// [PingMac] subclass that replaces the OS process launch with a configured
+/// [FakeProcess]. All parsing and exit-code interpretation are inherited from
+/// [PingMac] unchanged, so the macOS exit-`1`/`2` mapping is exercised with NO
+/// network and NO subprocess — and therefore WITHOUT the `live` tag that hid
+/// the exit-`2` flakiness from CI (§spec:mac-all-timeout-summary).
+class MacTestPing extends PingMac {
+  final FakeProcess _process;
+  @override
+  Future<Process> get platformProcess async => _process;
+
+  MacTestPing(this._process)
+    : super('1.1.1.1', 5, 1000, 1000, 255, .ipv4);
 }
 
 /// Result of draining a ping stream to completion.
@@ -495,5 +510,186 @@ void main() {
       expect(result.errors, isEmpty);
       expect(result.doneCount, 1);
     });
+  });
+
+  group('macOS all-timeout summary (§spec:mac-all-timeout-summary)', () {
+    test(
+      'exit 2 (TTL-exceeded) yields a 100%-loss summary, never an exception',
+      () async {
+        // BSD `ping` exits 2 when a run drew ICMP errors back (TTL-exceeded)
+        // but no echo replies. Previously this surfaced
+        // `Exception('Ping process exited with code: 2')`; now exit 2 maps to
+        // a recognized `noReply`, so the already-built 100%-loss summary is the
+        // terminal event and NO exit exception is thrown.
+        final ping = MacTestPing(
+          FakeProcess(
+            stdoutLines: const [
+              '92 bytes from 172.17.0.1: Time to live exceeded',
+              '92 bytes from 172.17.0.1: Time to live exceeded',
+              '2 packets transmitted, 0 packets received',
+            ],
+            exit: 2,
+          ),
+        );
+
+        final result = await _drain(ping);
+
+        // No thrown exception reaches the consumer.
+        expect(
+          result.errors,
+          isEmpty,
+          reason:
+              'exit 2 is a recognized no-reply outcome — no generic '
+              'process-exit exception',
+        );
+
+        // The terminal event is a 100%-loss summary.
+        final summaries = result.data.whereType<PingSummary>().toList();
+        expect(summaries, hasLength(1), reason: 'one run summary expected');
+        expect(result.data.last, isA<PingSummary>());
+        final summary = summaries.single;
+        expect(summary.transmitted, 2);
+        expect(summary.received, 0);
+        expect(summary.packetLoss, 100.0);
+
+        // errors carries the per-probe TTL-exceeded events plus the run-level
+        // noReply — the same shape the exit-1 path produces, no duplicate.
+        final errorTypes = summary.errors.map((e) => e.error).toList();
+        expect(
+          errorTypes,
+          containsAll(const [
+            ErrorType.timeToLiveExceeded,
+            ErrorType.noReply,
+          ]),
+        );
+        expect(
+          errorTypes.where((e) => e == ErrorType.noReply),
+          hasLength(1),
+          reason: 'exactly one run-level noReply, not a duplicate',
+        );
+        expect(result.doneCount, 1, reason: 'stream must close exactly once');
+      },
+    );
+
+    test(
+      'exit 1 (pure silence) yields the same 100%-loss summary shape',
+      () async {
+        // Pure silence: every probe times out, the run exits 1. This is the
+        // shape the exit-2 path must match — the observable outcome of an
+        // all-timeout run does NOT depend on whether the network returned
+        // TTL-exceeded errors (exit 2) or silence (exit 1).
+        final ping = MacTestPing(
+          FakeProcess(
+            stdoutLines: const [
+              'Request timeout for icmp_seq 0',
+              'Request timeout for icmp_seq 1',
+              '2 packets transmitted, 0 packets received',
+            ],
+            exit: 1,
+          ),
+        );
+
+        final result = await _drain(ping);
+
+        expect(result.errors, isEmpty);
+        final summaries = result.data.whereType<PingSummary>().toList();
+        expect(summaries, hasLength(1));
+        expect(result.data.last, isA<PingSummary>());
+        final summary = summaries.single;
+        expect(summary.packetLoss, 100.0);
+
+        final errorTypes = summary.errors.map((e) => e.error).toList();
+        expect(
+          errorTypes,
+          containsAll(const [
+            ErrorType.requestTimedOut,
+            ErrorType.noReply,
+          ]),
+        );
+        expect(
+          errorTypes.where((e) => e == ErrorType.noReply),
+          hasLength(1),
+        );
+        expect(result.doneCount, 1);
+      },
+    );
+
+    test(
+      'regression: a genuinely-unmapped macOS exit still throws then closes',
+      () async {
+        // Exit 3 is neither success, nor a recognized no-reply (1/2), nor a
+        // recognized error code (68). It must still surface a catchable error
+        // and close the stream — §spec:stream-lifecycle-robustness narrows by
+        // exactly one code, it does not loosen.
+        final ping = MacTestPing(
+          FakeProcess(
+            stdoutLines: const [
+              '64 bytes from 1.1.1.1: icmp_seq=1 ttl=57 time=10.1 ms',
+            ],
+            exit: 3,
+          ),
+        );
+
+        final result = await _drain(ping);
+
+        expect(
+          result.errors,
+          isNotEmpty,
+          reason: 'an unmapped exit must surface a catchable error',
+        );
+        expect(
+          result.errors.first.toString(),
+          contains('Ping process exited with code: 3'),
+        );
+        expect(result.doneCount, 1, reason: 'stream must close exactly once');
+      },
+    );
+
+    test('regression: a clean zero-exit macOS run is unchanged', () async {
+      final ping = MacTestPing(
+        FakeProcess(
+          stdoutLines: const [
+            '64 bytes from 1.1.1.1: icmp_seq=0 ttl=57 time=10.1 ms',
+            '5 packets transmitted, 5 packets received',
+          ],
+          exit: 0,
+        ),
+      );
+
+      final result = await _drain(ping);
+
+      expect(result.errors, isEmpty);
+      final summary = result.data.whereType<PingSummary>().single;
+      expect(summary.transmitted, 5);
+      expect(summary.received, 5);
+      expect(summary.packetLoss, 0.0);
+      expect(summary.errors, isEmpty);
+      expect(result.doneCount, 1);
+    });
+
+    test(
+      'regression: a recognized error exit (unknown host, 68) is unchanged',
+      () async {
+        final ping = MacTestPing(
+          FakeProcess(
+            stderrLines: const [
+              'ping: cannot resolve myUnknownHost: Unknown host',
+            ],
+            exit: 68,
+          ),
+        );
+
+        final result = await _drain(ping);
+
+        // No thrown exit exception — 68 is a recognized error code.
+        expect(result.errors, isEmpty);
+        final summary = result.data.whereType<PingSummary>().single;
+        expect(
+          summary.errors.map((e) => e.error),
+          contains(ErrorType.unknownHost),
+        );
+        expect(result.doneCount, 1);
+      },
+    );
   });
 }
