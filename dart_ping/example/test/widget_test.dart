@@ -1,4 +1,4 @@
-// Basic smoke test for the dart_ping_ios example app.
+// Basic smoke test for the dart_ping example app.
 //
 // Builds the app and verifies its initial UI renders, without starting a
 // real ping (tapping the button would spawn live network activity).

@@ -23,8 +23,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  dart_ping: ^10.0.0
-  dart_ping_ios:
+  # iOS support is built into dart_ping (FFI-backed native engine) — this is
+  # the only ping dependency the example needs. No second package, no register().
+  dart_ping:
     path: ../
 
   # The following adds the Cupertino Icons font to your application.
@@ -32,13 +33,9 @@ dependencies:
   cupertino_icons: ^1.0.2
 
 dev_dependencies:
-  flutter_lints: ^2.0.2
+  flutter_lints: ^6.0.0
   flutter_test:
     sdk: flutter
-
-dependency_overrides:
-  dart_ping:
-    path: ../../dart_ping
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
