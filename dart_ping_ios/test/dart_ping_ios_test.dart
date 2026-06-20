@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:dart_ping/dart_ping.dart';
 import 'package:dart_ping_ios/dart_ping_ios.dart';
@@ -110,16 +109,11 @@ void main() {
     expect(() => ping.parser = dummyParser, throwsUnimplementedError);
   });
 
-  test('register() installs an iOS factory that builds a DartPingIOS', () {
-    addTearDown(() => Ping.iosFactory = null);
-    expect(Ping.iosFactory, isNull);
-
-    DartPingIOS.register();
-
-    expect(Ping.iosFactory, isNotNull);
-    final built =
-        Ping.iosFactory!('host', 1, 1, 2, 64, IpVersion.ipv4, null, utf8, true);
-    expect(built, isA<DartPingIOS>());
+  test('register() is a deprecated no-op (iOS now auto-wires in dart_ping)', () {
+    // The package is discontinued; iOS auto-wires inside dart_ping's factory,
+    // so register() does nothing and must not throw.
+    // ignore: deprecated_member_use_from_same_package
+    expect(DartPingIOS.register, returnsNormally);
   });
 
   test('listening starts the native run with the configured arguments',

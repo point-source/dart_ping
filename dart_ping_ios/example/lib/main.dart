@@ -1,13 +1,11 @@
 import 'dart:async';
 
 import 'package:dart_ping/dart_ping.dart';
-import 'package:dart_ping_ios/dart_ping_ios.dart';
 import 'package:flutter/material.dart';
 
 void main() {
-  // Register dart_ping_ios with dart_ping
-  DartPingIOS.register();
-
+  // iOS support is built into dart_ping and auto-wires — no second package and
+  // no register() call. Just construct Ping(...) and it works on iOS too.
   runApp(const MyApp());
 }
 

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:dart_ping/dart_ping.dart';
 import 'package:flutter/services.dart';
@@ -29,33 +28,20 @@ class DartPingIOS implements Ping {
     validateAddressFamily(_host, _ipVersion);
   }
 
-  /// Installs the iOS factory on [Ping.iosFactory]. Documented entry point
-  /// for enabling iOS support (§spec:public-api-stability).
-  static void register() {
-    Ping.iosFactory = _init;
-  }
-
-  static DartPingIOS _init(
-    String host,
-    int? count,
-    int interval,
-    int timeout,
-    int ttl,
-    IpVersion ipVersion,
-    PingParser? parser,
-    Encoding encoding,
-    bool nat64Synthesis,
-  ) {
-    return DartPingIOS(
-      host,
-      count,
-      interval,
-      timeout,
-      ttl,
-      ipVersion,
-      nat64Synthesis,
-    );
-  }
+  /// Deprecated no-op retained only for migration source-compatibility.
+  ///
+  /// This package is discontinued. iOS support is now built into `dart_ping`
+  /// and auto-wires when the build target is iOS (the `Ping` factory dispatches
+  /// to the FFI-backed iOS implementation internally), so there is no factory
+  /// to install and nothing for this call to do. An existing
+  /// `DartPingIOS.register()` call still compiles as a no-op so migrating code
+  /// keeps building until the call (and the `dart_ping_ios` dependency) are
+  /// removed.
+  @Deprecated(
+    'iOS support is now built into dart_ping and auto-wires; register() is a '
+    'no-op. Remove the dart_ping_ios dependency and delete the register() call.',
+  )
+  static void register() {}
 
   /// MethodChannel used to start/stop native ping runs.
   static const MethodChannel _method = MethodChannel('dart_ping_ios');
