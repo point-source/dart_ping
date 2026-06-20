@@ -80,6 +80,14 @@ This document tracks the following areas of work:
   ping inside background isolates (#48), without losing pure-Dart support on
   hosts with no Flutter SDK. Folds into the unreleased `dart_ping` 10.0.0
   train. Captured in the `§req:consolidation-*` sections at the end.
+- **macOS all-timeout summary (#92)** — on macOS, a run where every probe
+  times out but the first hop returns TTL-exceeded ICMP errors makes the
+  native `ping` exit with code `2`, which `PingMac` leaves unmapped, so
+  the consumer gets a thrown exception instead of the 100%-loss summary
+  already built. Map exit `2` to the same `noReply` outcome as exit `1`
+  (pure silence) so an all-timeout run deterministically yields a summary.
+  Refines `§req:robustness-*` without weakening its unmapped-exit
+  guarantee. Captured in the `§req:mac-all-timeout-*` sections at the end.
 
 ---
 
@@ -1883,3 +1891,150 @@ mechanism and feasibility are decided:
 - **Migration surface.** The precise consumer-facing migration (removing
   the `dart_ping_ios` dependency, deleting `register()`, any import
   changes) and how `dart_ping_ios` is marked discontinued on pub.dev.
+
+---
+
+# macOS all-timeout summary (#92)
+
+A focused robustness refinement in `dart_ping`'s macOS exit-code
+handling. On macOS, a run where every probe times out but the first
+hop returns TTL-exceeded ICMP errors makes the native `ping` exit with
+code `2`, which `PingMac` leaves unmapped — so the consumer gets a
+generic thrown exception instead of the 100%-loss `PingSummary` that
+was already built. The driver is GitHub issue #92.
+
+## macOS all-timeout — problem statement §req:mac-all-timeout-problem-statement
+
+The target users are developers consuming `dart_ping`'s `Ping` stream
+on macOS — typically with `await for`, `.drain()`, `.last`, or by
+awaiting `stop()` — who expect the run to finish with a terminal
+`PingSummary` they can read, even when every probe failed.
+
+On macOS, when a run elicits **no echo replies but does draw ICMP
+error packets back** — the classic `ttl=1` / TTL-exceeded case — the
+native `ping` binary exits with code **2**. The per-probe timeouts and
+TTL-exceeded errors are already captured correctly and a complete
+100%-loss `PingSummary` is already built, but exit `2` is not mapped to
+a known outcome, so the run instead surfaces a generic
+`Exception('Ping process exited with code: 2')`. A consumer awaiting the
+terminal summary (`stream.last`) gets that exception instead of the
+summary:
+
+```dart
+final ping = Ping('201.202.203.204', count: 2, ttl: 1);
+final event = await ping.stream.last; // throws instead of yielding a summary
+```
+
+This is **environment-dependent**, which is the deeper problem. macOS
+BSD `ping` exits `2` when it receives ICMP errors but no echo replies,
+and `1` on pure silence. Exit `1` is already mapped to `noReply` (a
+clean summary, no throw); exit `2` is not. So the *same* logical
+outcome — "we got no reply" — sometimes yields a summary and sometimes
+throws, depending only on whether the first hop happened to return a
+TTL-exceeded packet. That non-determinism is why the existing
+`TTL Exceeded` test is tagged `live` and excluded from CI, where it
+would otherwise be flaky.
+
+Current behavior fails these users because an all-timeout macOS run is
+a normal, expected diagnostic result — "the host did not answer" — and
+they should be able to read that off a summary, not have to catch a
+generic exception that double-reports a failure the per-probe error
+list already records.
+
+This refines, and does not contradict, the stream-lifecycle robustness
+work (`§req:robustness-success-criteria`): that guarantee — an
+*unmapped* non-zero exit surfaces a catchable error and closes the
+stream — still holds for genuinely unknown codes. This requirement
+moves macOS exit `2` out of the "unmapped" bucket and into a known
+outcome, so it is no longer governed by that throw-an-error rule.
+
+## macOS all-timeout — success criteria §req:mac-all-timeout-success-criteria
+
+Observable, end-to-end outcomes a tester can demonstrate against the
+`Ping` stream on macOS:
+
+- **An all-timeout run yields a summary, not an exception.** A macOS run
+  in which every probe fails and the host (or first hop) returns ICMP
+  errors but no echo replies terminates with a `PingSummary` event
+  reporting 100% packet loss — the consumer's `stream.last` returns that
+  summary rather than throwing. *(must-have)*
+- **The outcome is deterministic.** The same all-timeout run yields a
+  summary regardless of whether the network returned TTL-exceeded ICMP
+  errors (exit `2`) or pure silence (exit `1`) — both "no echo reply"
+  exit codes resolve to the same observable result. *(must-have)*
+- **The summary carries an honest error record.** The terminal summary's
+  error list contains the per-probe errors actually observed
+  (`requestTimedOut` / `timeToLiveExceeded`) plus a run-level `noReply`,
+  matching the shape a pure-silence (exit `1`) run already produces
+  today. No synthetic or duplicate error beyond that is introduced.
+  *(must-have)*
+- **Genuinely unmapped exits still surface an error.** A macOS `ping`
+  exit code that is neither a success nor a recognized "no reply" code
+  still surfaces a catchable error and closes the stream, preserving
+  `§req:robustness-success-criteria`. *(must-have — regression guard)*
+- **Normal runs are unchanged.** A successful macOS run (zero exit) and
+  a recognized error exit (e.g. unknown host) deliver the same per-probe
+  responses, summary, and error list as before. *(must-have — regression
+  guard)*
+- **The all-timeout path is covered without a live network.** The
+  previously `live`-only TTL-exceeded case is exercised by an automated
+  test that asserts a summary is produced (not an exception) and runs
+  under `dart test` without excluding it via `-x live`. *(high)*
+
+## macOS all-timeout — user stories §req:mac-all-timeout-user-stories
+
+- As a developer running a macOS ping that gets no replies, I want the
+  run to finish with a 100%-loss summary I can read so that "the host did
+  not answer" is a normal result I handle, not an exception I have to
+  catch.
+- As a developer setting `ttl=1` (or otherwise drawing TTL-exceeded
+  errors) on macOS, I want the same summary I would get from a silent
+  timeout so that my code behaves the same regardless of what the
+  intermediate hop returns.
+- As a developer awaiting `stream.last` / `.drain()` on macOS, I want an
+  all-timeout run to return a terminal summary so that my code does not
+  throw on a perfectly ordinary "no reply" outcome.
+- As an existing `dart_ping` user, I want genuinely unrecognized macOS
+  exit codes to keep surfacing a catchable error so that this change does
+  not weaken the robustness guarantees I already rely on.
+
+## macOS all-timeout — quality attributes §req:mac-all-timeout-quality-attributes
+
+- **Reliability / determinism:** the observable outcome of an
+  all-timeout macOS run does not depend on environment-specific ICMP
+  behavior — the same logical result (no reply) produces the same event
+  (a 100%-loss summary) every time.
+- **Compatibility:** the public API is unchanged — the `Ping` interface
+  and the `PingData` / `PingResponse` / `PingSummary` / `PingError`
+  shapes stay the same. The summary's error list for this path matches
+  the existing exit-`1` (pure-silence) shape, so consumers already
+  handling a no-reply run need no changes.
+- **Testability:** the all-timeout case is verifiable under `dart test`
+  without a live network, removing the `live`-only flakiness that hid
+  the bug from CI.
+
+## macOS all-timeout — constraints §req:mac-all-timeout-constraints
+
+- The change is internal to the macOS subprocess path
+  (`lib/src/ping/mac_ping.dart`, with lifecycle in
+  `lib/src/ping/base_ping.dart`); no change to the public API.
+- **macOS only.** Exit `2` is specific to BSD `ping` semantics; Windows
+  and Linux use different exit codes and output paths and are explicitly
+  out of scope for this requirement.
+- This is a **non-breaking, patch-level** change to `dart_ping`.
+- Must preserve `§req:robustness-success-criteria`: the "unmapped
+  non-zero exit surfaces an error, then closes" guarantee continues to
+  hold for codes that are not recognized "no reply" codes.
+
+## macOS all-timeout — priorities §req:mac-all-timeout-priorities
+
+- **Must-have:** macOS exit `2` yields a deterministic 100%-loss summary
+  (not a thrown exception) for an all-timeout run, with the no-reply
+  outcome reflected in the summary's error list exactly as exit `1`
+  already does, and genuinely unmapped exits still surfacing a catchable
+  error.
+- **High priority:** an automated, non-`live` test covering the
+  all-timeout / TTL-exceeded path so the previously environment-dependent
+  case is gated in CI.
+- **Nice-to-have:** none beyond the above — this is a focused robustness
+  refinement.
