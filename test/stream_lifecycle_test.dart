@@ -596,6 +596,10 @@ void main() {
         expect(summaries, hasLength(1));
         expect(result.data.last, isA<PingSummary>());
         final summary = summaries.single;
+        // Pin the same count fields the exit-2 test pins, so "same shape"
+        // covers transmitted/received and not just packetLoss.
+        expect(summary.transmitted, 2);
+        expect(summary.received, 0);
         expect(summary.packetLoss, 100.0);
 
         final errorTypes = summary.errors.map((e) => e.error).toList();
