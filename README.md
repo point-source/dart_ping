@@ -108,15 +108,16 @@ only. There is no "prefer one family" or dual-stack mode — `IpVersion.ipv4`
 
 ```dart
 // IPv6 only (the system ping is invoked with the -6 family flag on
-// Linux/Android; unsupported on Windows and the macOS subprocess path —
-// iOS IPv6 is served by dart_ping's own native engine)
+// Linux/Android and Windows; iOS IPv6 is served by dart_ping's own native
+// engine. The macOS subprocess path is IPv4-only and raises an explicit
+// error for an IPv6 selection.)
 final ping = Ping('google.com', ipVersion: IpVersion.ipv6);
 ```
 
 > **Migrating from the `ipv6` boolean:** the old `ipv6: true` / `ipv6: false`
 > flag has been replaced by `ipVersion`. Map `ipv6: true` → `ipVersion:
 > IpVersion.ipv6`, and `ipv6: false` (or omitting it) → `ipVersion:
-> IpVersion.ipv4`. IPv6 remains unsupported on Windows.
+> IpVersion.ipv4`.
 
 ### IPv6-only networks (NAT64)
 

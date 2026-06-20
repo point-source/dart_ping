@@ -687,7 +687,8 @@ independent of the host OS where feasible.
   by direct unit tests, including the `toString` branches, `fromMap`
   defaults, and the non-list `errors` path (#77, model serialization).
 - The OS-specific getters of `PingLinux`/`PingMac`/`PingWindows` (`params`
-  with and without `count`, the Windows IPv6 `UnimplementedError`, `locale`,
+  with and without `count`, the Windows `-6` IPv6 family flag (#71) and the
+  macOS-path IPv6 `UnimplementedError`, `locale`,
   `command`, `interpretExitCode`, `throwExit`) shall be covered by tests
   that **instantiate each platform class directly**, so they run on any host
   — not only the one matching `Platform.operatingSystem` (#77). The CI
@@ -832,7 +833,8 @@ change accepted to remove the ambiguity behind #69
 two-value `IpVersion` enum (`ipv4`/`ipv6`, no auto/dual-stack), exported from
 `dart_ping` and accepted as `Ping(ipVersion:)` defaulting to `IpVersion.ipv4`.
 The selector threads through `base_ping` (`ping6` vs `ping`), the Linux/Mac/Windows
-classes (Windows passes `-4` and still raises an explicit `UnimplementedError` for
+classes (Windows passes `-4`/`-6` — IPv6 support added in #71; the macOS subprocess
+path passes `-4` and still raises an explicit `UnimplementedError` for
 `IpVersion.ipv6`), and the `dart_ping_ios` bridge (sent as the enum name over the
 method channel; native family-faithful resolution lands in Batch #69-3). dartdoc
 documents the exclusive-selection model. Shipped as `dart_ping` 10.0.0 /
@@ -861,10 +863,10 @@ former `ipv6: false` default).
   (§req:ipfamily-success-criteria, §req:ipfamily-priorities — documentation).
 - Where a platform cannot serve the requested family at all, the system
   shall surface an honest, explicit error rather than silently serving the
-  other family. Windows IPv6 remains unsupported and continues to fail
-  with an explicit "unsupported" error, not a misleading one
-  (§req:ipfamily-constraints — no new capability;
-  §spec:address-family-error-honesty).
+  other family. The macOS subprocess path cannot drive IPv6 reliably and so
+  fails with an explicit "unsupported" error, not a misleading one. (Windows
+  `ping` does support IPv6 and is served via `-6` — #71.)
+  (§req:ipfamily-constraints; §spec:address-family-error-honesty).
 
 **Why an enum instead of the `ipv6` boolean (breaking change):** the
 library already selects family exclusively (`base_ping` runs `ping6` vs
@@ -970,7 +972,8 @@ Linux/Mac/Windows parsers now reclassify native routing / address-family message
 family unavailable) from `unknown` into `noRoute` via a new additive
 `PingParser.noRouteStrs` list checked after `unknownHostStr` and before the
 generic `errorStrs`, so `unknownHost`/`unknownHostStr` stay reserved for genuine
-name resolution and Windows IPv6 keeps its explicit `UnimplementedError`. On iOS
+name resolution and the macOS subprocess path keeps its explicit
+`UnimplementedError` for IPv6 (Windows now serves IPv6 via `-6`, #71). On iOS
 the Swift engine resolves and sends for the selected `IpVersion` family (full
 native ICMPv6 echo path added — never silently resolving the other family) and
 maps `getaddrinfo` status + `sendto` errno honestly (`EAI_NONAME`/`NODATA`/`FAIL`/
@@ -1031,8 +1034,9 @@ the error tells the truth; it does **not** promise IPv6 reachability where
 a platform or network cannot provide it (§req:ipfamily-constraints). On an
 IPv6-only mobile network, an IPv4 literal ping legitimately has no route —
 the deliverable is that the consumer learns "no route for this family,"
-not a phantom "unknown host." Windows IPv6 stays an explicit unsupported
-error (§spec:ipv6-address-family-selector).
+not a phantom "unknown host." The macOS subprocess path stays an explicit
+unsupported error for IPv6 (Windows now serves IPv6 via `-6`, #71;
+§spec:ipv6-address-family-selector).
 
 **Why keep the library thin here too:** the library normalizes only at the
 Dart boundary — reserving `unknownHost`, mapping recognizable native
@@ -1202,7 +1206,7 @@ caller into thinking a binding took effect.
   "interface selection not supported" error, so a developer is never misled
   into thinking a selection took effect on a platform whose engine cannot
   bind one (§req:interface-success-criteria — must-have). This mirrors how
-  Windows rejects IPv6 today.
+  the macOS subprocess path rejects an IPv6 selection.
 - When the chosen interface or source address does not exist or has no
   connectivity, the consumer shall receive a catchable error event on the
   stream and the stream shall then close within bounded time — no hang —
@@ -2267,7 +2271,8 @@ paper over a difference the contract can simply state honestly. The cheaper,
 truthful design is to document that Windows round-trips by address.
 
 **Scope boundary:** this refines the interface contract and its tests only.
-The separate Windows IPv6 gap (#71) is not in scope, and no change is made to
+Separate Windows IPv6 support (#71) is not part of this contract — it is
+handled in §spec:ipv6-address-family-selector — and no change is made to
 Linux/Android or macOS behavior. Traceability: surfaced by #85 (the CI work
 that ran the core suite on a Windows host), relating to the cross-OS matrix
 (#77, §spec:ci) and interface selection (#72,

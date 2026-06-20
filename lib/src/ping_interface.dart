@@ -46,8 +46,7 @@ abstract class Ping {
     int ttl = 255,
 
     /// The IP address family to ping with — an explicit, exclusive selection
-    /// (see [IpVersion]). Defaults to [IpVersion.ipv4] (IPv4 only). IPv6 is
-    /// not supported on Windows.
+    /// (see [IpVersion]). Defaults to [IpVersion.ipv4] (IPv4 only).
     IpVersion ipVersion = IpVersion.ipv4,
 
     /// Custom parser to interpret ping process output

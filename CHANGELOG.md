@@ -56,8 +56,9 @@ and `IpVersion.ipv4` *excludes* IPv6 rather than preferring it.
 - `Ping(host, ipv6: false)` or omitting it → `Ping(host, ipVersion: IpVersion.ipv4)` (the default)
 
 The ping behavior for an equivalent, matched call is unchanged; only the
-selector parameter changes shape. IPv6 remains unsupported on Windows and
-continues to surface an explicit error.
+selector parameter changes shape. IPv6 is now supported on Windows (served via
+`-6`, see #71 under Added); the macOS subprocess path remains IPv4-only and
+surfaces an explicit error for an IPv6 selection.
 
 **Round-trip durations serialized in microseconds (#63).**
 `PingResponse.toMap`, `PingSummary.toMap`, and `RoundTripStats.toMap` now write
@@ -90,6 +91,12 @@ consumers who cannot adopt the raised floor.
 
 ### Added
 
+- **IPv6 on Windows (#71).** `Ping(host, ipVersion: IpVersion.ipv6)` now works
+  on Windows, which previously threw `UnimplementedError`. Windows `ping`
+  supports IPv6, so the family is forced with `-6` (as `-4` is for IPv4). The
+  Windows reply parser was broadened because IPv6 replies omit `bytes=` and
+  `TTL=` (`Reply from ::1: time<1ms`), so an IPv6 probe carries no hop TTL. The
+  macOS subprocess path remains IPv4-only and still surfaces an explicit error.
 - **Live running statistics (#63).** Every emitted probe event —
   `PingResponse` and `PingError` alike — gains an additive nullable
   `RoundTripStats? stats` carrying a running snapshot of the round-trip

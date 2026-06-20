@@ -153,6 +153,17 @@ void main() {
       expect(res.ttl, 37);
     });
 
+    test('Response (IPv6 — no bytes=/TTL=, #71)', () async {
+      // Windows IPv6 replies omit `bytes=` and `TTL=` (see #71):
+      //   Reply from ::1: time<1ms
+      final res = parser.parse('Reply from ::1: time<1ms');
+      expect(res, isA<PingResponse>());
+      expect((res as PingResponse).ip, '::1');
+      expect(res.time, isNotNull);
+      // No hop TTL is reported on the IPv6 reply line.
+      expect(res.ttl, null);
+    });
+
     test('Summary', () async {
       final res = parser.parse(strings.summary);
       expect(res, isA<PingSummary>());
