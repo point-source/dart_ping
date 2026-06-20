@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:ffi';
 
 import 'package:ffi/ffi.dart';
@@ -55,25 +54,6 @@ class IosPing implements Ping {
   ) {
     validateAddressFamily(_host, _ipVersion);
   }
-
-  /// Adapter matching [Ping.iosFactory]'s signature so the registrar (WS4) can
-  /// wire iOS support with a single assignment. `parser` and `encoding` are
-  /// accepted for signature parity but ignored — the native engine emits typed
-  /// events directly, so there is nothing to parse or decode (exactly as the
-  /// old `DartPingIOS._init` did).
-  // ignore: long-parameter-list
-  static IosPing fromFactory(
-    String host,
-    int? count,
-    int interval,
-    int timeout,
-    int ttl,
-    IpVersion ipVersion,
-    PingParser? parser,
-    Encoding encoding,
-    bool nat64Synthesis,
-  ) =>
-      IosPing(host, count, interval, timeout, ttl, ipVersion, nat64Synthesis);
 
   final String _host;
   final int? _count;
