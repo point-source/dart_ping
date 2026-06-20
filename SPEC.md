@@ -294,7 +294,7 @@ discovery APIs, not ICMP to a routable host; this is noted so a reviewer
 does not mistake its absence for a defect.
 
 ## iOS behavior tests §spec:ios-tests
-*Status: implemented (Batch 3) — Dart-side mapping is covered by `dart_ping_ios/test/ping_event_mapper_test.dart` (19 cases over the native-result → PingData/PingResponse/PingSummary/PingError seam, including the full ErrorType set, the combined response+error contract, and PingSummary.errors population); runs green under `flutter test` on the Linux CI host. Swift-side ICMP framing/sequence/parse logic is covered by network-free XCTest cases in the example's `RunnerTests` target (`ICMPPacket` widened to `public`); hand-verified but not compiled here — run on macOS via `xcodebuild test -workspace Runner.xcworkspace -scheme Runner`. Live ICMP round-trips remain a manual example-app acceptance path by design.*
+*Status: implemented (Batch 3; iOS-test home consolidated in Batch #28-4) — Dart-side mapping is now covered by `dart_ping/test/ios_event_mapper_test.dart` / `ios_bindings_test.dart` / `ios_ping_test.dart` over the native-result → sealed-event seam (full ErrorType set, the combined response+error contract, and summary error-list population); these run under the `core` matrix via plain `dart test -x live` (no separate Flutter job). Swift-side ICMP framing/sequence/parse logic is covered by network-free XCTest cases in the `dart_ping/example` `RunnerTests` target, which compiles `dart_ping/native/ICMPPacket.swift` directly (no plugin module import); hand-verified, not compiled on the Linux host — run on macOS via the `ios-swift` job's `xcodebuild test -workspace Runner.xcworkspace -scheme Runner`. Live ICMP round-trips remain a manual example-app acceptance path by design.*
 
 Automated tests cover the iOS ping behavior where feasible
 (§req:success-criteria, §req:quality-attributes — testability).
@@ -622,12 +622,16 @@ need a special host.
 
 ## Cross-OS continuous integration §spec:ci
 *Status: implemented — `.github/workflows/ci.yml`. Linux/Windows/macOS core
-matrix, the iOS Dart suite on Linux, and the iOS Swift suite on macOS run on
-every pull request to `main`. `main` is branch-protected: no direct pushes,
-changes land only through a PR whose required checks are green. The Swift
-job builds the example for the simulator to generate Flutter artifacts, then
-runs `RunnerTests` via `xcodebuild`; its first run on a macOS runner passed,
-the on-CI confirmation the §spec:ios-tests Swift suite had been pending.*
+matrix and the iOS Swift suite on macOS run on every pull request to `main`
+(and `develop`, §spec:ci-develop). `main` is branch-protected: no direct
+pushes, changes land only through a PR whose required checks are green. The
+Swift job builds `dart_ping/example` for the simulator to generate Flutter
+artifacts, then runs `RunnerTests` via `xcodebuild`. Updated in #28-4 for the
+single-package consolidation: the separate `dart_ping_ios` Dart job was removed
+(its iOS Dart tests now run under the core matrix as plain `dart test`), and the
+Swift suite was re-homed onto `dart_ping/example` + `dart_ping/native`; the
+dart-only `core`/`coverage` jobs pass `dart pub get --no-example` so the Flutter
+example is not resolved on a Flutter-less runner.*
 
 The repository runs its automated suites on every pull request to `main`,
 across the host types each suite needs, and `main` cannot be changed except
@@ -635,11 +639,13 @@ through a passing PR.
 
 - A workflow shall trigger on `pull_request` to `main` and run:
   - the core `dart_ping` suite on **Linux, Windows and macOS** — so each
-    platform class's OS-specific code path is exercised on its native host
-    (§spec:test-coverage, #77);
-  - the `dart_ping_ios` Dart suite on Linux under `flutter test` (#74);
-  - the `dart_ping_ios` Swift `RunnerTests` suite on a macOS runner via
-    `xcodebuild test` (#74, §spec:ios-tests).
+    platform class's OS-specific code path is exercised on its native host,
+    including the iOS Dart event-mapping/bindings tests (`dart_ping/test/ios_*`),
+    which are plain `dart test` and need no Flutter runner
+    (§spec:test-coverage, #77; consolidated in #28-4);
+  - the Swift `RunnerTests` suite on a macOS runner via `xcodebuild test`,
+    building `dart_ping/example` and compiling `dart_ping/native/ICMPPacket.swift`
+    into the test target (#74, §spec:ios-tests).
 - The required (merge-gating) checks shall be **deterministic**: live
   ICMP round-trips to external hosts are not part of CI at all. Tests that
   spawn the system `ping` against real hosts are tagged `live` and excluded
@@ -729,9 +735,9 @@ releasable and a failure shows on the PR that introduced it.
   automatically — no manual action — running the same job set a pull
   request to `main` runs (§req:ci-develop-success-criteria).
 - The jobs run on a `develop` PR shall be at full parity with the `main`
-  gate: the core `dart_ping` suite on Linux, Windows and macOS; the
-  `dart_ping_ios` Dart suite on Linux; the Swift `RunnerTests` suite on
-  macOS; and the informational coverage report — with the same
+  gate: the core `dart_ping` suite on Linux, Windows and macOS (including the
+  iOS Dart tests); the Swift `RunnerTests` suite on macOS; and the
+  informational coverage report — with the same
   deterministic, live-network-excluded behavior (`dart test -x live`) the
   `main` gate has (§spec:ci, §req:ci-develop-constraints).
 - Parity shall be structural, not a maintained copy: `develop` and `main`
