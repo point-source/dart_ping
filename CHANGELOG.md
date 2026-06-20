@@ -1,11 +1,5 @@
 ## 10.0.0
 
-First release since 9.0.1. It folds **every change made after 9.0.1** into a
-single major: the unreleased 9.1.0 / 9.1.1 / 9.2.0 work was never published to
-pub.dev, so it is consolidated here alongside the package-consolidation work
-that builds iOS support directly into `dart_ping`. 9.0.1 is the last version
-that shipped to pub.dev.
-
 ### Breaking changes & migration
 
 Each breaking change below carries its migration. Together these are the only
