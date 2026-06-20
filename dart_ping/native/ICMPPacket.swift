@@ -9,17 +9,16 @@
 //  (§spec:ios-tests) and reused independently of the Flutter boundary.
 //
 //  ── Location note (#28 package consolidation) ──────────────────────────────
-//  This file now ALSO lives here, under `dart_ping/native/`, where it is compiled
-//  into a single iOS `dart:ffi` code asset by `dart_ping/hook/build.dart` (WS3)
-//  alongside `PingEngine.swift` and the `@_cdecl` shim in `native/ping_shim.swift`
-//  (§spec:ios-code-asset-build-hook).
+//  This file lives under `dart_ping/native/`, where it is compiled into a single
+//  iOS `dart:ffi` code asset by `dart_ping/hook/build.dart` alongside
+//  `PingEngine.swift` and the `@_cdecl` shim in `native/ping_shim.swift`
+//  (§spec:ios-code-asset-build-hook). It is also compiled directly into the
+//  example's `RunnerTests` target for the deterministic Swift framing tests
+//  (§spec:ios-tests).
 //
-//  TRANSIENT DUPLICATE: this is a byte-for-byte copy of the security-audited
-//  source at `dart_ping_ios/ios/dart_ping_ios/Sources/dart_ping_ios/ICMPPacket.swift`.
-//  The `dart_ping_ios` copy stays the shipping implementation until that package
-//  is retired (#28); when it is, this duplication is removed and this copy becomes
-//  the single source of truth. Do NOT alter the audited logic in either copy —
-//  keep them identical until de-duplication.
+//  This is the single source of truth for the audited ICMP framing logic. The
+//  former `dart_ping_ios` second copy was removed when that package was retired
+//  (#28, §spec:dart-ping-ios-retired).
 //  ───────────────────────────────────────────────────────────────────────────
 //
 

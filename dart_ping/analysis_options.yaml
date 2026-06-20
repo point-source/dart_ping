@@ -13,3 +13,9 @@ analyzer:
   exclude:
     - "**/*.g.dart"
     - "**/*.freezed.dart"
+    # The Flutter example under example/ is its own package (its own pubspec +
+    # flutter_lints analysis_options) and depends on the Flutter SDK, so it is
+    # not resolvable under dart_ping's pure-Dart `dart pub get`. It is built and
+    # checked by the macOS `ios-swift` CI job (flutter build), not by this
+    # package's `dart analyze`.
+    - "example/**"

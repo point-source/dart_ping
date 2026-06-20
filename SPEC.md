@@ -35,14 +35,15 @@ This document covers the following areas, matching REQUIREMENTS.md:
   the API-stability promises of the preceding areas.**
 - **Package consolidation — one `dart_ping` with FFI-backed iOS (#28, #48)** —
   the `§spec:single-package-ios` … `§spec:dart-ping-ios-retired` sections at
-  the very end (not started). Collapses `dart_ping_ios` into a single
+  the very end (implemented). Collapses `dart_ping_ios` into a single
   pure-Dart `dart_ping` that carries the native iOS engine as a build-hook
   **code asset** and drives it over `dart:ffi`, replacing the Flutter
   platform channels. This removes the second package and the `register()`
   step (#28) and fixes iOS ping inside background isolates (#48), while the
   pure-Dart-with-no-Flutter-SDK promise is preserved as a hard gate. Folds
   into the same unreleased `dart_ping` 10.0.0 train; `dart_ping_ios` is
-  discontinued. Reuses the native iOS SPM engine (§spec:swift-icmp-engine)
+  discontinued and physically removed from the repository. Reuses the native
+  iOS SPM engine (§spec:swift-icmp-engine)
   and preserves its observable behavior (§spec:ios-ping-behavior,
   §spec:ios-error-parity, §spec:ios-ttl, §spec:stats-ios) while replacing the
   binding mechanism and the package boundary of §spec:spm-distribution.
@@ -2594,7 +2595,7 @@ break to the §spec:public-api-stability contract this area makes, beyond the
 (§spec:dart-ping-ios-retired).
 
 ## `dart_ping_ios` is retired §spec:dart-ping-ios-retired
-*Status: implemented (Batch #28-3) — getting iOS support requires no `dart_ping_ios` dependency; `dart_ping` alone suffices. `dart_ping_ios` is marked discontinued via a README banner, a CHANGELOG discontinuation entry, and its pubspec `description` (no forwarding shim); the actual pub.dev "discontinued" flag is a publisher action set out-of-band (like the §spec:ci-develop branch protection). Prior channel-based releases remain published/resolvable for consumers who cannot adopt the raised SDK floor. Migration notes (remove the `dart_ping_ios` dependency, delete the `DartPingIOS.register()` call, raise the SDK floor to ≥3.10.0 — no other source change, since the public `Ping` API and event model are otherwise unchanged) are in `dart_ping`'s README + CHANGELOG. Because removing `Ping.iosFactory` would otherwise break the retired package's compilation, its `register()` is reduced to a deprecated no-op (iOS auto-wires in `dart_ping`'s factory — not a forwarding shim), keeping `dart_ping_ios` `flutter analyze`/`flutter test` green. The bundled `dart_ping` example imports only `dart_ping`; the Flutter example app's Dart code now imports only `dart_ping` and calls no `register()`. NOTE (follow-up): the macOS `ios-swift` CI job still builds the `dart_ping_ios/example` to run that package's Swift `RunnerTests`; re-homing iOS Swift CI onto the consolidated `dart_ping` native engine is a separate macOS/manual concern (§spec:ci, §spec:ios-tests), not reproducible on the Linux host.*
+*Status: implemented (Batch #28-4) — the `dart_ping_ios` package directory is physically removed from the repository: getting iOS support requires no `dart_ping_ios` dependency, `dart_ping` alone suffices, and nothing in the repo depends on, imports, or `register()`s it (the deprecated no-op `register()` shim and the second `ICMPPacket`/`PingEngine` copy went with it). The pub.dev "discontinued" flag is a publisher action set out-of-band (like the §spec:ci-develop branch protection); prior channel-based releases remain published/resolvable for consumers who cannot adopt the raised SDK floor. Migration notes (remove the `dart_ping_ios` dependency, delete the `DartPingIOS.register()` call, raise the SDK floor to ≥3.10.0 — no other source change, since the public `Ping` API and event model are otherwise unchanged) are in `dart_ping`'s README + CHANGELOG, and the root README now describes the single-package iOS story. The Flutter/iOS example was re-homed to `dart_ping/example` (depends only on `dart_ping`, no `dependency_overrides`, SPM, no Podfile; imports only `dart_ping`, calls no `register()`), and its Swift `RunnerTests` were retargeted to compile `dart_ping/native/ICMPPacket.swift` directly (no plugin module to import). CI was repointed: the macOS `ios-swift` job builds `dart_ping/example` and runs `RunnerTests` against `dart_ping/native`, the redundant `ios-dart` job was removed (its Dart event-mapping/bindings tests now run under the `core` matrix via `dart_ping/test/ios_*`), and the `coverage` job drops its `dart_ping_ios` step. The Xcode `xcodebuild test` of the relocated `RunnerTests` and the on-device single-package / background-isolate acceptance path are macOS-only and not reproducible on the Linux CI host (§spec:ci, §spec:ios-tests).*
 
 `dart_ping_ios` is discontinued. iOS support is no longer obtained from a
 second package, and no new functional release of `dart_ping_ios` is required to

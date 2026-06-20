@@ -64,12 +64,12 @@ class PingMac extends BasePing implements Ping {
     // takes different flags (no `-W`/`-m`) and emits a different output format
     // (`hlim=` rather than `ttl=`) that this parser does not handle. Surface an
     // explicit, honest error rather than a misleading generic process failure
-    // (§spec:address-family-error-honesty). iOS IPv6 is served by the native
-    // Swift engine in dart_ping_ios.
+    // (§spec:address-family-error-honesty). iOS IPv6 is served by dart_ping's
+    // own native Swift engine, not this subprocess path.
     if (ipVersion == IpVersion.ipv6) {
       throw UnimplementedError(
         'IPv6 is not supported on macOS via dart_ping; use a hostname over '
-        'IPv4, or dart_ping_ios for native iOS IPv6',
+        'IPv4 (iOS supports native IPv6 directly)',
       );
     }
     var params = ['-n', '-W ${timeout * 1000}', '-i $interval', '-m $ttl'];
