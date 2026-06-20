@@ -26,7 +26,7 @@ Additional #69 error-honesty refinements:
 - macOS IPv6 over the subprocess path now surfaces an explicit "unsupported"
   error (the IPv4-only `ping` and the differently-flagged/formatted legacy
   `ping6` cannot be driven reliably). Native iOS IPv6 is unaffected — it is
-  served by `dart_ping_ios`'s Swift engine.
+  served by `dart_ping`'s own native Swift engine over FFI.
 - More routing/address-family failures map to the typed `ErrorType.noRoute`
   across platforms (macOS address-family, Windows "Destination net
   unreachable"); macOS "Host is down" (a liveness condition) maps to
@@ -66,7 +66,7 @@ NAT64/IPv6-only reachability (#52, §spec:nat64-option):
 - New default-on `nat64Synthesis` boolean on the `Ping` factory. On an
   IPv6-only (NAT64/DNS64) network an IPv4 literal is otherwise unreachable;
   enabling synthesis lets the platform reach it. The active behavior is
-  delivered on iOS by `dart_ping_ios` (its native engine synthesizes the
+  delivered on iOS by `dart_ping`'s native engine (which synthesizes the
   IPv6 path); on the subprocess platforms (Linux/Android, macOS, Windows) the
   option is an inert no-op carried purely for cross-platform parity — it
   leaves the spawned command and its parameters byte-for-byte unchanged and
@@ -79,6 +79,49 @@ Interface round-trip clarification (#85, §spec:windows-roundtrip-contract):
   `listNetworkInterfaces()` round-trips into `Ping(host, interface: ...)`
   by source address on Windows — a bare interface name is rejected there —
   while the address form round-trips on every platform. No behavior change.
+
+Package consolidation (#28, §spec:ios-code-asset-build-hook):
+
+- The minimum Dart SDK floor is raised to **≥3.10 (Flutter 3.38)**. The
+  consolidation work compiles the native iOS engine into a `dart:ffi` code
+  asset via a build hook, and build hooks / code assets are stable from that
+  floor. `hooks` and `code_assets` are added as **pure-Dart** dependencies —
+  they do **not** pull the `flutter` SDK into `dart_ping`'s dependency graph,
+  preserving the pure-Dart gate (§spec:pure-dart-preserved).
+- iOS now talks to the native engine over `dart:ffi` (the bundled
+  `dart_ping_ffi` code asset) instead of Flutter's `MethodChannel` /
+  `EventChannel` (§spec:ios-ffi-binding). The observable contract is
+  unchanged: `Ping`, `PingResponse`, `PingError`, and `PingSummary` keep the
+  same shapes, the same event order, and the same terminal summary.
+- Each iOS `Ping` owns its own native run handle and `NativeCallable`
+  callback — there is no shared broadcast stream and no run-id demux, so
+  concurrent pings to distinct hosts cannot cross-contaminate
+  (§spec:concurrent-isolation).
+- The full run config (including `ipVersion` and `nat64Synthesis`) crosses
+  the FFI seam, so iOS NAT64 IPv4-literal synthesis is preserved; microsecond
+  RTT precision and the shared-core stats accumulator (so iOS stats match the
+  other platforms by construction) are unchanged.
+- iOS ping now works from background isolates: the
+  `BackgroundIsolateBinaryMessenger ... is invalid` failure (#48) is gone
+  because the path no longer uses the Flutter binary messenger
+  (§spec:ios-background-isolate).
+- The separate `dart_ping_ios` package and its `register()` step are retired:
+  iOS dispatches internally on `Platform.operatingSystem == 'ios'` and
+  auto-wires when the build target is iOS — no registration call and no
+  conditional import. The package directory is removed from the repository
+  (§spec:dart-ping-ios-retired). For existing `dart_ping_ios` users, migration
+  is a few concrete steps:
+- Remove the `dart_ping_ios` dependency from your `pubspec.yaml`.
+- Delete the `DartPingIOS.register()` call and the matching
+  `import 'package:dart_ping_ios/...';`.
+- Raise your SDK floor to the consolidation baseline — Dart 3.10 / Flutter
+  3.38 (`sdk: ">=3.10.0 <4.0.0"`).
+- No other source change is required: the public `Ping` API and the event
+  model (`PingResponse`, `PingError`, `PingSummary`) are otherwise unchanged.
+  iOS now auto-wires, so the `register()` step is simply gone, and ping works
+  from any isolate (closes #48) because the Dart↔Swift seam moved from Flutter
+  platform channels to `dart:ffi`. This removal of `register()` is the one
+  intentional public-API break beyond the 10.0.0 model redesign.
 
 ## 9.2.0
 

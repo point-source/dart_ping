@@ -33,6 +33,20 @@ This document covers the following areas, matching REQUIREMENTS.md:
   redesign of the stream's event/data classes, folded into the unreleased
   breaking `dart_ping` 10.0.0 / `dart_ping_ios` 6.0.0 majors. **Supersedes
   the API-stability promises of the preceding areas.**
+- **Package consolidation — one `dart_ping` with FFI-backed iOS (#28, #48)** —
+  the `§spec:single-package-ios` … `§spec:dart-ping-ios-retired` sections at
+  the very end (implemented). Collapses `dart_ping_ios` into a single
+  pure-Dart `dart_ping` that carries the native iOS engine as a build-hook
+  **code asset** and drives it over `dart:ffi`, replacing the Flutter
+  platform channels. This removes the second package and the `register()`
+  step (#28) and fixes iOS ping inside background isolates (#48), while the
+  pure-Dart-with-no-Flutter-SDK promise is preserved as a hard gate. Folds
+  into the same unreleased `dart_ping` 10.0.0 train; `dart_ping_ios` is
+  discontinued and physically removed from the repository. Reuses the native
+  iOS SPM engine (§spec:swift-icmp-engine)
+  and preserves its observable behavior (§spec:ios-ping-behavior,
+  §spec:ios-error-parity, §spec:ios-ttl, §spec:stats-ios) while replacing the
+  binding mechanism and the package boundary of §spec:spm-distribution.
 
 Solution-space design for issue #73 — native, Swift Package Manager
 (SPM)-compatible iOS support for `dart_ping`.
@@ -280,7 +294,7 @@ discovery APIs, not ICMP to a routable host; this is noted so a reviewer
 does not mistake its absence for a defect.
 
 ## iOS behavior tests §spec:ios-tests
-*Status: implemented (Batch 3) — Dart-side mapping is covered by `dart_ping_ios/test/ping_event_mapper_test.dart` (19 cases over the native-result → PingData/PingResponse/PingSummary/PingError seam, including the full ErrorType set, the combined response+error contract, and PingSummary.errors population); runs green under `flutter test` on the Linux CI host. Swift-side ICMP framing/sequence/parse logic is covered by network-free XCTest cases in the example's `RunnerTests` target (`ICMPPacket` widened to `public`); hand-verified but not compiled here — run on macOS via `xcodebuild test -workspace Runner.xcworkspace -scheme Runner`. Live ICMP round-trips remain a manual example-app acceptance path by design.*
+*Status: implemented (Batch 3; iOS-test home consolidated in Batch #28-4) — Dart-side mapping is now covered by `dart_ping/test/ios_event_mapper_test.dart` / `ios_bindings_test.dart` / `ios_ping_test.dart` over the native-result → sealed-event seam (full ErrorType set, the combined response+error contract, and summary error-list population); these run under the `core` matrix via plain `dart test -x live` (no separate Flutter job). Swift-side ICMP framing/sequence/parse logic is covered by network-free XCTest cases in the `dart_ping/example` `RunnerTests` target, which compiles `dart_ping/native/ICMPPacket.swift` directly (no plugin module import); hand-verified, not compiled on the Linux host — run on macOS via the `ios-swift` job's `xcodebuild test -workspace Runner.xcworkspace -scheme Runner`. Live ICMP round-trips remain a manual example-app acceptance path by design.*
 
 Automated tests cover the iOS ping behavior where feasible
 (§req:success-criteria, §req:quality-attributes — testability).
@@ -608,12 +622,16 @@ need a special host.
 
 ## Cross-OS continuous integration §spec:ci
 *Status: implemented — `.github/workflows/ci.yml`. Linux/Windows/macOS core
-matrix, the iOS Dart suite on Linux, and the iOS Swift suite on macOS run on
-every pull request to `main`. `main` is branch-protected: no direct pushes,
-changes land only through a PR whose required checks are green. The Swift
-job builds the example for the simulator to generate Flutter artifacts, then
-runs `RunnerTests` via `xcodebuild`; its first run on a macOS runner passed,
-the on-CI confirmation the §spec:ios-tests Swift suite had been pending.*
+matrix and the iOS Swift suite on macOS run on every pull request to `main`
+(and `develop`, §spec:ci-develop). `main` is branch-protected: no direct
+pushes, changes land only through a PR whose required checks are green. The
+Swift job builds `dart_ping/example` for the simulator to generate Flutter
+artifacts, then runs `RunnerTests` via `xcodebuild`. Updated in #28-4 for the
+single-package consolidation: the separate `dart_ping_ios` Dart job was removed
+(its iOS Dart tests now run under the core matrix as plain `dart test`), and the
+Swift suite was re-homed onto `dart_ping/example` + `dart_ping/native`; the
+dart-only `core`/`coverage` jobs pass `dart pub get --no-example` so the Flutter
+example is not resolved on a Flutter-less runner.*
 
 The repository runs its automated suites on every pull request to `main`,
 across the host types each suite needs, and `main` cannot be changed except
@@ -621,11 +639,13 @@ through a passing PR.
 
 - A workflow shall trigger on `pull_request` to `main` and run:
   - the core `dart_ping` suite on **Linux, Windows and macOS** — so each
-    platform class's OS-specific code path is exercised on its native host
-    (§spec:test-coverage, #77);
-  - the `dart_ping_ios` Dart suite on Linux under `flutter test` (#74);
-  - the `dart_ping_ios` Swift `RunnerTests` suite on a macOS runner via
-    `xcodebuild test` (#74, §spec:ios-tests).
+    platform class's OS-specific code path is exercised on its native host,
+    including the iOS Dart event-mapping/bindings tests (`dart_ping/test/ios_*`),
+    which are plain `dart test` and need no Flutter runner
+    (§spec:test-coverage, #77; consolidated in #28-4);
+  - the Swift `RunnerTests` suite on a macOS runner via `xcodebuild test`,
+    building `dart_ping/example` and compiling `dart_ping/native/ICMPPacket.swift`
+    into the test target (#74, §spec:ios-tests).
 - The required (merge-gating) checks shall be **deterministic**: live
   ICMP round-trips to external hosts are not part of CI at all. Tests that
   spawn the system `ping` against real hosts are tagged `live` and excluded
@@ -715,9 +735,9 @@ releasable and a failure shows on the PR that introduced it.
   automatically — no manual action — running the same job set a pull
   request to `main` runs (§req:ci-develop-success-criteria).
 - The jobs run on a `develop` PR shall be at full parity with the `main`
-  gate: the core `dart_ping` suite on Linux, Windows and macOS; the
-  `dart_ping_ios` Dart suite on Linux; the Swift `RunnerTests` suite on
-  macOS; and the informational coverage report — with the same
+  gate: the core `dart_ping` suite on Linux, Windows and macOS (including the
+  iOS Dart tests); the Swift `RunnerTests` suite on macOS; and the
+  informational coverage report — with the same
   deterministic, live-network-excluded behavior (`dart test -x live`) the
   `main` gate has (§spec:ci, §req:ci-develop-constraints).
 - Parity shall be structural, not a maintained copy: `develop` and `main`
@@ -2253,3 +2273,366 @@ that ran the core suite on a Windows host), relating to the cross-OS matrix
 (#77, §spec:ci) and interface selection (#72,
 §spec:interface-selection / §spec:interface-platform-rejection /
 §spec:interface-listing).
+
+---
+
+# Package consolidation — one `dart_ping` with FFI-backed iOS
+
+A packaging and integration-mechanism change folded into the same
+unreleased `dart_ping` 10.0.0 train. It resolves
+[#28](https://github.com/point-source/dart_ping/issues/28) (collapse the two
+packages into one without losing pure-Dart support) and
+[#48](https://github.com/point-source/dart_ping/issues/48) (iOS ping fails
+inside a secondary isolate), which share one root cause: the iOS path talks
+Dart↔Swift over Flutter **platform channels**, which both forces a separate
+Flutter plugin package (the reason `dart_ping_ios` exists) and routes every
+message through the root-isolate binary messenger (the reason ping throws in a
+background isolate).
+
+The enabling change is external: Dart's **build hooks** and **code assets**
+became stable in Dart 3.10 / Flutter 3.38 (November 2025). A pure-Dart package
+can now compile and bundle native code and call it over `dart:ffi`, with the
+native build triggered by the build target — and a single package resolves and
+runs under both the Dart and the Flutter toolchains, with no second
+publication. This removes the dependency the #28 thread was blocked on and, by
+replacing channels with FFI, removes the root-isolate coupling behind #48 at
+the same time.
+
+These sections reuse the iOS SPM migration's native engine
+(§spec:swift-icmp-engine) and
+preserve every observable iOS behavior it specifies
+(§spec:ios-ping-behavior, §spec:ios-error-parity, §spec:ios-ttl,
+§spec:stats-ios) — including the NAT64 IPv4-literal synthesis the engine gained
+for #52 (§spec:nat64-literal-synthesis), driven by the default-on
+`nat64Synthesis` factory option (§spec:nat64-option). What changes is the
+*binding* (platform channels → FFI) and
+the *package boundary* (two packages → one). Where this contradicts the prior
+iOS packaging — the separate federated plugin of §spec:spm-distribution, the
+channel wiring described in §spec:ios-ping-behavior, the `register()` entry
+point of §spec:public-api-stability — these sections supersede it. Those prior
+sections remain the accurate record of the 9.x / pre-consolidation iOS
+implementation that shipped over channels.
+
+## One `dart_ping` package provides iOS §spec:single-package-ios
+*Status: implemented (Batch #28-3) — adding only `dart_ping` (no `dart_ping_ios`, no `register()`) yields iOS support: the `Ping` factory's `'ios'` branch constructs the FFI-backed `IosPing` directly (§spec:ios-auto-wiring), reusing the native engine + `dart:ffi` seam from #28-1/#28-2. The public `Ping`/`PingData`/`PingResponse`/`PingSummary`/`PingError` shapes are unchanged save the removed `register()` step (10.0.0 model surface owned by §spec:stats-event-model). `dart_ping`'s bundled example imports only `dart_ping` and calls no `register()`, and the Flutter example app's Dart code was reduced to a single `dart_ping` import. Network-free dispatch/guard coverage runs under `dart test`; the single-package SPM iOS end-to-end (correct per-probe `PingResponse`s + terminal `PingSummary` on a Podfile-free SPM target) remains the manual example-app acceptance path on a real iOS target — live ICMP + an iOS runtime are not reproducible on the Linux CI host (§spec:ci, §spec:ios-tests).*
+
+A Flutter app targeting iOS adds **only `dart_ping`** — no `dart_ping_ios`
+dependency and no registration call — and gets working iOS ping. iOS support
+lives in `dart_ping` and is dispatched by platform inside the package, exactly
+as the Linux / macOS / Windows subprocess paths already are
+(§spec:public-api-stability).
+
+- When a Flutter iOS app depends only on `dart_ping` (SPM enabled, no
+  CocoaPods `Podfile`), constructs a `Ping`, and listens to its `stream`, the
+  system shall produce correct per-probe `PingResponse`s and a terminal
+  `PingSummary` — the same observable behavior as every other platform
+  (§req:consolidation-success-criteria — one package on iOS, primary
+  acceptance; §spec:ios-ping-behavior).
+- The consumer shall not add a second package and shall not call any
+  registration function to enable iOS (§req:consolidation-success-criteria;
+  §spec:ios-auto-wiring).
+- The public Dart API — the `Ping` factory and the
+  `PingData` / `PingResponse` / `PingSummary` / `PingError` shapes — shall be
+  unchanged from the consolidation, save the removal of the iOS `register()`
+  step and the `dart_ping_ios` import (§req:consolidation-constraints — public
+  API unchanged; §spec:stats-event-model owns the 10.0.0 model surface).
+
+**Why one package now, when it was two before:** the packages were separate
+only because Flutter platform channels require the Flutter plugin machinery,
+which a pure-Dart package cannot host. With native code now bundleable from a
+pure-Dart package via a build hook (§spec:ios-code-asset-build-hook), that
+constraint is gone, and the platform split no longer reflects a real domain
+boundary — iOS is just another platform branch of one package
+(§req:consolidation-problem-statement). The original #28 request was narrower
+("rename `dart_ping_ios` to `dart_ping_flutter`"); folding iOS into the
+pure-Dart `dart_ping` answers the same underlying need — fewer packages,
+platform dispatch handled inside the package — without introducing a
+Flutter-only umbrella package that would still fail the pure-Dart gate
+(§spec:pure-dart-preserved).
+
+**This is the headline slice;** the sections below are the mechanism it
+requires: the code-asset build hook, the FFI binding, the preserved pure-Dart
+gate, the auto-wiring, the background-isolate fix, and the retirement of
+`dart_ping_ios`.
+
+## iOS native engine ships as a build-hook code asset §spec:ios-code-asset-build-hook
+*Status: implemented (Batch #28-1) — `dart_ping/hook/build.dart` (pure-Dart `hooks`/`code_assets` deps, no `flutter`) compiles the in-repo native engine into a single `dart:ffi` code asset named `dart_ping_ffi` ONLY when the target OS is iOS, via `xcrun`/`swiftc` against the iOS SDK. The PRIMARY language path was taken: the audited Swift `PingEngine`/`ICMPPacket` are carried verbatim into `dart_ping/native/` behind a flat C ABI (`native/include/dart_ping_ffi.h`) fronted by a hand-written `@_cdecl` shim (`native/ping_shim.swift`, 3-entry surface: start/stop/one event callback — no swift2objc/ffigen, no `objective_c` bridge). The target gate is factored into `hook/gating.dart` and covered by network-free `dart test` cases (`test/build_hook_gating_test.dart`); the hook was confirmed to run and short-circuit on the Linux host (empty `native_assets.yaml`, no toolchain invoked). The Swift/iOS cross-compile is hand-verified on macOS (`swiftc -emit-library -sdk $(xcrun --sdk iphoneos --show-sdk-path) -target arm64-apple-ios13.0 -import-objc-header …`, see `native/README.md`), not compilable on the Linux CI host (§spec:ci, §spec:ios-tests). The Dart FFI binding that opens this asset is a later batch (#28-2, §spec:ios-ffi-binding). NOTE: the engine is a transient byte-for-byte duplicate of the `dart_ping_ios` source until that package is retired.*
+
+`dart_ping` carries the native iOS ICMP engine and compiles it into a
+**code asset** (a native dynamic library, linked at app-build time and reached
+over `dart:ffi`) from a build hook (`hook/build.dart`). The hook produces the
+native asset **only when the build target's operating system is iOS**; for
+every other target — pure-Dart desktop, server, Android, and the analyzer /
+`dart pub get` path — it produces no code asset and invokes no native
+toolchain.
+
+- When the build target is iOS, the build hook shall compile the in-repo
+  native engine and emit one code asset that the Dart side opens over
+  `dart:ffi` (§req:consolidation-constraints — FFI, not platform channels;
+  §spec:ios-ffi-binding).
+- When the build target is not iOS, the hook shall emit no code asset and
+  shall compile no native source, so non-iOS builds incur no Swift/native
+  compilation, no download, and ship no iOS code
+  (§req:consolidation-success-criteria — non-iOS consumers pay nothing;
+  §req:consolidation-priorities — nice-to-have; §spec:pure-dart-preserved).
+- The native build shall be driven by the consuming toolchain — `flutter`
+  for a Flutter iOS app, `dart` for a pure-Dart build — with no requirement
+  that `dart_ping` be a Flutter plugin (§req:consolidation-constraints — single
+  published package).
+
+**Why a build-hook code asset rather than a Flutter plugin:** this is the
+mechanism that lets one pure-Dart package own native iOS code. A Flutter plugin
+forces a `flutter` SDK dependency and a `plugin: platforms:` block, which would
+break the pure-Dart gate (§spec:pure-dart-preserved). The code-asset hook is a
+pure-Dart facility (its `hooks` / `code_assets` dependencies are pure Dart), so
+`dart_ping` keeps `flutter` out of its dependency graph entirely while still
+shipping native iOS code. At iOS app-build time the Flutter/Xcode toolchain
+compiles the asset and packages, embeds, and code-signs it as a framework — the
+integration the federated plugin used to provide (§spec:spm-distribution),
+now handled by the code-asset pipeline instead.
+
+**The make-or-break risk (carried from §req:consolidation-open-decisions — iOS
+code-asset feasibility):** that the native engine can be compiled and bundled
+as an iOS code asset and linked into an app build — covering iOS
+cross-compilation (SDK sysroot, architectures, minimum-version), framework
+generation, and code signing — entirely outside the Flutter plugin machinery.
+A complicating fact drives the language decision below: the first-party
+code-asset toolchain compiles **C / C++ / Objective-C** (via `clang`), not
+Swift. Two ways to honor the "reuse the existing Swift engine" constraint
+(§req:consolidation-constraints):
+
+- **Primary — retain Swift behind a C ABI.** Keep `PingEngine` / `ICMPPacket`
+  (§spec:swift-icmp-engine) and expose a flat C entry surface from a thin
+  `@_cdecl` Swift shim, compiled in the hook by invoking `swiftc` against the
+  iOS SDK. Preserves the audited engine; cost is that the hook hand-rolls the
+  iOS cross-compile because there is no first-party Swift code-asset helper.
+- **Fallback — port the engine to Objective-C / C.** If `swiftc`-in-hook for
+  an iOS code asset proves unworkable, re-port the small ICMP engine to
+  Objective-C, which the first-party `clang`-based builder compiles directly.
+  Still one package; cost is re-porting audited Swift.
+
+If **neither** can satisfy the pure-Dart gate (§spec:pure-dart-preserved), the
+last-resort fallback is the requirement's own: **do not consolidate** — keep
+the two packages as they are today (§req:consolidation-priorities — the gate
+overrides consolidation). The order is deliberate: a language re-port is a
+smaller retreat than abandoning consolidation, so it is tried first.
+
+**Why hand-write the C-ABI shim rather than generate Swift bindings:** the
+compile step (Layer A — cross-compile Swift to an iOS code asset) and the
+binding step (Layer B — how Dart calls the native symbols) are separate
+problems, and only Layer B has a codegen alternative. There is no first-party
+`native_toolchain_swift`, so *something* must hand-invoke `swiftc`/`xcrun` in
+the hook regardless — the binding generators do not remove that step. For
+Layer B, `dart-lang/native`'s `swift2objc` / `swiftgen` (+ `ffigen`) can
+generate Dart bindings from `@objc`-annotated Swift via generated Objective-C
+headers, replacing the hand-written `@_cdecl` shim. This is **considered and
+not adopted** for this package: the native surface is three entry points
+(`start` / `stop` / one event callback), so generated bindings save little; the
+generators are experimental and would add the `objective_c` runtime bridge on
+the exact async-callback path that must stay valid from a background thread
+(§spec:ios-background-isolate); and a flat C function pointer driven by
+`dart:ffi` `NativeCallable.listen` is the cleanest carrier for that callback.
+The generator route would win only if the native API surface were large or
+needed to expose rich Swift types a flat-C shim cannot carry comfortably —
+neither holds here. So Layer A is hand-rolled `swiftc` (no alternative), and
+Layer B is a hand-written `@_cdecl` flat-C shim (chosen over swift2objc for this
+small surface).
+
+**Tradeoff:** `dart_ping` gains a build hook and a native source tree, raising
+its build complexity and its SDK floor (§spec:pure-dart-preserved owns the
+floor). This is accepted as the price of one package; the hook's target-gated
+short-circuit keeps the cost off every non-iOS consumer.
+
+## Pure-Dart consumers need no Flutter SDK §spec:pure-dart-preserved
+*Status: implemented (Batch #28-1) — the non-negotiable gate holds. `dart_ping`'s only new deps are the pure-Dart `hooks`/`code_assets`; `dart pub deps` shows NO `flutter` SDK dependency anywhere in the graph, and `dart pub get` / `dart analyze --fatal-infos` / `dart test -x live` all pass with no Flutter SDK on the resolve path. On a non-iOS build the build hook (§spec:ios-code-asset-build-hook) emits no code asset and invokes no Swift/iOS toolchain — empirically confirmed on the Linux host: the hook ran and produced an empty `native_assets.yaml` with no compilation (and `xcrun` is absent here, so any leak into the iOS branch would have failed loudly). The SDK floor was raised from ≥3.8.0 to ≥3.10.0 (Dart 3.10 / Flutter 3.38, where build hooks / code assets are stable), recorded in `dart_ping/CHANGELOG.md` (10.0.0). The gate was satisfiable, so consolidation proceeds (the last-resort "do not consolidate" path was not needed).*
+
+`dart_ping` remains a pure-Dart package. A CLI, server, or backend project adds
+it with `dart pub add dart_ping` and pings on Linux / Windows / macOS desktop
+**with no Flutter SDK installed and no Swift/iOS toolchain ever invoked**. This
+is the non-negotiable gate: it overrides every other goal in package
+consolidation.
+
+- `dart pub add dart_ping` shall resolve and `dart run` / `dart test` shall
+  work with no Flutter SDK present; `dart_ping`'s dependency graph shall
+  contain no `flutter` SDK dependency (§req:consolidation-constraints —
+  pure-Dart non-negotiable; §req:consolidation-success-criteria — pure-Dart
+  unchanged, primary acceptance).
+- On a non-iOS build, no Swift or iOS toolchain shall be invoked and no native
+  compilation shall occur (§req:consolidation-quality-attributes —
+  compatibility; §spec:ios-code-asset-build-hook).
+- A pure-Dart, non-iOS consumer shall resolve, build, and run exactly as it did
+  before consolidation — the added iOS code costs it nothing observable
+  (§req:consolidation-success-criteria — non-iOS consumers pay nothing).
+
+**Why this is a gate and not a goal:** the whole reason the packages were never
+merged was that folding Flutter-plugin code into `dart_ping` would force a
+Flutter SDK on pure-Dart consumers. Consolidation is only worth doing if that
+promise survives. If `/roadmap` or implementation finds the gate cannot hold,
+the correct outcome is to abandon consolidation, not to compromise the gate
+(§req:consolidation-priorities). The code-asset approach is chosen precisely
+because it keeps `flutter` out of the dependency graph
+(§spec:ios-code-asset-build-hook).
+
+**Tooling floor:** preserving the gate this way requires Dart 3.10 /
+Flutter 3.38 or later, where build hooks and code assets are stable. Raising
+`dart_ping`'s minimum SDK to that floor is accepted
+(§req:consolidation-quality-attributes — tooling floor;
+§req:consolidation-constraints — raised SDK floor). The current floor (≥3.8.0,
+§spec:sdk-floor) rises to ≥3.10 as part of 10.0.0.
+
+## iOS talks to the engine over `dart:ffi` §spec:ios-ffi-binding
+*Status: implemented (Batch #28-2) — the iOS Dart↔Swift seam moved from `MethodChannel`/`EventChannel` to `dart:ffi` over the `dart_ping_ffi` code asset. `dart_ping/lib/src/ping/ios/dart_ping_bindings.dart` binds `dart_ping_start`/`dart_ping_stop` (`@Native`, assetId `package:dart_ping/dart_ping_ffi`) and the flat `dart_ping_event` struct; per-probe events stream back through a `NativeCallable.listener` delivered to the owning isolate's event loop. Each `IosPing` (`lib/src/ping/ios/ios_ping.dart`) owns its own native handle + callback — no shared broadcast stream, no run-`id` demux (§spec:concurrent-isolation). The FFI start call carries the full run config (host, count, interval, timeout, ttl, `ipVersion`→family, `nat64Synthesis`), so NAT64 IPv4-literal synthesis is preserved across the seam (§spec:nat64-literal-synthesis). Native events map to the sealed `PingResponse`/`PingError`/`PingSummary` via `lib/src/ping/ios/ios_event_mapper.dart`, reusing the core `RoundTripStatsAccumulator` so iOS stats match the other platforms by construction (§spec:stats-cross-platform / §spec:stats-ios); RTTs cross the seam in microseconds (§spec:stats-precision). The event payload is heap-allocated by the `@_cdecl` shim and freed by the Dart receiver via the new `dart_ping_free_event` entry point, making the async `.listener` delivery memory-safe. iOS is still obtained via the `register()`/`iosFactory` seam (`package:dart_ping/dart_ping_ios_ffi.dart` → `registerDartPingIosFfi()`); its removal and `dart_ping_ios` retirement are #28-3. Dart-side bindings, mapping/accumulator, and `Ping` construction are covered by network-free `dart test` (`test/ios_bindings_test.dart`, `test/ios_event_mapper_test.dart`, `test/ios_ping_test.dart`, `test/ios_registrar_test.dart`). The Swift shim heap-transfer change and live ICMP are hand-verified on macOS / a real iOS target — not compilable on the Linux CI host (§spec:ci, §spec:ios-tests).*
+
+On iOS the Dart layer drives the native engine over `dart:ffi`, not over a
+`MethodChannel` / `EventChannel`. Starting a run is a foreign-function call;
+per-probe events stream back through a native callback; stopping is a foreign
+call. The observable `stream` contract is unchanged — the same sealed
+`PingEvent`s in the same order, terminated by the same `PingSummary`
+(§spec:ios-ping-behavior, §spec:stats-event-model).
+
+- Listening to an iOS `Ping`'s `stream` shall start a native run; each Echo
+  Reply, probe error, and the terminal summary shall arrive as the same
+  `PingResponse` / `PingError` / `PingSummary` events produced today over the
+  channel (§spec:ios-ping-behavior, §spec:ios-error-parity, §spec:ios-ttl).
+- The FFI start call shall carry the full run configuration the channel `start`
+  invocation carries today — host, count, interval, timeout, ttl, the selected
+  `ipVersion`, and the `nat64Synthesis` option (§spec:nat64-option) — so iOS
+  NAT64 IPv4-literal synthesis (§spec:nat64-literal-synthesis) is preserved
+  across the seam change rather than silently dropped when the channel is
+  replaced.
+- Per-probe events shall reach Dart through a native-to-Dart callback that can
+  be invoked from the engine's background thread and delivered to the owning
+  isolate's event loop, so events are not marshalled through the Flutter binary
+  messenger (§req:consolidation-quality-attributes — concurrency;
+  §spec:ios-background-isolate).
+- Each `Ping` instance shall own its own native run handle and its own
+  callback, so concurrently running instances do not share native state and
+  need no id-based demultiplexing of a shared event stream
+  (§spec:concurrent-isolation).
+- Round-trip times shall preserve microsecond resolution across the FFI seam,
+  matching the precision guarantee the channel payload provides today
+  (§spec:stats-precision, §spec:stats-ios).
+- iOS round-trip statistics shall continue to be computed by the shared core
+  accumulator from per-probe times, identical to the other platforms by
+  construction (§spec:stats-cross-platform, §spec:stats-ios) — the seam change
+  does not move the statistics computation.
+
+**Why FFI replaces channels:** platform channels are the single cause of both
+issues package consolidation resolves — they require the Flutter plugin that
+blocks #28, and
+they route through the root-isolate binary messenger that breaks #48. FFI
+removes both at once: it needs no plugin (enabling §spec:single-package-ios)
+and no binary messenger (enabling §spec:ios-background-isolate). The
+maintainer's own diagnosis on #48 — "use `dart:ffi` instead of platform
+channels" — is the mechanism adopted here.
+
+**Why per-instance handles rather than the shared broadcast stream:** the
+channel design multiplexed all runs onto one `EventChannel` broadcast stream
+and demultiplexed by a generated run `id` (§spec:concurrent-isolation). FFI
+removes the reason for sharing — each instance can hold its own native handle
+and callback — so the id-demux machinery is dropped. The
+deferred decision on the exact FFI callback shape
+(native threads, the native-callable callback, ports) is settled here in favor
+of a per-instance asynchronous native callback that is valid from any isolate
+(§req:consolidation-open-decisions — FFI threading / isolate model).
+
+**Tradeoff:** the engine's results must cross an FFI ABI (flat C types, manual
+memory ownership for host strings and the per-event payload) rather than the
+channel's automatic codec. Accepted: the ABI surface is small (start / stop /
+one event callback) and is the prerequisite for both fixes.
+
+## iOS ping works from any isolate §spec:ios-background-isolate
+*Status: implemented (Batch #28-2) — the iOS path no longer touches the Flutter binary messenger: events arrive over a `dart:ffi` `NativeCallable.listener` (§spec:ios-ffi-binding) that the engine's background thread invokes and that Dart delivers to the owning isolate's event loop, so a `Ping` constructed and listened from a non-root isolate runs without the `BackgroundIsolateBinaryMessenger ... is invalid` failure (closes #48). The per-instance asynchronous native callback settles §req:consolidation-open-decisions (FFI threading / isolate model). Verified on a real iOS target as part of the manual acceptance path — live ICMP and an iOS runtime are not reproducible on the Linux CI host (§spec:ci, §spec:ios-tests).*
+
+Running an iOS ping from a **secondary (background) isolate** produces
+per-probe responses and a terminal summary without throwing. The
+`BackgroundIsolateBinaryMessenger ... is invalid` /
+"Background isolates do not support setMessageHandler()" failure no longer
+occurs, because the iOS path no longer touches the Flutter binary messenger
+(§spec:ios-ffi-binding).
+
+- When a `Ping` is constructed and its `stream` listened to from a non-root
+  isolate on iOS, the run shall produce responses and a summary without
+  throwing a background-isolate messenger error
+  (§req:consolidation-success-criteria — background isolates work, closes #48).
+- iOS ping shall be usable from any isolate, matching how ping already works in
+  isolates on the subprocess platforms (§req:consolidation-user-stories — ping
+  off the main thread; §req:consolidation-quality-attributes — concurrency).
+
+**Why this is asserted explicitly rather than left implicit:** the
+background-isolate fix is a *consequence* of choosing FFI, not a separate
+feature — but stating it as its own observable outcome guards against an FFI
+design that quietly reintroduces a root-isolate dependency (for example, a
+callback that must be registered on the root isolate). The criterion exists so
+that regression is caught (§req:consolidation-open-decisions — FFI threading /
+isolate model). It is verified on a real iOS target as part of the manual
+acceptance path, since live ICMP and an iOS runtime are not reproducible in CI
+(§spec:ci, §spec:ios-tests).
+
+## iOS auto-wires; no `register()` §spec:ios-auto-wiring
+*Status: implemented (Batch #28-3) — the `Ping` factory's `'ios'` branch now constructs `IosPing(host, count, interval, timeout, ttl, ipVersion, nat64Synthesis)` directly on `Platform.operatingSystem == 'ios'`, exactly like the linux/mac/windows branches build theirs (`dart_ping/lib/src/ping_interface.dart`). The `Ping.iosFactory` static field + typedef and the transitional `registerDartPingIosFfi()` registrar (`dart_ping/lib/dart_ping_ios_ffi.dart`) and `IosPing.fromFactory` adapter are removed, along with `ios_registrar_test.dart`. Referencing `IosPing` from shared Dart code pulls no native symbols into non-iOS builds — `dart:ffi` is core SDK and the `dart_ping_ffi` code asset is only opened on the iOS branch — so the pure-Dart gate (§spec:pure-dart-preserved) still holds (`dart pub deps` shows no `flutter`; `dart analyze --fatal-infos`/`dart test -x live` green). Removing `register()` is the one intentional break to §spec:public-api-stability beyond the 10.0.0 model redesign (§spec:stats-event-model), documented in migration (§spec:dart-ping-ios-retired). Network-free factory/guard + `IosPing` construction covered by `dart test`; on-iOS dispatch is the manual acceptance path (§spec:ci, §spec:ios-tests).*
+
+iOS support activates with no consumer-written wiring. The `Ping` factory's
+`'ios'` branch constructs the FFI-backed iOS implementation directly, the same
+way the other branches construct their platform `Ping`s
+(§spec:public-api-stability). The `Ping.iosFactory` registration hook and
+`DartPingIOS.register()` are gone.
+
+- A consumer shall obtain a working iOS `Ping` from `Ping(host, ...)` with no
+  prior registration call and no conditional import
+  (§req:consolidation-success-criteria — no manual platform wiring;
+  §req:consolidation-user-stories — add one package, iOS just works).
+- The `Ping` factory shall dispatch to the iOS implementation internally on
+  `Platform.operatingSystem == 'ios'`, with no `iosFactory` indirection
+  (§req:consolidation-constraints — public API unchanged except the removed
+  `register()`).
+
+**Why the indirection can be removed now:** `Ping.iosFactory` existed only so
+the pure-Dart `dart_ping` could call into iOS code that lived in a *separate*
+package without depending on it — a late-bound seam across the package
+boundary. With iOS in the same package, the factory references the
+implementation directly and the seam is unnecessary. FFI is part of the core
+SDK and available on every platform, so referencing the iOS implementation from
+shared Dart code does not pull native symbols into non-iOS builds — the native
+library is only *opened* on the iOS branch, which only runs on iOS
+(§spec:pure-dart-preserved). Removing `register()` is the one intentional
+break to the §spec:public-api-stability contract this area makes, beyond the
+10.0.0 model redesign (§spec:stats-event-model); it is called out in migration
+(§spec:dart-ping-ios-retired).
+
+## `dart_ping_ios` is retired §spec:dart-ping-ios-retired
+*Status: implemented (Batch #28-4) — the `dart_ping_ios` package directory is physically removed from the repository: getting iOS support requires no `dart_ping_ios` dependency, `dart_ping` alone suffices, and nothing in the repo depends on, imports, or `register()`s it (the deprecated no-op `register()` shim and the second `ICMPPacket`/`PingEngine` copy went with it). The pub.dev "discontinued" flag is a publisher action set out-of-band (like the §spec:ci-develop branch protection); prior channel-based releases remain published/resolvable for consumers who cannot adopt the raised SDK floor. Migration notes (remove the `dart_ping_ios` dependency, delete the `DartPingIOS.register()` call, raise the SDK floor to ≥3.10.0 — no other source change, since the public `Ping` API and event model are otherwise unchanged) are in `dart_ping`'s README + CHANGELOG, and the root README now describes the single-package iOS story. The Flutter/iOS example was re-homed to `dart_ping/example` (depends only on `dart_ping`, no `dependency_overrides`, SPM, no Podfile; imports only `dart_ping`, calls no `register()`), and its Swift `RunnerTests` were retargeted to compile `dart_ping/native/ICMPPacket.swift` directly (no plugin module to import). CI was repointed: the macOS `ios-swift` job builds `dart_ping/example` and runs `RunnerTests` against `dart_ping/native`, the redundant `ios-dart` job was removed (its Dart event-mapping/bindings tests now run under the `core` matrix via `dart_ping/test/ios_*`), and the `coverage` job drops its `dart_ping_ios` step. The Xcode `xcodebuild test` of the relocated `RunnerTests` and the on-device single-package / background-isolate acceptance path are macOS-only and not reproducible on the Linux CI host (§spec:ci, §spec:ios-tests).*
+
+`dart_ping_ios` is discontinued. iOS support is no longer obtained from a
+second package, and no new functional release of `dart_ping_ios` is required to
+get it. The package is marked discontinued on pub.dev rather than kept as a
+forwarding shim.
+
+- Getting iOS support shall require no `dart_ping_ios` dependency; depending on
+  `dart_ping` alone shall be sufficient (§req:consolidation-constraints —
+  single published package; §spec:single-package-ios).
+- Migration for an existing `dart_ping_ios` consumer shall be: remove the
+  `dart_ping_ios` dependency, delete the `DartPingIOS.register()` call, and
+  raise the SDK floor to the consolidation baseline (§spec:pure-dart-preserved);
+  no other source change is required, because the public `Ping` API and the
+  event model are otherwise unchanged (§req:consolidation-user-stories —
+  migration notes; §req:consolidation-open-decisions — migration surface).
+- The bundled example shall import only `dart_ping` and call no `register()`
+  (§req:consolidation-priorities — high; updated example).
+
+**Why retire outright rather than keep a thin wrapper:** a forwarding
+`dart_ping_ios` that re-exported the consolidated iOS path would preserve a
+second published artifact, version-alignment burden, and the `register()` call
+— the exact costs consolidation exists to remove
+(§req:consolidation-problem-statement). A clean discontinuation with documented
+migration is a one-time,
+well-bounded edit for consumers and leaves one package to maintain. The prior
+`dart_ping_ios` releases remain available for consumers who cannot adopt the
+raised SDK floor; they continue to work over the channel implementation
+(§spec:spm-distribution) but receive no further iOS development.
+
+**Why no separate later major:** consolidation folds into the unreleased
+`dart_ping` 10.0.0 train (§req:consolidation-constraints — folds into 10.0.0)
+rather than waiting for a future major, because 10.0.0 is already a breaking
+release (§spec:stats-event-model) and `register()`-removal and the SDK-floor
+raise are breaking changes best shipped once, together.

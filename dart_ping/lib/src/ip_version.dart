@@ -32,7 +32,7 @@ enum IpVersion {
   ///
   /// Note: IPv6 is not supported on Windows or on the macOS subprocess path,
   /// both of which surface an explicit error rather than silently falling back.
-  /// (iOS IPv6 is served by the native Swift engine in `dart_ping_ios`.)
+  /// (iOS IPv6 is served by dart_ping's own native Swift engine over FFI.)
   ipv6,
 }
 

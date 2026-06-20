@@ -27,14 +27,14 @@ Instead of listening to a stream, you can perform a single ping and immediately 
 final result = await Ping('google.com', count: 1).stream.first;
 ```
 
-To use dart_ping on iOS, add the [dart_ping_ios](https://pub.dev/packages/dart_ping_ios) package as a dependency and register the iOS plugin before initializing Ping. For more detailed docs, see the [dart_ping_ios](https://pub.dev/packages/dart_ping_ios) package. Note that the iOS plugin requires the flutter sdk. (this is why it is not integrated into dart_ping directly)
+iOS support is built into `dart_ping` — add only `dart_ping` to your `pubspec.yaml`, construct `Ping(host, ...)`, and it works on iOS with no second package, no `register()` call, and no conditional import. The native iOS ICMP engine ships inside `dart_ping` as a `dart:ffi` code asset that is compiled only when the build target is iOS, so pure-Dart and non-iOS consumers pay nothing and need no Flutter SDK.
 
 ```dart
-// Register DartPingIOS
-DartPingIOS.register();
-// Create ping object with desired args
+// Just construct Ping — iOS auto-wires, no register() step.
 final ping = Ping('google.com', count: 5);
 ```
+
+On iOS, `dart_ping` requires Flutter's SPM build mode (no CocoaPods `Podfile`) and the raised SDK floor (Dart 3.10 / Flutter 3.38).
 
 To print the underlying ping command that will be used
 (useful for debugging):
@@ -102,7 +102,7 @@ only. There is no "prefer one family" or dual-stack mode — `IpVersion.ipv4`
 ```dart
 // IPv6 only (the system ping is invoked with the -6 family flag on
 // Linux/Android; unsupported on Windows and the macOS subprocess path —
-// iOS IPv6 is served by dart_ping_ios's native engine)
+// iOS IPv6 is served by dart_ping's own native engine)
 final ping = Ping('google.com', ipVersion: IpVersion.ipv6);
 ```
 
