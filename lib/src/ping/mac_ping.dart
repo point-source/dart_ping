@@ -107,15 +107,15 @@ class PingMac extends BasePing implements Ping {
 
   @override
   Exception? throwExit(int exitCode) {
-    // Recognized codes (`1`/`2` no-reply, `68` unknown host) are handled by
-    // interpretExitCode and must not surface a generic exit exception; every
-    // other non-success code remains an unmapped throw so a genuinely unknown
-    // failure still surfaces a catchable error then closes the stream
-    // (§spec:stream-lifecycle-robustness — the guarantee narrows by exactly the
-    // one well-understood exit `2`, it does not loosen).
-    const recognized = {1, 2, 68};
-
-    return exitCode != 0 && !recognized.contains(exitCode)
+    // A code that interpretExitCode recognizes (`1`/`2` no-reply, `68` unknown
+    // host) must not also surface a generic exit exception, so derive "should I
+    // throw?" from interpretExitCode rather than re-listing those codes here —
+    // interpretExitCode stays the single source of truth and the two cannot
+    // drift. Every other non-success code remains an unmapped throw so a
+    // genuinely unknown failure still surfaces a catchable error then closes the
+    // stream (§spec:stream-lifecycle-robustness — the guarantee narrows by
+    // exactly the one well-understood exit `2`, it does not loosen).
+    return exitCode != 0 && interpretExitCode(exitCode) == null
         ? Exception('Ping process exited with code: $exitCode')
         : null;
   }
