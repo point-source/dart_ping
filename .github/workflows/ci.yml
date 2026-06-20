@@ -34,31 +34,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dart-lang/setup-dart@v1
-      - run: dart pub get
+      # --no-example: this dart-only runner has no Flutter SDK, and the bundled
+      # example/ is a Flutter package. Skipping its resolution keeps the gate
+      # clean (the example is built by the macOS ios-swift job, not here).
+      - run: dart pub get --no-example
       - run: dart analyze --fatal-infos
       - run: dart test -x live
-
-  # The iOS Dart event-mapping + channel-bridge suite. Pure Dart, runs on
-  # Linux under `flutter test` (#74).
-  ios-dart:
-    name: ios-dart (ubuntu)
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: dart_ping_ios
-    steps:
-      - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-      - run: flutter --version
-      - run: flutter pub get
-      - run: flutter analyze
-      - run: flutter test
 
   # The Swift ICMP framing/parse suite. Requires a macOS runner with Xcode and
   # an iOS simulator (#74). Building the example first generates the Flutter
   # artifacts the Runner target links against.
+  #
+  # The iOS Dart event-mapping + bindings suite is no longer a separate job: it
+  # now lives in dart_ping/test/ios_*.dart and runs under the `core` matrix via
+  # `dart test -x live` (consolidation #28 — single package).
   ios-swift:
     name: ios-swift (macos)
     runs-on: macos-latest
@@ -69,13 +58,13 @@ jobs:
           channel: stable
       - run: flutter --version
       - name: flutter pub get (example)
-        working-directory: dart_ping_ios/example
+        working-directory: dart_ping/example
         run: flutter pub get
       - name: Build example for the simulator (generates Flutter artifacts)
-        working-directory: dart_ping_ios/example
+        working-directory: dart_ping/example
         run: flutter build ios --simulator --no-codesign
       - name: Run RunnerTests via xcodebuild
-        working-directory: dart_ping_ios/example/ios
+        working-directory: dart_ping/example/ios
         run: |
           set -o pipefail
           # Pick whatever iPhone simulator the runner image actually ships,
@@ -92,7 +81,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO
 
   # ---- Informational, non-gating ----------------------------------------
-  # Coverage report for both packages, published as a build artifact and a job
+  # Coverage report for dart_ping, published as a build artifact and a job
   # summary. There is no coverage-threshold gate (by decision); this surfaces
   # the numbers without blocking merges. Live tests are excluded so the number
   # is reproducible — note `base_ping`'s spawn/cleanup path is therefore not
@@ -105,21 +94,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dart-lang/setup-dart@v1
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
       - name: Core coverage
         working-directory: dart_ping
         run: |
-          dart pub get
+          dart pub get --no-example
           dart test -x live --coverage=coverage
           dart run coverage:format_coverage \
             --lcov --in=coverage --out=coverage/lcov.info --report-on=lib
-      - name: iOS coverage
-        working-directory: dart_ping_ios
-        run: |
-          flutter pub get
-          flutter test --coverage
       - name: Summarize
         run: |
           summarize() {
@@ -133,7 +114,6 @@ jobs:
             echo "## Coverage"
             echo ""
             echo "- **dart_ping**: $(summarize dart_ping/coverage/lcov.info)"
-            echo "- **dart_ping_ios**: $(summarize dart_ping_ios/coverage/lcov.info)"
           } >> "$GITHUB_STEP_SUMMARY"
 
   # NOTE: the live-network suite (`dart test -t live` — real `ping` to external

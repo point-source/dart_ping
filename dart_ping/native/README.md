@@ -8,10 +8,11 @@ issue #28 (§spec:ios-code-asset-build-hook, §spec:ios-ffi-binding,
 ## Files
 
 - `PingEngine.swift` — the audited, Flutter-agnostic ICMP echo engine
-  (§spec:swift-icmp-engine). **Transient duplicate** of the
-  `dart_ping_ios` source; de-duplicated when `dart_ping_ios` is retired (#28).
-- `ICMPPacket.swift` — ICMP/ICMPv6 framing, checksum, reply parsing. Same
-  transient-duplicate status.
+  (§spec:swift-icmp-engine). The single source of truth, now that
+  `dart_ping_ios` is retired (#28, §spec:dart-ping-ios-retired).
+- `ICMPPacket.swift` — ICMP/ICMPv6 framing, checksum, reply parsing. Also
+  compiled directly into the example's `RunnerTests` target for the
+  deterministic, network-free Swift framing tests (§spec:ios-tests).
 - `include/dart_ping_ffi.h` — the **stable flat C ABI** (`dart_ping_start` /
   `dart_ping_stop` / one event callback). This is the compile contract the
   build hook passes to `swiftc` (`-import-objc-header`) and that the Dart FFI
@@ -23,8 +24,8 @@ issue #28 (§spec:ios-code-asset-build-hook, §spec:ios-ffi-binding,
 ## How this is built (and when it is NOT)
 
 This native tree is compiled into a **single iOS `dart:ffi` code asset** by
-`dart_ping/hook/build.dart` (Workstream 3, not in this batch) **only when the
-build target's operating system is iOS**. For every other target — pure-Dart
+`dart_ping/hook/build.dart` **only when the build target's operating system is
+iOS**. For every other target — pure-Dart
 desktop, server, Android, and the analyzer / `dart pub get` path — the hook
 emits no code asset and invokes no native toolchain
 (§spec:pure-dart-preserved, §spec:ios-code-asset-build-hook).
@@ -39,8 +40,8 @@ not gated on Linux CI.
 
 On a macOS host with Xcode and the iOS SDK installed, a reviewer compiles the
 three Swift files against the iOS SDK with the C header imported, then confirms
-the two exported C symbols are present. The minimum iOS version is **13.0**,
-matching the existing `dart_ping_ios` `Package.swift`. Run from this `native/`
+the two exported C symbols are present. The minimum iOS version is **13.0**
+(Flutter's minimum-deployment baseline). Run from this `native/`
 directory's parent (`dart_ping/`):
 
 ```sh
@@ -57,8 +58,8 @@ nm -gU libdart_ping.dylib | grep dart_ping_
 #   _dart_ping_stop
 ```
 
-The exact flags WS3's hook invokes may differ (e.g. emitting a static archive /
-`.a` for code-signed framework embedding, additional architectures, bitcode
-settings); the point of this command is the hand-verification a macOS reviewer
-runs to confirm the engine + shim cross-compile for iOS and export the flat C
-ABI. WS3 owns the production invocation.
+The exact flags the build hook invokes may differ (e.g. emitting a static
+archive / `.a` for code-signed framework embedding, additional architectures,
+bitcode settings); the point of this command is the hand-verification a macOS
+reviewer runs to confirm the engine + shim cross-compile for iOS and export the
+flat C ABI. `dart_ping/hook/build.dart` owns the production invocation.

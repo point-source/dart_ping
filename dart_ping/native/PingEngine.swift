@@ -5,18 +5,15 @@
 //  Self-contained, Flutter-agnostic native ICMP ping engine (§spec:swift-icmp-engine).
 //
 //  ── Location note (#28 package consolidation) ──────────────────────────────
-//  This file now ALSO lives here, under `dart_ping/native/`, where it is compiled
-//  into a single iOS `dart:ffi` code asset by `dart_ping/hook/build.dart` (WS3),
-//  fronted by the flat C ABI in `native/include/dart_ping_ffi.h` and the
-//  `@_cdecl` shim in `native/ping_shim.swift`
+//  This file lives under `dart_ping/native/`, where it is compiled into a single
+//  iOS `dart:ffi` code asset by `dart_ping/hook/build.dart`, fronted by the flat
+//  C ABI in `native/include/dart_ping_ffi.h` and the `@_cdecl` shim in
+//  `native/ping_shim.swift`
 //  (§spec:ios-code-asset-build-hook, §spec:ios-ffi-binding).
 //
-//  TRANSIENT DUPLICATE: this is a byte-for-byte copy of the security-audited
-//  source at `dart_ping_ios/ios/dart_ping_ios/Sources/dart_ping_ios/PingEngine.swift`.
-//  The `dart_ping_ios` copy stays the shipping channel-based implementation until
-//  that package is retired (#28); when it is, this duplication is removed and this
-//  copy becomes the single source of truth. Do NOT alter the audited engine logic
-//  in either copy — keep them identical until de-duplication.
+//  This is the single source of truth for the audited ICMP engine. The former
+//  `dart_ping_ios` channel-based second copy was removed when that package was
+//  retired (#28, §spec:dart-ping-ios-retired).
 //  ───────────────────────────────────────────────────────────────────────────
 //
 //  Design highlights:
@@ -150,10 +147,10 @@ public final class PingEngine {
     /// Serializes ALL mutable state below (counters, seq table, finished flag).
     /// Every read/write of that state happens on this queue so bookkeeping is
     /// race-free even though sends, receives, and timeouts run on other queues.
-    private let stateQueue = DispatchQueue(label: "com.point-source.dart_ping_ios.engine.state")
+    private let stateQueue = DispatchQueue(label: "com.point-source.dart_ping.engine.state")
 
     /// Dedicated queue that runs the blocking receive loop.
-    private let receiveQueue = DispatchQueue(label: "com.point-source.dart_ping_ios.engine.receive")
+    private let receiveQueue = DispatchQueue(label: "com.point-source.dart_ping.engine.receive")
 
     /// Timer that drives the send cadence (every `interval` seconds).
     private var sendTimer: DispatchSourceTimer?
