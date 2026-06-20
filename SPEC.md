@@ -2307,7 +2307,7 @@ sections remain the accurate record of the 9.x / pre-consolidation iOS
 implementation that shipped over channels.
 
 ## One `dart_ping` package provides iOS §spec:single-package-ios
-*Status: not started*
+*Status: implemented (Batch #28-3) — adding only `dart_ping` (no `dart_ping_ios`, no `register()`) yields iOS support: the `Ping` factory's `'ios'` branch constructs the FFI-backed `IosPing` directly (§spec:ios-auto-wiring), reusing the native engine + `dart:ffi` seam from #28-1/#28-2. The public `Ping`/`PingData`/`PingResponse`/`PingSummary`/`PingError` shapes are unchanged save the removed `register()` step (10.0.0 model surface owned by §spec:stats-event-model). `dart_ping`'s bundled example imports only `dart_ping` and calls no `register()`, and the Flutter example app's Dart code was reduced to a single `dart_ping` import. Network-free dispatch/guard coverage runs under `dart test`; the single-package SPM iOS end-to-end (correct per-probe `PingResponse`s + terminal `PingSummary` on a Podfile-free SPM target) remains the manual example-app acceptance path on a real iOS target — live ICMP + an iOS runtime are not reproducible on the Linux CI host (§spec:ci, §spec:ios-tests).*
 
 A Flutter app targeting iOS adds **only `dart_ping`** — no `dart_ping_ios`
 dependency and no registration call — and gets working iOS ping. iOS support
@@ -2563,7 +2563,7 @@ acceptance path, since live ICMP and an iOS runtime are not reproducible in CI
 (§spec:ci, §spec:ios-tests).
 
 ## iOS auto-wires; no `register()` §spec:ios-auto-wiring
-*Status: not started*
+*Status: implemented (Batch #28-3) — the `Ping` factory's `'ios'` branch now constructs `IosPing(host, count, interval, timeout, ttl, ipVersion, nat64Synthesis)` directly on `Platform.operatingSystem == 'ios'`, exactly like the linux/mac/windows branches build theirs (`dart_ping/lib/src/ping_interface.dart`). The `Ping.iosFactory` static field + typedef and the transitional `registerDartPingIosFfi()` registrar (`dart_ping/lib/dart_ping_ios_ffi.dart`) and `IosPing.fromFactory` adapter are removed, along with `ios_registrar_test.dart`. Referencing `IosPing` from shared Dart code pulls no native symbols into non-iOS builds — `dart:ffi` is core SDK and the `dart_ping_ffi` code asset is only opened on the iOS branch — so the pure-Dart gate (§spec:pure-dart-preserved) still holds (`dart pub deps` shows no `flutter`; `dart analyze --fatal-infos`/`dart test -x live` green). Removing `register()` is the one intentional break to §spec:public-api-stability beyond the 10.0.0 model redesign (§spec:stats-event-model), documented in migration (§spec:dart-ping-ios-retired). Network-free factory/guard + `IosPing` construction covered by `dart test`; on-iOS dispatch is the manual acceptance path (§spec:ci, §spec:ios-tests).*
 
 iOS support activates with no consumer-written wiring. The `Ping` factory's
 `'ios'` branch constructs the FFI-backed iOS implementation directly, the same
@@ -2594,7 +2594,7 @@ break to the §spec:public-api-stability contract this area makes, beyond the
 (§spec:dart-ping-ios-retired).
 
 ## `dart_ping_ios` is retired §spec:dart-ping-ios-retired
-*Status: not started*
+*Status: implemented (Batch #28-3) — getting iOS support requires no `dart_ping_ios` dependency; `dart_ping` alone suffices. `dart_ping_ios` is marked discontinued via a README banner, a CHANGELOG discontinuation entry, and its pubspec `description` (no forwarding shim); the actual pub.dev "discontinued" flag is a publisher action set out-of-band (like the §spec:ci-develop branch protection). Prior channel-based releases remain published/resolvable for consumers who cannot adopt the raised SDK floor. Migration notes (remove the `dart_ping_ios` dependency, delete the `DartPingIOS.register()` call, raise the SDK floor to ≥3.10.0 — no other source change, since the public `Ping` API and event model are otherwise unchanged) are in `dart_ping`'s README + CHANGELOG. Because removing `Ping.iosFactory` would otherwise break the retired package's compilation, its `register()` is reduced to a deprecated no-op (iOS auto-wires in `dart_ping`'s factory — not a forwarding shim), keeping `dart_ping_ios` `flutter analyze`/`flutter test` green. The bundled `dart_ping` example imports only `dart_ping`; the Flutter example app's Dart code now imports only `dart_ping` and calls no `register()`. NOTE (follow-up): the macOS `ios-swift` CI job still builds the `dart_ping_ios/example` to run that package's Swift `RunnerTests`; re-homing iOS Swift CI onto the consolidated `dart_ping` native engine is a separate macOS/manual concern (§spec:ci, §spec:ios-tests), not reproducible on the Linux host.*
 
 `dart_ping_ios` is discontinued. iOS support is no longer obtained from a
 second package, and no new functional release of `dart_ping_ios` is required to
