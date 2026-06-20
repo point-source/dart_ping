@@ -1,8 +1,17 @@
 name: dart_ping
-description: Multi-platform network ping utility for native desktop and android applications.
+description: >-
+  Multi-platform ICMP ping for Dart and Flutter — Windows, macOS, Linux,
+  Android, and iOS — with live round-trip statistics and packet-loss summaries.
 version: 10.0.0
 homepage: https://github.com/point-source/dart_ping
 repository: https://github.com/point-source/dart_ping
+issue_tracker: https://github.com/point-source/dart_ping/issues
+topics:
+  - ping
+  - icmp
+  - network
+  - networking
+  - latency
 
 environment:
   sdk: ">=3.10.0 <4.0.0"
