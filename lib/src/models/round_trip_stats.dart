@@ -9,8 +9,8 @@ import 'dart:math' as math;
 /// `fromMap`s in `ping_event.dart` reuse it (round_trip_stats.dart is the
 /// lower-level library they import, so the helper lives here). It is not
 /// re-exported from the public `dart_ping` barrel.
-Duration? durationFromMicros(dynamic value) =>
-    value == null ? null : Duration(microseconds: (value as num).toInt());
+Duration? durationFromMicros(Object? value) =>
+    value is num ? .new(microseconds: value.toInt()) : null;
 
 /// Immutable round-trip statistics value object (§spec:stats-round-trip).
 ///
@@ -32,20 +32,6 @@ Duration? durationFromMicros(dynamic value) =>
 ///   and [jitter] is null (it needs at least two samples).
 /// - `sampleCount >= 2`: all five figures are present.
 class RoundTripStats {
-  /// Creates a [RoundTripStats] from already-computed figures.
-  ///
-  /// Honoring the null/absent contract is the caller's responsibility; prefer
-  /// [RoundTripStats.fromSamples] or [RoundTripStatsAccumulator] to build a
-  /// contract-correct instance.
-  const RoundTripStats({
-    this.min,
-    this.avg,
-    this.max,
-    this.stddev,
-    this.jitter,
-    required this.sampleCount,
-  });
-
   /// Smallest successful round-trip time, or null when [sampleCount] is 0.
   final Duration? min;
 
@@ -75,6 +61,30 @@ class RoundTripStats {
   /// Count of successful samples the figures summarize.
   final int sampleCount;
 
+  @override
+  int get hashCode {
+    return min.hashCode ^
+        avg.hashCode ^
+        max.hashCode ^
+        stddev.hashCode ^
+        jitter.hashCode ^
+        sampleCount.hashCode;
+  }
+
+  /// Creates a [RoundTripStats] from already-computed figures.
+  ///
+  /// Honoring the null/absent contract is the caller's responsibility; prefer
+  /// [RoundTripStats.fromSamples] or [RoundTripStatsAccumulator] to build a
+  /// contract-correct instance.
+  const RoundTripStats({
+    this.min,
+    this.avg,
+    this.max,
+    this.stddev,
+    this.jitter,
+    required this.sampleCount,
+  });
+
   /// Builds contract-correct stats from a full list of successful RTTs.
   ///
   /// Delegates to [RoundTripStatsAccumulator] so the batch result is identical
@@ -84,8 +94,23 @@ class RoundTripStats {
     for (final rtt in rtts) {
       acc.add(rtt);
     }
+
     return acc.snapshot();
   }
+
+  factory RoundTripStats.fromMap(Map<String, dynamic> map) {
+    return RoundTripStats(
+      min: durationFromMicros(map['min']),
+      avg: durationFromMicros(map['avg']),
+      max: durationFromMicros(map['max']),
+      stddev: durationFromMicros(map['stddev']),
+      jitter: durationFromMicros(map['jitter']),
+      sampleCount: map['sampleCount']?.toInt() ?? 0,
+    );
+  }
+
+  factory RoundTripStats.fromJson(String source) =>
+      RoundTripStats.fromMap(json.decode(source));
 
   @override
   String toString() {
@@ -106,16 +131,6 @@ class RoundTripStats {
         other.sampleCount == sampleCount;
   }
 
-  @override
-  int get hashCode {
-    return min.hashCode ^
-        avg.hashCode ^
-        max.hashCode ^
-        stddev.hashCode ^
-        jitter.hashCode ^
-        sampleCount.hashCode;
-  }
-
   /// Serializes to a map. Duration fields are encoded in **microseconds** to
   /// preserve sub-millisecond precision.
   Map<String, dynamic> toMap() {
@@ -129,21 +144,7 @@ class RoundTripStats {
     };
   }
 
-  factory RoundTripStats.fromMap(Map<String, dynamic> map) {
-    return RoundTripStats(
-      min: durationFromMicros(map['min']),
-      avg: durationFromMicros(map['avg']),
-      max: durationFromMicros(map['max']),
-      stddev: durationFromMicros(map['stddev']),
-      jitter: durationFromMicros(map['jitter']),
-      sampleCount: map['sampleCount']?.toInt() ?? 0,
-    );
-  }
-
   String toJson() => json.encode(toMap());
-
-  factory RoundTripStats.fromJson(String source) =>
-      RoundTripStats.fromMap(json.decode(source));
 }
 
 /// Mutable helper that computes [RoundTripStats] **incrementally** as
@@ -180,19 +181,22 @@ class RoundTripStatsAccumulator {
     // The figures change, so any memoized snapshot is now stale.
     _cachedSnapshot = null;
 
-    _count++;
+    _count += 1;
     _sumMicros += micros;
     _sumOfSquares += micros.toDouble() * micros.toDouble();
 
-    if (_minMicros == null || micros < _minMicros!) {
+    final currentMin = _minMicros;
+    if (currentMin == null || micros < currentMin) {
       _minMicros = micros;
     }
-    if (_maxMicros == null || micros > _maxMicros!) {
+    final currentMax = _maxMicros;
+    if (currentMax == null || micros > currentMax) {
       _maxMicros = micros;
     }
 
-    if (_previousMicros != null) {
-      _sumAbsDeltaMicros += (micros - _previousMicros!).abs();
+    final previous = _previousMicros;
+    if (previous != null) {
+      _sumAbsDeltaMicros += (micros - previous).abs();
     }
     _previousMicros = micros;
   }
@@ -203,7 +207,11 @@ class RoundTripStatsAccumulator {
   RoundTripStats snapshot() => _cachedSnapshot ??= _computeSnapshot();
 
   RoundTripStats _computeSnapshot() {
-    if (_count == 0) {
+    final minMicros = _minMicros;
+    final maxMicros = _maxMicros;
+    // A non-zero count guarantees min/max were set; the explicit null checks let
+    // the compiler promote the locals so no non-null assertion is needed below.
+    if (_count == 0 || minMicros == null || maxMicros == null) {
       return const RoundTripStats(sampleCount: 0);
     }
 
@@ -214,14 +222,14 @@ class RoundTripStatsAccumulator {
     final variance = math.max(0.0, (_sumOfSquares / _count) - (mean * mean));
     final stddevMicros = math.sqrt(variance);
 
-    final Duration? jitter = _count >= 2
+    final jitter = _count >= 2
         ? Duration(microseconds: (_sumAbsDeltaMicros / (_count - 1)).round())
         : null;
 
     return RoundTripStats(
-      min: Duration(microseconds: _minMicros!),
+      min: Duration(microseconds: minMicros),
       avg: Duration(microseconds: mean.round()),
-      max: Duration(microseconds: _maxMicros!),
+      max: Duration(microseconds: maxMicros),
       stddev: Duration(microseconds: stddevMicros.round()),
       jitter: jitter,
       sampleCount: _count,

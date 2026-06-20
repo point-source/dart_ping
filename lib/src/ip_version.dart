@@ -40,9 +40,9 @@ enum IpVersion {
 /// rather than being re-derived with ad-hoc ternaries at each call site.
 extension IpVersionInfo on IpVersion {
   /// Human-readable label, e.g. for error messages: `'IPv4'` / `'IPv6'`.
-  String get label => this == IpVersion.ipv6 ? 'IPv6' : 'IPv4';
+  String get label => this == .ipv6 ? 'IPv6' : 'IPv4';
 
   /// The native `ping`/`ping6` family flag (`-4` / `-6`) for platforms whose
   /// unified `ping` binary selects the family by flag (Linux/Android, Windows).
-  String get flag => this == IpVersion.ipv6 ? '-6' : '-4';
+  String get flag => this == .ipv6 ? '-6' : '-4';
 }

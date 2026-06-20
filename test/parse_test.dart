@@ -223,7 +223,8 @@ class Responses {
   final String timeout;
   final String unknownHost;
   final String exceedTtl;
-  Responses({
+
+  const Responses({
     required this.response,
     required this.summary,
     required this.timeout,

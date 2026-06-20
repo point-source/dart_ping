@@ -58,7 +58,7 @@ Future<void> _buildIosCodeAsset(
 
   // Device vs simulator drives both the SDK name and the triple's environment
   // suffix; derive it once so the two cannot drift apart.
-  final isSimulator = iosConfig.targetSdk == IOSSdk.iPhoneSimulator;
+  final isSimulator = iosConfig.targetSdk == .iPhoneSimulator;
   // The SDK name `xcrun` understands ("iphoneos" / "iphonesimulator").
   final sdkName = isSimulator ? 'iphonesimulator' : 'iphoneos';
 
@@ -72,8 +72,8 @@ Future<void> _buildIosCodeAsset(
   ])).trim();
 
   final archName = switch (architecture) {
-    Architecture.arm64 => 'arm64',
-    Architecture.x64 => 'x86_64',
+    .arm64 => 'arm64',
+    .x64 => 'x86_64',
     _ => throw UnsupportedError(
       'dart_ping iOS code asset: unsupported target architecture '
       '"$architecture" (expected arm64 device/simulator or x86_64 simulator).',
@@ -86,7 +86,7 @@ Future<void> _buildIosCodeAsset(
 
   final nativeDir = input.packageRoot.resolve('native/');
   final header = nativeDir.resolve('include/dart_ping_ffi.h');
-  final sources = <Uri>[
+  final sources = [
     nativeDir.resolve('PingEngine.swift'),
     nativeDir.resolve('ICMPPacket.swift'),
     nativeDir.resolve('ping_shim.swift'),
@@ -98,6 +98,8 @@ Future<void> _buildIosCodeAsset(
   // the flat C ABI header for its shared types via `-import-objc-header`; the
   // dylib's install name is `@rpath/...` so the consuming Xcode/Flutter toolchain
   // can embed and code-sign it as a bundled framework (§spec:ios-code-asset-build-hook).
+  // Run for its side effect (compiling the dylib); stdout is not needed here.
+  // ignore: avoid-ignoring-return-values
   await _run('xcrun', [
     '--sdk',
     sdkName,
@@ -135,8 +137,13 @@ Future<void> _buildIosCodeAsset(
 /// Runs [executable] with [arguments], throwing with captured stderr on failure.
 Future<String> _run(String executable, List<String> arguments) async {
   final result = await Process.run(executable, arguments);
+  // `Process.run` types stdout/stderr as `dynamic`; the typed locals are
+  // implicit downcasts (Process.run returns strings unless a decoder is
+  // overridden), avoiding explicit `as` casts.
   if (result.exitCode != 0) {
-    final stderr = (result.stderr as String?)?.trim() ?? '';
+    final String? stderrText = result.stderr;
+    final stderr = stderrText?.trim() ?? '';
+
     throw ProcessException(
       executable,
       arguments,
@@ -144,5 +151,8 @@ Future<String> _run(String executable, List<String> arguments) async {
       result.exitCode,
     );
   }
-  return result.stdout as String;
+
+  final String stdout = result.stdout;
+
+  return stdout;
 }

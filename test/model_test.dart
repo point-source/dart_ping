@@ -8,36 +8,30 @@ import 'package:test/test.dart';
 void main() {
   group('PingError', () {
     test('toString without a message is just the error name', () {
-      expect(
-        PingError(ErrorType.requestTimedOut).toString(),
-        'requestTimedOut',
-      );
+      expect(PingError(.requestTimedOut).toString(), 'requestTimedOut');
     });
 
     test('toString with a message is "<name>: <message>"', () {
-      expect(
-        PingError(ErrorType.unknown, message: 'boom').toString(),
-        'unknown: boom',
-      );
+      expect(PingError(.unknown, message: 'boom').toString(), 'unknown: boom');
     });
 
     test('copyWith with no args returns an equal value', () {
-      final original = PingError(ErrorType.noReply, message: 'm');
+      final original = PingError(.noReply, message: 'm');
       expect(original.copyWith(), equals(original));
     });
 
     test('copyWith overrides each field', () {
       final updated = PingError(
-        ErrorType.noReply,
-      ).copyWith(error: ErrorType.unknownHost, message: 'changed');
+        .noReply,
+      ).copyWith(error: .unknownHost, message: 'changed');
       expect(updated.error, ErrorType.unknownHost);
       expect(updated.message, 'changed');
     });
 
     test('equality, identity and hashCode', () {
-      final a = PingError(ErrorType.unknown, message: 'x');
-      final b = PingError(ErrorType.unknown, message: 'x');
-      final c = PingError(ErrorType.unknown, message: 'y');
+      final a = PingError(.unknown, message: 'x');
+      final b = PingError(.unknown, message: 'x');
+      final c = PingError(.unknown, message: 'y');
       expect(a, equals(b));
       expect(a.hashCode, b.hashCode);
       expect(a == a, isTrue); // identical fast-path
@@ -46,7 +40,7 @@ void main() {
     });
 
     test('toMap serializes the human-readable error message', () {
-      expect(PingError(ErrorType.timeToLiveExceeded, message: 'm').toMap(), {
+      expect(PingError(.timeToLiveExceeded, message: 'm').toMap(), {
         'type': 'error',
         'error': 'Time To Live Exceeded',
         'message': 'm',
@@ -58,26 +52,22 @@ void main() {
 
     test('toString appends seq and ip when present', () {
       expect(
-        PingError(
-          ErrorType.timeToLiveExceeded,
-          seq: 3,
-          ip: '1.2.3.4',
-        ).toString(),
+        PingError(.timeToLiveExceeded, seq: 3, ip: '1.2.3.4').toString(),
         'timeToLiveExceeded, seq:3, ip:1.2.3.4',
       );
     });
 
     test('copyWith overrides seq and ip', () {
       final updated = PingError(
-        ErrorType.requestTimedOut,
+        .requestTimedOut,
       ).copyWith(seq: 5, ip: '9.9.9.9');
       expect(updated.seq, 5);
       expect(updated.ip, '9.9.9.9');
     });
 
     test('equality distinguishes seq/ip', () {
-      final a = PingError(ErrorType.requestTimedOut, seq: 1);
-      final b = PingError(ErrorType.requestTimedOut, seq: 2);
+      final a = PingError(.requestTimedOut, seq: 1);
+      final b = PingError(.requestTimedOut, seq: 2);
       expect(a, isNot(equals(b)));
     });
 
@@ -168,7 +158,7 @@ void main() {
         transmitted: 4,
         received: 2,
         time: const Duration(milliseconds: 1500),
-        errors: [PingError(ErrorType.noReply)],
+        errors: [PingError(.noReply)],
       ).toString();
       expect(str, contains('loss:50.0%'));
       expect(str, contains('time: 1500 ms'));
@@ -210,7 +200,7 @@ void main() {
         transmitted: 4,
         received: 3,
         time: const Duration(milliseconds: 1),
-        errors: [PingError(ErrorType.unknown)],
+        errors: [PingError(.unknown)],
       );
       expect(original.copyWith(), equals(original));
     });
@@ -220,7 +210,7 @@ void main() {
         transmitted: 9,
         received: 8,
         time: const Duration(milliseconds: 7),
-        errors: [PingError(ErrorType.noReply)],
+        errors: [PingError(.noReply)],
       );
       expect(updated.transmitted, 9);
       expect(updated.received, 8);
@@ -232,17 +222,17 @@ void main() {
       final a = PingSummary(
         transmitted: 1,
         received: 1,
-        errors: [PingError(ErrorType.noReply)],
+        errors: [PingError(.noReply)],
       );
       final b = PingSummary(
         transmitted: 1,
         received: 1,
-        errors: [PingError(ErrorType.noReply)],
+        errors: [PingError(.noReply)],
       );
       final c = PingSummary(
         transmitted: 1,
         received: 1,
-        errors: [PingError(ErrorType.unknown)],
+        errors: [PingError(.unknown)],
       );
       expect(a, equals(b));
       expect(a.hashCode, b.hashCode);
@@ -276,7 +266,7 @@ void main() {
         isA<PingResponse>(),
       );
       expect(
-        PingEvent.fromMap(PingError(ErrorType.requestTimedOut).toMap()),
+        PingEvent.fromMap(PingError(.requestTimedOut).toMap()),
         isA<PingError>(),
       );
       expect(

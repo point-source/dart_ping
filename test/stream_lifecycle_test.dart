@@ -18,22 +18,10 @@ const _hardTimeout = Duration(seconds: 5);
 /// emit their chunks and then close. That closure is what lets the merged line
 /// stream complete and `onDone` (`_cleanup`) fire.
 class FakeProcess implements Process {
-  FakeProcess({
-    List<String> stdoutLines = const [],
-    List<String> stderrLines = const [],
-    required int exit,
-  }) : _stdout = Stream<List<int>>.fromIterable(
-         stdoutLines.map((l) => utf8.encode('$l\n')),
-       ),
-       _stderr = Stream<List<int>>.fromIterable(
-         stderrLines.map((l) => utf8.encode('$l\n')),
-       ),
-       _exitCode = Future<int>.value(exit);
-
   final Stream<List<int>> _stdout;
+
   final Stream<List<int>> _stderr;
   final Future<int> _exitCode;
-
   @override
   Stream<List<int>> get stdout => _stdout;
 
@@ -44,41 +32,54 @@ class FakeProcess implements Process {
   Future<int> get exitCode => _exitCode;
 
   @override
-  bool kill([ProcessSignal signal = ProcessSignal.sigterm]) => true;
-
-  @override
   int get pid => throw UnimplementedError();
 
   @override
   IOSink get stdin => throw UnimplementedError();
+
+  FakeProcess({
+    List<String> stdoutLines = const [],
+    List<String> stderrLines = const [],
+    required int exit,
+  }) : _stdout = Stream.fromIterable(
+         stdoutLines.map((l) => utf8.encode('$l\n')),
+       ),
+       _stderr = Stream.fromIterable(
+         stderrLines.map((l) => utf8.encode('$l\n')),
+       ),
+       _exitCode = Future.value(exit);
+
+  @override
+  bool kill([ProcessSignal signal = .sigterm]) => true;
 }
 
 /// [PingLinux] subclass that replaces the OS process launch with either a
 /// configured [FakeProcess] or a launch failure. All parsing and exit-code
 /// interpretation are inherited from [PingLinux] unchanged.
 class TestPing extends PingLinux {
-  TestPing({FakeProcess? process, Object? launchError})
-    : _process = process,
-      _launchError = launchError,
-      super('1.1.1.1', 5, 1000, 1000, 255, IpVersion.ipv4);
-
   final FakeProcess? _process;
-  final Object? _launchError;
 
+  final Object? _launchError;
   @override
   Future<Process> get platformProcess async {
     final launchError = _launchError;
     if (launchError != null) {
       throw launchError;
     }
+
     return _process!;
   }
+
+  TestPing({FakeProcess? process, Object? launchError})
+    : _process = process,
+      _launchError = launchError,
+      super('1.1.1.1', 5, 1000, 1000, 255, .ipv4);
 }
 
 /// Result of draining a ping stream to completion.
 class _Collected {
-  final List<PingEvent> data = [];
-  final List<Object> errors = [];
+  final data = <PingEvent>[];
+  final errors = <Object>[];
   int doneCount = 0;
 }
 
@@ -93,7 +94,7 @@ Future<_Collected> _drain(Ping ping) async {
     collected.data.add,
     onError: collected.errors.add,
     onDone: () {
-      collected.doneCount++;
+      collected.doneCount += 1;
       if (!completer.isCompleted) completer.complete();
     },
   );
@@ -102,6 +103,7 @@ Future<_Collected> _drain(Ping ping) async {
     _hardTimeout,
     onTimeout: () => fail('Stream hung: done never fired within $_hardTimeout'),
   );
+
   return collected;
 }
 
@@ -183,9 +185,9 @@ void main() {
 
       final responses = result.data.whereType<PingResponse>().toList();
       expect(responses, hasLength(2), reason: 'two per-probe responses');
-      expect(responses[0].seq, 1);
-      expect(responses[0].ttl, 57);
-      expect(responses[0].ip, '1.1.1.1');
+      expect(responses.first.seq, 1);
+      expect(responses.first.ttl, 57);
+      expect(responses.first.ip, '1.1.1.1');
       expect(responses[1].seq, 2);
       expect(responses[1].ttl, 57);
 

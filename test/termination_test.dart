@@ -7,8 +7,8 @@ import 'package:test/test.dart';
 void main() {
   group('Early termination: ', () {
     test('google.com', () async {
-      var ping = Ping('google.com', count: 5);
-      var data = <PingEvent>[];
+      Ping ping = Ping('google.com', count: 5);
+      List<PingEvent> data = <PingEvent>[];
       ping.stream.listen(data.add);
       await Future.delayed(Duration(milliseconds: 1300));
       await ping.stop();
@@ -17,8 +17,8 @@ void main() {
     });
 
     test('1.1.1.1', () async {
-      var ping = Ping('1.1.1.1', count: 5);
-      var data = <PingEvent>[];
+      Ping ping = Ping('1.1.1.1', count: 5);
+      List<PingEvent> data = <PingEvent>[];
       ping.stream.listen(data.add);
       await Future.delayed(Duration(milliseconds: 1300));
       await ping.stop();
@@ -29,8 +29,8 @@ void main() {
 
   group('Stop after error: ', () {
     test('stop() after unknownHost closes stream', () async {
-      var ping = Ping('this.host.does.not.exist.invalid', count: 3);
-      var data = <PingEvent>[];
+      Ping ping = Ping('this.host.does.not.exist.invalid', count: 3);
+      List<PingEvent> data = <PingEvent>[];
       ping.stream.listen(data.add);
       // Allow the process to fail with unknownHost
       await Future.delayed(Duration(milliseconds: 3000));

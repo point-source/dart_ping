@@ -11,15 +11,15 @@ void main() {
 
   group('Pinging host: ', () {
     test('google.com', () async {
-      var ping = Ping('google.com', count: 1);
-      var data = await ping.stream.first;
+      Ping ping = Ping('google.com', count: 1);
+      PingEvent data = await ping.stream.first;
       expect(data, isA<PingResponse>());
       expect((data as PingResponse).seq, seq);
     });
 
     test('1.1.1.1', () async {
-      var ping = Ping('1.1.1.1', count: 1);
-      var data = await ping.stream.first;
+      Ping ping = Ping('1.1.1.1', count: 1);
+      PingEvent data = await ping.stream.first;
       expect(data, isA<PingResponse>());
       expect((data as PingResponse).ip, '1.1.1.1');
       expect(data.seq, seq);
@@ -28,15 +28,15 @@ void main() {
 
   group('Error handling: ', () {
     test('Unknown Host', () async {
-      var ping = Ping('shouldneverresolve', count: 1, timeout: 1);
-      var data = await ping.stream.first;
+      Ping ping = Ping('shouldneverresolve', count: 1, timeout: 1);
+      PingEvent data = await ping.stream.first;
       expect(data, isA<PingError>());
       expect((data as PingError).error, ErrorType.unknownHost);
     });
 
     test('TTL Exceeded', () async {
-      var ping = Ping('201.202.203.204', count: 2, ttl: 1);
-      var data = await ping.stream.last;
+      Ping ping = Ping('201.202.203.204', count: 2, ttl: 1);
+      PingEvent data = await ping.stream.last;
       expect(data, isA<PingSummary>());
       expect(
         (data as PingSummary).errors.toString(),

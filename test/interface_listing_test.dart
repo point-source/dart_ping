@@ -61,7 +61,7 @@ void main() {
           ({
             bool includeLoopback = false,
             bool includeLinkLocal = false,
-            InternetAddressType type = InternetAddressType.any,
+            InternetAddressType type = .any,
           }) => Future<List<NetworkInterface>>.error(boom);
 
       expectLater(listNetworkInterfaces(), throwsA(same(boom)));

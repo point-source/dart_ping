@@ -1,4 +1,3 @@
-import 'package:dart_ping/dart_ping.dart';
 import 'package:dart_ping/src/ping/linux_ping.dart';
 import 'package:dart_ping/src/ping/mac_ping.dart';
 import 'package:dart_ping/src/ping/windows_ping.dart';
@@ -16,7 +15,7 @@ import 'package:test/test.dart';
 void main() {
   group('PingLinux', () {
     test('nat64Synthesis defaults to enabled when the option is omitted', () {
-      final ping = PingLinux('host', 3, 1, 2, 64, IpVersion.ipv4);
+      final ping = PingLinux('host', 3, 1, 2, 64, .ipv4);
       expect(ping.nat64Synthesis, isTrue);
     });
 
@@ -27,7 +26,7 @@ void main() {
         1,
         2,
         64,
-        IpVersion.ipv4,
+        .ipv4,
         nat64Synthesis: true,
       );
       final disabled = PingLinux(
@@ -36,7 +35,7 @@ void main() {
         1,
         2,
         64,
-        IpVersion.ipv4,
+        .ipv4,
         nat64Synthesis: false,
       );
       expect(enabled.nat64Synthesis, isTrue);
@@ -49,14 +48,14 @@ void main() {
         // Backward-compat guard: whether the option is omitted (default),
         // explicitly true, or explicitly false, the spawned command must be
         // identical — proving the subprocess option never touches the raw path.
-        final baseline = PingLinux('host', 3, 1, 2, 64, IpVersion.ipv4);
+        final baseline = PingLinux('host', 3, 1, 2, 64, .ipv4);
         final enabled = PingLinux(
           'host',
           3,
           1,
           2,
           64,
-          IpVersion.ipv4,
+          .ipv4,
           nat64Synthesis: true,
         );
         final disabled = PingLinux(
@@ -65,7 +64,7 @@ void main() {
           1,
           2,
           64,
-          IpVersion.ipv4,
+          .ipv4,
           nat64Synthesis: false,
         );
         expect(enabled.params, baseline.params);
@@ -78,27 +77,19 @@ void main() {
 
   group('PingMac', () {
     test('nat64Synthesis defaults to enabled when the option is omitted', () {
-      final ping = PingMac('host', 3, 1, 2, 64, IpVersion.ipv4);
+      final ping = PingMac('host', 3, 1, 2, 64, .ipv4);
       expect(ping.nat64Synthesis, isTrue);
     });
 
     test('nat64Synthesis threads the supplied value (true / false)', () {
-      final enabled = PingMac(
-        'host',
-        3,
-        1,
-        2,
-        64,
-        IpVersion.ipv4,
-        nat64Synthesis: true,
-      );
+      final enabled = PingMac('host', 3, 1, 2, 64, .ipv4, nat64Synthesis: true);
       final disabled = PingMac(
         'host',
         3,
         1,
         2,
         64,
-        IpVersion.ipv4,
+        .ipv4,
         nat64Synthesis: false,
       );
       expect(enabled.nat64Synthesis, isTrue);
@@ -108,14 +99,14 @@ void main() {
     test(
       'the option is an inert NO-OP: params/command are byte-for-byte equal',
       () {
-        final baseline = PingMac('host', 3, 1, 2, 64, IpVersion.ipv4);
+        final baseline = PingMac('host', 3, 1, 2, 64, .ipv4);
         final enabled = PingMac(
           'host',
           3,
           1,
           2,
           64,
-          IpVersion.ipv4,
+          .ipv4,
           nat64Synthesis: true,
         );
         final disabled = PingMac(
@@ -124,7 +115,7 @@ void main() {
           1,
           2,
           64,
-          IpVersion.ipv4,
+          .ipv4,
           nat64Synthesis: false,
         );
         expect(enabled.params, baseline.params);
@@ -139,7 +130,7 @@ void main() {
     // Windows rejects bare interface names, so these cases stay on
     // IpVersion.ipv4 with no interface to construct cleanly.
     test('nat64Synthesis defaults to enabled when the option is omitted', () {
-      final ping = PingWindows('host', 3, 1, 2, 64, IpVersion.ipv4);
+      final ping = PingWindows('host', 3, 1, 2, 64, .ipv4);
       expect(ping.nat64Synthesis, isTrue);
     });
 
@@ -150,7 +141,7 @@ void main() {
         1,
         2,
         64,
-        IpVersion.ipv4,
+        .ipv4,
         nat64Synthesis: true,
       );
       final disabled = PingWindows(
@@ -159,7 +150,7 @@ void main() {
         1,
         2,
         64,
-        IpVersion.ipv4,
+        .ipv4,
         nat64Synthesis: false,
       );
       expect(enabled.nat64Synthesis, isTrue);
@@ -169,14 +160,14 @@ void main() {
     test(
       'the option is an inert NO-OP: params/command are byte-for-byte equal',
       () {
-        final baseline = PingWindows('host', 3, 1, 2, 64, IpVersion.ipv4);
+        final baseline = PingWindows('host', 3, 1, 2, 64, .ipv4);
         final enabled = PingWindows(
           'host',
           3,
           1,
           2,
           64,
-          IpVersion.ipv4,
+          .ipv4,
           nat64Synthesis: true,
         );
         final disabled = PingWindows(
@@ -185,7 +176,7 @@ void main() {
           1,
           2,
           64,
-          IpVersion.ipv4,
+          .ipv4,
           nat64Synthesis: false,
         );
         expect(enabled.params, baseline.params);

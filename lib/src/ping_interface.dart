@@ -29,6 +29,26 @@ void throwIfInterfaceUnsupportedOnIos(String? interface) {
 /// Ping class used to instantiate a ping instance.
 /// Spawns an OS ping process when the stream property is listened to
 abstract class Ping {
+  /// Parser used to interpret ping process output
+  late PingParser parser;
+
+  /// The command that will be run on the host OS
+  String get command;
+
+  /// Stream of [PingEvent]s which spawns a ping process on listen and
+  /// kills it on cancellation. The stream closes when the process ends.
+  ///
+  /// Each event is one variant of the sealed [PingEvent] union — a successful
+  /// probe [PingResponse], a probe/run [PingError], or the terminal
+  /// [PingSummary]. Consumers branch with an exhaustive `switch`; the terminal
+  /// [PingSummary] is the final event and is identifiable by type alone
+  /// (`is PingSummary`).
+  ///
+  /// Note that if you cancel the subscription, you will not receive
+  /// the ping summary data. If you want to prematurely halt the process
+  /// and still receive summary output, use the [stop] method.
+  Stream<PingEvent> get stream;
+
   /// Creates an appropriate Ping instance for the detected platform
   factory Ping(
     /// Hostname, domain, or IP which you would like to ping
@@ -48,7 +68,7 @@ abstract class Ping {
 
     /// The IP address family to ping with — an explicit, exclusive selection
     /// (see [IpVersion]). Defaults to [IpVersion.ipv4] (IPv4 only).
-    IpVersion ipVersion = IpVersion.ipv4,
+    IpVersion ipVersion = .ipv4,
 
     /// Custom parser to interpret ping process output
     /// Useful for non-english based platforms
@@ -110,6 +130,7 @@ abstract class Ping {
           interface: interface,
           nat64Synthesis: nat64Synthesis,
         );
+
       case 'macos':
         return PingMac(
           host,
@@ -123,6 +144,7 @@ abstract class Ping {
           interface: interface,
           nat64Synthesis: nat64Synthesis,
         );
+
       case 'windows':
         return PingWindows(
           host,
@@ -137,8 +159,10 @@ abstract class Ping {
           interface: interface,
           nat64Synthesis: nat64Synthesis,
         );
+
       case 'ios':
         throwIfInterfaceUnsupportedOnIos(interface);
+
         // iOS dispatches to the FFI-backed implementation directly, exactly as
         // the other branches construct their platform `Ping`s. No `iosFactory`
         // indirection and no `register()` step — `dart:ffi` is part of the core
@@ -154,30 +178,11 @@ abstract class Ping {
           ipVersion,
           nat64Synthesis,
         );
+
       default:
         throw UnimplementedError('Ping not supported on this platform');
     }
   }
-
-  /// Parser used to interpret ping process output
-  late PingParser parser;
-
-  /// The command that will be run on the host OS
-  String get command;
-
-  /// Stream of [PingEvent]s which spawns a ping process on listen and
-  /// kills it on cancellation. The stream closes when the process ends.
-  ///
-  /// Each event is one variant of the sealed [PingEvent] union — a successful
-  /// probe [PingResponse], a probe/run [PingError], or the terminal
-  /// [PingSummary]. Consumers branch with an exhaustive `switch`; the terminal
-  /// [PingSummary] is the final event and is identifiable by type alone
-  /// (`is PingSummary`).
-  ///
-  /// Note that if you cancel the subscription, you will not receive
-  /// the ping summary data. If you want to prematurely halt the process
-  /// and still receive summary output, use the [stop] method.
-  Stream<PingEvent> get stream;
 
   /// Kills ping process and closes stream.
   ///

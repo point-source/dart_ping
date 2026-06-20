@@ -3,7 +3,7 @@ import 'package:test/test.dart';
 
 void main() {
   group('Serialization', () {
-    final pingError = PingError(ErrorType.requestTimedOut, message: 'Test');
+    final pingError = PingError(.requestTimedOut, message: 'Test');
     final pingResponse = PingResponse(
       seq: 2,
       ttl: 5,
@@ -30,11 +30,7 @@ void main() {
     });
 
     test('PingError with seq/ip', () {
-      final err = PingError(
-        ErrorType.timeToLiveExceeded,
-        seq: 3,
-        ip: '10.0.0.1',
-      );
+      final err = PingError(.timeToLiveExceeded, seq: 3, ip: '10.0.0.1');
       final roundTripped = PingError.fromJson(err.toJson());
       expect(roundTripped, equals(err));
       expect(roundTripped.seq, 3);

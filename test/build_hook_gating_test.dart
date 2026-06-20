@@ -45,7 +45,7 @@ void main() {
       );
       // Defensive: buildCodeAssets:false dominates even if an OS leaks through.
       expect(
-        shouldBuildIosAsset(buildCodeAssets: false, targetOS: OS.iOS),
+        shouldBuildIosAsset(buildCodeAssets: false, targetOS: .iOS),
         isFalse,
       );
     });
@@ -56,7 +56,7 @@ void main() {
       // it cannot pass vacuously the way an all-`isFalse` matrix could if `OS`
       // ever dropped its iOS value).
       expect(
-        shouldBuildIosAsset(buildCodeAssets: true, targetOS: OS.iOS),
+        shouldBuildIosAsset(buildCodeAssets: true, targetOS: .iOS),
         isTrue,
         reason: 'iOS + code assets requested must build the native code asset',
       );
@@ -65,7 +65,7 @@ void main() {
     test('covers every known OS (no unhandled target silently builds)', () {
       for (final os in OS.values) {
         final builds = shouldBuildIosAsset(buildCodeAssets: true, targetOS: os);
-        expect(builds, os == OS.iOS, reason: 'only iOS builds; $os must not');
+        expect(builds, os == .iOS, reason: 'only iOS builds; $os must not');
       }
     });
   });

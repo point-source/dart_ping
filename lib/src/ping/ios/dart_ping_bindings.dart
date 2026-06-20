@@ -46,45 +46,45 @@ import 'package:ffi/ffi.dart';
 /// `dart_ping_event_kind` — the active case of a [DartPingEvent], read first.
 abstract final class DartPingEventKind {
   /// `.response` — fields: seq, has_ttl/ttl, time_micros, ip.
-  static const int response = 0;
+  static const response = 0;
 
   /// `.error` — fields: error_kind, has_seq/seq, has_ip/ip.
-  static const int error = 1;
+  static const error = 1;
 
   /// `.summary` — fields: transmitted, received, time_micros, errors/errors_len.
-  static const int summary = 2;
+  static const summary = 2;
 }
 
 /// `dart_ping_error_kind` — the error classification carried by a `.error`
 /// event's `errorKind`, and the element type of a summary's `errors` array.
 abstract final class DartPingErrorKind {
   /// Per-probe timeout (`.requestTimedOut`).
-  static const int requestTimedOut = 0;
+  static const requestTimedOut = 0;
 
   /// TTL / hop limit exceeded (`.timeToLiveExceeded`).
-  static const int timeToLiveExceeded = 1;
+  static const timeToLiveExceeded = 1;
 
   /// Run-level: nothing came back (`.noReply`).
-  static const int noReply = 2;
+  static const noReply = 2;
 
   /// Name resolution miss (`.unknownHost`).
-  static const int unknownHost = 3;
+  static const unknownHost = 3;
 
   /// Address-family / route problem (`.noRoute`).
-  static const int noRoute = 4;
+  static const noRoute = 4;
 
   /// Catch-all (`.unknown`).
-  static const int unknown = 5;
+  static const unknown = 5;
 }
 
 /// `dart_ping_family` — the IP address family a run resolves and sends for,
 /// passed into [dartPingStart] as the `family` argument.
 abstract final class DartPingFamily {
   /// `.v4`.
-  static const int v4 = 0;
+  static const v4 = 0;
 
   /// `.v6`.
-  static const int v6 = 1;
+  static const v6 = 1;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

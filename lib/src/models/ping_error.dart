@@ -8,9 +8,8 @@ part of 'ping_event.dart';
 /// — so a probe that both identifies itself and reports an error stays a single
 /// event (§spec:ios-error-parity, §spec:address-family-error-honesty).
 final class PingError extends PingEvent {
-  const PingError(this.error, {this.message, this.seq, this.ip, this.stats});
-
   final ErrorType error;
+
   final String? message;
 
   /// Probe sequence id, when the error names a probe (timeout / TTL-exceeded).
@@ -27,8 +26,33 @@ final class PingError extends PingEvent {
   @override
   final RoundTripStats? stats;
 
-  String get _errorStr =>
-      error.toString().substring(error.toString().indexOf('.') + 1);
+  @override
+  int get hashCode =>
+      error.hashCode ^
+      message.hashCode ^
+      seq.hashCode ^
+      ip.hashCode ^
+      stats.hashCode;
+
+  String get _errorStr => error.name;
+
+  const PingError(this.error, {this.message, this.seq, this.ip, this.stats});
+
+  factory PingError.fromMap(Map<String, dynamic> map) {
+    return PingError(
+      ErrorType.fromMessage(map['error'] ?? ''),
+      message: map['message'],
+      seq: map['seq']?.toInt(),
+      ip: map['ip'],
+      stats: map['stats'] == null ? null : RoundTripStats.fromMap(map['stats']),
+    );
+  }
+
+  factory PingError.fromJson(String source) {
+    final Map<String, dynamic> map = json.decode(source);
+
+    return PingError.fromMap(map);
+  }
 
   @override
   String toString() {
@@ -70,14 +94,6 @@ final class PingError extends PingEvent {
   }
 
   @override
-  int get hashCode =>
-      error.hashCode ^
-      message.hashCode ^
-      seq.hashCode ^
-      ip.hashCode ^
-      stats.hashCode;
-
-  @override
   Map<String, dynamic> toMap() {
     return {
       'type': 'error',
@@ -88,21 +104,6 @@ final class PingError extends PingEvent {
       'stats': stats?.toMap(),
     };
   }
-
-  factory PingError.fromMap(Map<String, dynamic> map) {
-    return PingError(
-      ErrorType.fromMessage(map['error'] ?? ''),
-      message: map['message'],
-      seq: map['seq']?.toInt(),
-      ip: map['ip'],
-      stats: map['stats'] != null
-          ? RoundTripStats.fromMap(map['stats'] as Map<String, dynamic>)
-          : null,
-    );
-  }
-
-  factory PingError.fromJson(String source) =>
-      PingError.fromMap(json.decode(source) as Map<String, dynamic>);
 }
 
 enum ErrorType {
@@ -129,17 +130,22 @@ enum ErrorType {
   static ErrorType fromMessage(String message) {
     switch (message) {
       case 'Time To Live Exceeded':
-        return ErrorType.timeToLiveExceeded;
+        return timeToLiveExceeded;
+
       case 'Request Timed Out':
-        return ErrorType.requestTimedOut;
+        return requestTimedOut;
+
       case 'Unknown Host':
-        return ErrorType.unknownHost;
+        return unknownHost;
+
       case 'No Reply':
-        return ErrorType.noReply;
+        return noReply;
+
       case 'No Route':
-        return ErrorType.noRoute;
+        return noRoute;
+
       default:
-        return ErrorType.unknown;
+        return unknown;
     }
   }
 }

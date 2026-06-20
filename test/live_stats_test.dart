@@ -20,45 +20,45 @@ const _hardTimeout = Duration(seconds: 5);
 /// Mirrors the private copy in `stats_event_test.dart` (each suite keeps its
 /// own copy of the harness).
 class FakeProcess implements Process {
-  FakeProcess({List<String> stdoutLines = const [], required int exit})
-    : _stdout = Stream<List<int>>.fromIterable(
-        stdoutLines.map((l) => utf8.encode('$l\n')),
-      ),
-      _exitCode = Future<int>.value(exit);
-
   final Stream<List<int>> _stdout;
-  final Future<int> _exitCode;
 
+  final Future<int> _exitCode;
   @override
   Stream<List<int>> get stdout => _stdout;
 
   @override
-  Stream<List<int>> get stderr => const Stream.empty();
+  Stream<List<int>> get stderr => const .empty();
 
   @override
   Future<int> get exitCode => _exitCode;
-
-  @override
-  bool kill([ProcessSignal signal = ProcessSignal.sigterm]) => true;
 
   @override
   int get pid => throw UnimplementedError();
 
   @override
   IOSink get stdin => throw UnimplementedError();
+
+  FakeProcess({List<String> stdoutLines = const [], required int exit})
+    : _stdout = Stream.fromIterable(
+        stdoutLines.map((l) => utf8.encode('$l\n')),
+      ),
+      _exitCode = Future.value(exit);
+
+  @override
+  bool kill([ProcessSignal signal = .sigterm]) => true;
 }
 
 /// [PingLinux] whose process launch is replaced by a [FakeProcess], so the real
 /// shared parse/accumulate engine runs deterministically on any host.
 class TestPing extends PingLinux {
-  TestPing({required FakeProcess process})
-    : _process = process,
-      super('1.1.1.1', null, 1000, 1000, 255, IpVersion.ipv4);
-
   final FakeProcess _process;
 
   @override
   Future<Process> get platformProcess async => _process;
+
+  TestPing({required FakeProcess process})
+    : _process = process,
+      super('1.1.1.1', null, 1000, 1000, 255, .ipv4);
 }
 
 /// The last event that is a probe (a [PingResponse] or a [PingError]) — i.e.
@@ -71,7 +71,7 @@ PingEvent _lastProbeEvent(List<PingEvent> events) =>
 /// terminal summary derives (§spec:stats-summary) so the comparison is exact,
 /// not float-fuzzy.
 double _lossPct(int transmitted, int received) =>
-    transmitted == 0 ? 100.0 : 100 * (transmitted - received) / transmitted;
+    transmitted == 0 ? 100.0 : (transmitted - received) * 100 / transmitted;
 
 void main() {
   group('Live running stats — every probe carries a snapshot '
@@ -131,7 +131,7 @@ void main() {
           Duration(milliseconds: 30),
         ];
 
-        for (var i = 0; i < responses.length; i++) {
+        for (int i = 0; i < responses.length; i += 1) {
           final expected = RoundTripStats.fromSamples(rtts.sublist(0, i + 1));
           expect(
             responses[i].stats,

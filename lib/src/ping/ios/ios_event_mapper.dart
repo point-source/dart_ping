@@ -27,6 +27,17 @@ enum NativeErrorKind {
 /// Unlike the old channel `Map`, there is no `message` field: the C ABI carries
 /// only an error *kind*, so [PingError.message] is null on this path.
 class NativePingEvent {
+  final NativeEventKind kind;
+
+  final int? seq; // null when the C struct's has_seq is false
+  final int? ttl; // null when has_ttl is false (response only)
+  final int timeMicros; // response: RTT µs; summary: session µs
+  final String? ip; // null when has_ip is false
+  final NativeErrorKind? errorKind; // error events only
+  final int transmitted; // summary only
+  final int received; // summary only
+  final List<NativeErrorKind> errors; // summary only, in emission order
+
   const NativePingEvent({
     required this.kind,
     this.seq,
@@ -38,16 +49,6 @@ class NativePingEvent {
     this.received = 0,
     this.errors = const [],
   });
-
-  final NativeEventKind kind;
-  final int? seq; // null when the C struct's has_seq is false
-  final int? ttl; // null when has_ttl is false (response only)
-  final int timeMicros; // response: RTT µs; summary: session µs
-  final String? ip; // null when has_ip is false
-  final NativeErrorKind? errorKind; // error events only
-  final int transmitted; // summary only
-  final int received; // summary only
-  final List<NativeErrorKind> errors; // summary only, in emission order
 }
 
 /// Direct 1:1 map from the native error kind to the cross-platform [ErrorType].
@@ -60,18 +61,23 @@ class NativePingEvent {
 /// (§spec:nat64-error-fallback, §spec:address-family-error-honesty).
 ErrorType _errorTypeFor(NativeErrorKind kind) {
   switch (kind) {
-    case NativeErrorKind.requestTimedOut:
-      return ErrorType.requestTimedOut;
-    case NativeErrorKind.timeToLiveExceeded:
-      return ErrorType.timeToLiveExceeded;
-    case NativeErrorKind.noReply:
-      return ErrorType.noReply;
-    case NativeErrorKind.unknownHost:
-      return ErrorType.unknownHost;
-    case NativeErrorKind.noRoute:
-      return ErrorType.noRoute;
-    case NativeErrorKind.unknown:
-      return ErrorType.unknown;
+    case .requestTimedOut:
+      return .requestTimedOut;
+
+    case .timeToLiveExceeded:
+      return .timeToLiveExceeded;
+
+    case .noReply:
+      return .noReply;
+
+    case .unknownHost:
+      return .unknownHost;
+
+    case .noRoute:
+      return .noRoute;
+
+    case .unknown:
+      return .unknown;
   }
 }
 
@@ -105,19 +111,23 @@ ErrorType _errorTypeFor(NativeErrorKind kind) {
 /// [RoundTripStats] snapshot is layered on by [NativeEventStatsMapper].
 PingEvent mapNativeEvent(NativePingEvent ev) {
   switch (ev.kind) {
-    case NativeEventKind.response:
+    case .response:
       return PingResponse(
         seq: ev.seq,
         ttl: ev.ttl,
         time: Duration(microseconds: ev.timeMicros),
         ip: ev.ip,
       );
-    case NativeEventKind.error:
+
+    case .error:
       // A per-probe timeout / TTL-exceeded error is a single PingError that
       // identifies its own probe via seq/ip. There is no message on the FFI
-      // wire, so PingError.message stays null.
+      // wire, so PingError.message stays null. An `.error` event always carries
+      // an errorKind by the native ABI's contract.
+      // ignore: avoid-non-null-assertion
       return PingError(_errorTypeFor(ev.errorKind!), seq: ev.seq, ip: ev.ip);
-    case NativeEventKind.summary:
+
+    case .summary:
       return PingSummary(
         transmitted: ev.transmitted,
         received: ev.received,
@@ -144,7 +154,7 @@ PingEvent mapNativeEvent(NativePingEvent ev) {
 /// This is a pure, FFI-free seam: it has no Flutter/native dependency, so it can
 /// be unit-tested directly by feeding it [NativePingEvent] DTOs.
 class NativeEventStatsMapper {
-  final RoundTripStatsAccumulator _acc = RoundTripStatsAccumulator();
+  final _acc = RoundTripStatsAccumulator();
 
   /// Maps one decoded native event to a [PingEvent] carrying the running stats
   /// snapshot. Never returns null — [NativeEventKind] is exhaustive.
@@ -155,11 +165,15 @@ class NativeEventStatsMapper {
         // Successful reply: fold its RTT into the accumulator FIRST so the
         // snapshot (and thus the terminal summary, built from the same
         // accumulator) includes this reply (§spec:stats-live).
-        if (r.time != null) _acc.add(r.time!);
+        final rtt = r.time;
+        if (rtt != null) _acc.add(rtt);
+
         return r.copyWith(stats: _acc.snapshot());
+
       case PingError e:
         // Errors don't contribute to RTT figures; stamp the current snapshot.
         return e.copyWith(stats: _acc.snapshot());
+
       case PingSummary s:
         // Finalize the terminal summary's stats from the same accumulator.
         return s.copyWith(stats: _acc.snapshot());

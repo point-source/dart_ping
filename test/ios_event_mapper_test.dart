@@ -24,7 +24,7 @@ void main() {
     test('maps a response event to a PingResponse (microsecond time)', () {
       final event = mapNativeEvent(
         const NativePingEvent(
-          kind: NativeEventKind.response,
+          kind: .response,
           seq: 3,
           ttl: 55,
           timeMicros: 12000, // microseconds == 12 ms
@@ -48,7 +48,7 @@ void main() {
       final response =
           mapNativeEvent(
                 const NativePingEvent(
-                  kind: NativeEventKind.response,
+                  kind: .response,
                   seq: 1,
                   timeMicros: 1500,
                   ip: '1.2.3.4',
@@ -62,9 +62,7 @@ void main() {
 
     test('maps a response event missing ttl/ip without throwing', () {
       final response =
-          mapNativeEvent(
-                const NativePingEvent(kind: NativeEventKind.response, seq: 1),
-              )
+          mapNativeEvent(const NativePingEvent(kind: .response, seq: 1))
               as PingResponse;
 
       expect(response.seq, 1);
@@ -77,8 +75,8 @@ void main() {
     test('maps a requestTimedOut error to a single PingError carrying seq', () {
       final event = mapNativeEvent(
         const NativePingEvent(
-          kind: NativeEventKind.error,
-          errorKind: NativeErrorKind.requestTimedOut,
+          kind: .error,
+          errorKind: .requestTimedOut,
           seq: 4,
         ),
       );
@@ -98,8 +96,8 @@ void main() {
       final error =
           mapNativeEvent(
                 const NativePingEvent(
-                  kind: NativeEventKind.error,
-                  errorKind: NativeErrorKind.timeToLiveExceeded,
+                  kind: .error,
+                  errorKind: .timeToLiveExceeded,
                   seq: 7,
                   ip: '10.0.0.1',
                 ),
@@ -115,8 +113,8 @@ void main() {
       final error =
           mapNativeEvent(
                 const NativePingEvent(
-                  kind: NativeEventKind.error,
-                  errorKind: NativeErrorKind.timeToLiveExceeded,
+                  kind: .error,
+                  errorKind: .timeToLiveExceeded,
                   ip: '192.168.1.1',
                 ),
               )
@@ -130,10 +128,7 @@ void main() {
     test('maps an unknownHost error with no probe context', () {
       final error =
           mapNativeEvent(
-                const NativePingEvent(
-                  kind: NativeEventKind.error,
-                  errorKind: NativeErrorKind.unknownHost,
-                ),
+                const NativePingEvent(kind: .error, errorKind: .unknownHost),
               )
               as PingError;
 
@@ -145,10 +140,7 @@ void main() {
     test('maps a standalone noReply error', () {
       final error =
           mapNativeEvent(
-                const NativePingEvent(
-                  kind: NativeEventKind.error,
-                  errorKind: NativeErrorKind.noReply,
-                ),
+                const NativePingEvent(kind: .error, errorKind: .noReply),
               )
               as PingError;
 
@@ -162,10 +154,7 @@ void main() {
       // unknownHost.
       final error =
           mapNativeEvent(
-                const NativePingEvent(
-                  kind: NativeEventKind.error,
-                  errorKind: NativeErrorKind.noRoute,
-                ),
+                const NativePingEvent(kind: .error, errorKind: .noRoute),
               )
               as PingError;
 
@@ -176,10 +165,7 @@ void main() {
     test('maps an unknown error via the catch-all', () {
       final error =
           mapNativeEvent(
-                const NativePingEvent(
-                  kind: NativeEventKind.error,
-                  errorKind: NativeErrorKind.unknown,
-                ),
+                const NativePingEvent(kind: .error, errorKind: .unknown),
               )
               as PingError;
 
@@ -189,7 +175,7 @@ void main() {
     test('maps a summary event WITH a time (microseconds)', () {
       final event = mapNativeEvent(
         const NativePingEvent(
-          kind: NativeEventKind.summary,
+          kind: .summary,
           transmitted: 5,
           received: 4,
           timeMicros: 5000000, // microseconds == 5 s
@@ -208,7 +194,7 @@ void main() {
       final summary =
           mapNativeEvent(
                 const NativePingEvent(
-                  kind: NativeEventKind.summary,
+                  kind: .summary,
                   transmitted: 2,
                   received: 0,
                   // timeMicros defaults to 0 -> null time.
@@ -226,16 +212,16 @@ void main() {
       final summary =
           mapNativeEvent(
                 const NativePingEvent(
-                  kind: NativeEventKind.summary,
+                  kind: .summary,
                   transmitted: 5,
                   received: 0,
                   timeMicros: 5000000,
                   errors: [
-                    NativeErrorKind.timeToLiveExceeded,
-                    NativeErrorKind.requestTimedOut,
-                    NativeErrorKind.unknownHost,
-                    NativeErrorKind.noReply,
-                    NativeErrorKind.unknown,
+                    .timeToLiveExceeded,
+                    .requestTimedOut,
+                    .unknownHost,
+                    .noReply,
+                    .unknown,
                   ],
                 ),
               )
@@ -254,7 +240,7 @@ void main() {
       final summary =
           mapNativeEvent(
                 const NativePingEvent(
-                  kind: NativeEventKind.summary,
+                  kind: .summary,
                   transmitted: 3,
                   received: 3,
                   timeMicros: 3000000,
@@ -279,10 +265,7 @@ void main() {
       'a noRoute synthesis failure maps to ErrorType.noRoute, not a phantom',
       () {
         final event = mapNativeEvent(
-          const NativePingEvent(
-            kind: NativeEventKind.error,
-            errorKind: NativeErrorKind.noRoute,
-          ),
+          const NativePingEvent(kind: .error, errorKind: .noRoute),
         );
 
         expect(event, isA<PingError>());
@@ -293,10 +276,7 @@ void main() {
 
     test('a genuine unknownHost stays ErrorType.unknownHost', () {
       final event = mapNativeEvent(
-        const NativePingEvent(
-          kind: NativeEventKind.error,
-          errorKind: NativeErrorKind.unknownHost,
-        ),
+        const NativePingEvent(kind: .error, errorKind: .unknownHost),
       );
 
       expect((event as PingError).error, ErrorType.unknownHost);
@@ -313,7 +293,7 @@ void main() {
           final response =
               mapper.map(
                     const NativePingEvent(
-                      kind: NativeEventKind.response,
+                      kind: .response,
                       seq: 2,
                       ttl: 64,
                       timeMicros: 12000, // microseconds == 12 ms
@@ -336,7 +316,7 @@ void main() {
         final response =
             mapNativeEvent(
                   const NativePingEvent(
-                    kind: NativeEventKind.response,
+                    kind: .response,
                     seq: 5,
                     ttl: 55,
                     timeMicros: 9000,
@@ -363,8 +343,8 @@ void main() {
   // per-probe times — including stddev — and that a zero-reply run reports
   // honestly absent figures.
   group('NativeEventStatsMapper (stats parity with core)', () {
-    NativePingEvent response(int seq, int timeMicros) => NativePingEvent(
-      kind: NativeEventKind.response,
+    NativePingEvent response(int seq, int timeMicros) => .new(
+      kind: .response,
       seq: seq,
       ttl: 64,
       timeMicros: timeMicros,
@@ -377,7 +357,7 @@ void main() {
       final mapper = NativeEventStatsMapper();
       final samplesSoFar = <Duration>[];
 
-      for (var i = 0; i < rttsMicros.length; i++) {
+      for (int i = 0; i < rttsMicros.length; i += 1) {
         final event =
             mapper.map(response(i + 1, rttsMicros[i])) as PingResponse;
         samplesSoFar.add(Duration(microseconds: rttsMicros[i]));
@@ -411,8 +391,8 @@ void main() {
       final timeout =
           mapper.map(
                 const NativePingEvent(
-                  kind: NativeEventKind.error,
-                  errorKind: NativeErrorKind.requestTimedOut,
+                  kind: .error,
+                  errorKind: .requestTimedOut,
                   seq: 3,
                 ),
               )
@@ -431,14 +411,14 @@ void main() {
     test('the terminal summary stats equal core over all per-probe times', () {
       const rttsMicros = [1500, 2300, 1100];
       final mapper = NativeEventStatsMapper();
-      for (var i = 0; i < rttsMicros.length; i++) {
+      for (int i = 0; i < rttsMicros.length; i += 1) {
         mapper.map(response(i + 1, rttsMicros[i]));
       }
 
       final summary =
           mapper.map(
                 const NativePingEvent(
-                  kind: NativeEventKind.summary,
+                  kind: .summary,
                   transmitted: 3,
                   received: 3,
                   timeMicros: 9000000,
@@ -460,15 +440,15 @@ void main() {
       // Two probes, both errors, no replies.
       mapper.map(
         const NativePingEvent(
-          kind: NativeEventKind.error,
-          errorKind: NativeErrorKind.requestTimedOut,
+          kind: .error,
+          errorKind: .requestTimedOut,
           seq: 1,
         ),
       );
       mapper.map(
         const NativePingEvent(
-          kind: NativeEventKind.error,
-          errorKind: NativeErrorKind.requestTimedOut,
+          kind: .error,
+          errorKind: .requestTimedOut,
           seq: 2,
         ),
       );
@@ -476,14 +456,11 @@ void main() {
       final summary =
           mapper.map(
                 const NativePingEvent(
-                  kind: NativeEventKind.summary,
+                  kind: .summary,
                   transmitted: 2,
                   received: 0,
                   // timeMicros 0 -> null time.
-                  errors: [
-                    NativeErrorKind.requestTimedOut,
-                    NativeErrorKind.requestTimedOut,
-                  ],
+                  errors: [.requestTimedOut, .requestTimedOut],
                 ),
               )
               as PingSummary;
@@ -495,7 +472,7 @@ void main() {
       expect(summary.stats!.max, isNull);
       expect(summary.stats!.stddev, isNull);
       expect(summary.stats!.jitter, isNull);
-      expect(summary.stats, RoundTripStats.fromSamples(const <Duration>[]));
+      expect(summary.stats, RoundTripStats.fromSamples(const []));
       expect(summary.received, 0);
       expect(summary.packetLoss, 100.0);
     });

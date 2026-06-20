@@ -14,45 +14,45 @@ const _hardTimeout = Duration(seconds: 5);
 
 /// In-memory [Process] stand-in that emits canned stdout lines then exits.
 class FakeProcess implements Process {
-  FakeProcess({List<String> stdoutLines = const [], required int exit})
-    : _stdout = Stream<List<int>>.fromIterable(
-        stdoutLines.map((l) => utf8.encode('$l\n')),
-      ),
-      _exitCode = Future<int>.value(exit);
-
   final Stream<List<int>> _stdout;
-  final Future<int> _exitCode;
 
+  final Future<int> _exitCode;
   @override
   Stream<List<int>> get stdout => _stdout;
 
   @override
-  Stream<List<int>> get stderr => const Stream.empty();
+  Stream<List<int>> get stderr => const .empty();
 
   @override
   Future<int> get exitCode => _exitCode;
-
-  @override
-  bool kill([ProcessSignal signal = ProcessSignal.sigterm]) => true;
 
   @override
   int get pid => throw UnimplementedError();
 
   @override
   IOSink get stdin => throw UnimplementedError();
+
+  FakeProcess({List<String> stdoutLines = const [], required int exit})
+    : _stdout = Stream.fromIterable(
+        stdoutLines.map((l) => utf8.encode('$l\n')),
+      ),
+      _exitCode = Future.value(exit);
+
+  @override
+  bool kill([ProcessSignal signal = .sigterm]) => true;
 }
 
 /// [PingLinux] whose process launch is replaced by a [FakeProcess], so the real
 /// shared parse/accumulate engine runs deterministically on any host.
 class TestPing extends PingLinux {
-  TestPing({required FakeProcess process})
-    : _process = process,
-      super('1.1.1.1', null, 1000, 1000, 255, IpVersion.ipv4);
-
   final FakeProcess _process;
 
   @override
   Future<Process> get platformProcess async => _process;
+
+  TestPing({required FakeProcess process})
+    : _process = process,
+      super('1.1.1.1', null, 1000, 1000, 255, .ipv4);
 }
 
 void main() {

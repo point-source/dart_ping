@@ -5,16 +5,6 @@ part of 'ping_event.dart';
 /// This is the final event a run emits; it is identifiable by type alone
 /// (`is PingSummary`).
 final class PingSummary extends PingEvent {
-  PingSummary({
-    required this.transmitted,
-    required this.received,
-    this.time,
-    this.stats,
-    List<PingError>? errors,
-  }) {
-    this.errors = errors ?? [];
-  }
-
   /// Number of icmp packets sent to the target
   final int transmitted;
 
@@ -41,14 +31,54 @@ final class PingSummary extends PingEvent {
   /// never stored, so it cannot drift from the counts. A run that transmitted
   /// nothing, or received nothing, reports 100% loss.
   double get packetLoss =>
-      transmitted == 0 ? 100.0 : 100 * (transmitted - received) / transmitted;
+      transmitted == 0 ? 100.0 : (transmitted - received) * 100 / transmitted;
+
+  @override
+  int get hashCode {
+    return transmitted.hashCode ^
+        received.hashCode ^
+        time.hashCode ^
+        stats.hashCode ^
+        // Hash the errors element-wise so equal summaries (== compares the
+        // list element-wise via ListEquality) always share a hashCode.
+        const ListEquality().hash(errors);
+  }
+
+  PingSummary({
+    required this.transmitted,
+    required this.received,
+    this.time,
+    this.stats,
+    List<PingError>? errors,
+  }) {
+    this.errors = errors ?? [];
+  }
+
+  factory PingSummary.fromMap(Map<String, dynamic> map) {
+    return PingSummary(
+      transmitted: map['transmitted']?.toInt() ?? 0,
+      received: map['received']?.toInt() ?? 0,
+      time: durationFromMicros(map['time']),
+      stats: map['stats'] == null ? null : RoundTripStats.fromMap(map['stats']),
+      errors: map['errors'] is List
+          ? map['errors'].map<PingError>((e) => PingError.fromMap(e)).toList()
+          : null,
+    );
+  }
+
+  factory PingSummary.fromJson(String source) {
+    final Map<String, dynamic> map = json.decode(source);
+
+    return PingSummary.fromMap(map);
+  }
 
   @override
   String toString() {
-    var str = 'PingSummary(transmitted:$transmitted, received:$received';
+    String str = 'PingSummary(transmitted:$transmitted, received:$received';
     str = '$str, loss:$packetLoss%';
+    final time = this.time;
     if (time != null) {
-      str = '$str, time: ${time!.inMilliseconds} ms';
+      str = '$str, time: ${time.inMilliseconds} ms';
     }
     if (stats != null) {
       str = '$str, stats: $stats';
@@ -90,17 +120,6 @@ final class PingSummary extends PingEvent {
   }
 
   @override
-  int get hashCode {
-    return transmitted.hashCode ^
-        received.hashCode ^
-        time.hashCode ^
-        stats.hashCode ^
-        // Hash the errors element-wise so equal summaries (== compares the
-        // list element-wise via ListEquality) always share a hashCode.
-        const ListEquality().hash(errors);
-  }
-
-  @override
   Map<String, dynamic> toMap() {
     return {
       'type': 'summary',
@@ -111,19 +130,4 @@ final class PingSummary extends PingEvent {
       'errors': errors.map((e) => e.toMap()).toList(),
     };
   }
-
-  factory PingSummary.fromMap(Map<String, dynamic> map) {
-    return PingSummary(
-      transmitted: map['transmitted']?.toInt() ?? 0,
-      received: map['received']?.toInt() ?? 0,
-      time: durationFromMicros(map['time']),
-      stats: map['stats'] != null ? RoundTripStats.fromMap(map['stats']) : null,
-      errors: map['errors'] is List
-          ? map['errors'].map<PingError>((e) => PingError.fromMap(e)).toList()
-          : null,
-    );
-  }
-
-  factory PingSummary.fromJson(String source) =>
-      PingSummary.fromMap(json.decode(source) as Map<String, dynamic>);
 }
