@@ -34,7 +34,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dart-lang/setup-dart@v1
-      - run: dart pub get
+      # --no-example: this dart-only runner has no Flutter SDK, and the bundled
+      # example/ is a Flutter package. Skipping its resolution keeps the gate
+      # clean (the example is built by the macOS ios-swift job, not here).
+      - run: dart pub get --no-example
       - run: dart analyze --fatal-infos
       - run: dart test -x live
 
@@ -94,7 +97,7 @@ jobs:
       - name: Core coverage
         working-directory: dart_ping
         run: |
-          dart pub get
+          dart pub get --no-example
           dart test -x live --coverage=coverage
           dart run coverage:format_coverage \
             --lcov --in=coverage --out=coverage/lcov.info --report-on=lib
