@@ -42,8 +42,12 @@ class PingWindows extends BasePing implements Ping {
   }
 
   static PingParser get defaultParser => PingParser(
+        // `bytes=` and `TTL=` are optional: Windows IPv4 replies carry both
+        // ("Reply from 8.8.8.8: bytes=32 time=6ms TTL=37"), but IPv6 replies
+        // carry neither ("Reply from ::1: time<1ms"), so the IPv6 hop has no
+        // reported TTL (#71).
         responseRgx: RegExp(
-          r'Reply from (?<ip>.*): bytes=(?:\d+) time(?:=|<)(?<time>\d+)ms TTL=(?<ttl>\d+)',
+          r'Reply from (?<ip>.*): (?:bytes=(?:\d+) )?time(?:=|<)(?<time>\d+)ms(?: TTL=(?<ttl>\d+))?',
         ),
         summaryRgx:
             RegExp(r'Sent = (?<tx>\d+), Received = (?<rx>\d+), Lost = (?:\d+)'),
@@ -67,13 +71,11 @@ class PingWindows extends BasePing implements Ping {
 
   @override
   List<String> get params {
-    // Windows IPv6 is not supported: surface an explicit, honest error rather
-    // than silently pinging IPv4 (§spec:ipv6-address-family-selector).
-    if (ipVersion == IpVersion.ipv6) {
-      throw UnimplementedError('IPv6 not implemented for windows');
-    }
     var params = ['-w', (timeout * 1000).toString(), '-i', ttl.toString()];
-    params.add('-4');
+    // Force the address family explicitly (#69) rather than letting Windows
+    // `ping` pick: `-6` for IPv6, `-4` otherwise (#71 — Windows `ping`
+    // supports `-6`).
+    params.add(ipVersion == IpVersion.ipv6 ? '-6' : '-4');
     if (count == null) {
       params.add('-t');
     } else {

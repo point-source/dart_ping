@@ -51,7 +51,7 @@ abstract class BasePing {
   int ttl;
 
   /// The IP address family to ping with — an explicit, exclusive selection
-  /// (see [IpVersion]). [IpVersion.ipv6] is not supported on Windows.
+  /// (see [IpVersion]).
   IpVersion ipVersion;
 
   /// Custom parser to interpret ping process output
@@ -142,11 +142,11 @@ abstract class BasePing {
   String get command => 'ping ${params.join(' ')} $host';
 
   /// The executable used to launch the ping process. Every supported core
-  /// platform uses the unified `ping` binary: Linux/Android force the family
-  /// with an explicit `-4`/`-6` in [params], while macOS and Windows only run
-  /// `ping` for IPv4 (both reject IPv6 in [params] before launch). No platform
-  /// dispatches to the legacy `ping6` binary. Kept as a getter so a platform
-  /// can still override the executable if needed.
+  /// platform uses the unified `ping` binary: Linux/Android and Windows force
+  /// the family with an explicit `-4`/`-6` in [params], while the macOS
+  /// subprocess path runs `ping` for IPv4 and rejects IPv6 in [params] before
+  /// launch. No platform dispatches to the legacy `ping6` binary. Kept as a
+  /// getter so a platform can still override the executable if needed.
   String get executable => 'ping';
 
   /// Starts a ping process on the host OS

@@ -76,7 +76,7 @@ void main() {
   });
 
   group('PingWindows', () {
-    // Windows rejects IPv6 and bare interface names, so these cases stay on
+    // Windows rejects bare interface names, so these cases stay on
     // IpVersion.ipv4 with no interface to construct cleanly.
     test('nat64Synthesis defaults to enabled when the option is omitted', () {
       final ping = PingWindows('host', 3, 1, 2, 64, IpVersion.ipv4);

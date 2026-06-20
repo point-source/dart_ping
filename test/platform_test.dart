@@ -188,9 +188,9 @@ void main() {
       expect(unbounded.params, ['-w', '2000', '-i', '64', '-4', '-t']);
     });
 
-    test('params throw for IpVersion.ipv6 (unsupported on Windows)', () {
-      final ipv6 = PingWindows('host', 1, 1, 2, 64, IpVersion.ipv6);
-      expect(() => ipv6.params, throwsUnimplementedError);
+    test('params for IpVersion.ipv6 force -6 (#71)', () {
+      final ipv6 = PingWindows('host', 3, 1, 2, 64, IpVersion.ipv6);
+      expect(ipv6.params, ['-w', '2000', '-i', '64', '-6', '-n', '3']);
     });
 
     test('locale requests en_US', () {

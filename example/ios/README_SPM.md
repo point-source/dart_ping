@@ -27,7 +27,7 @@ SDK) and **cannot be executed on a Linux CI host**.
 2. Run the example on an iOS simulator or device:
 
    ```sh
-   cd dart_ping/example
+   cd example
    flutter run
    ```
 

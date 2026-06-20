@@ -28,9 +28,6 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
-    defaults:
-      run:
-        working-directory: dart_ping
     steps:
       - uses: actions/checkout@v4
       - uses: dart-lang/setup-dart@v1
@@ -46,7 +43,7 @@ jobs:
   # artifacts the Runner target links against.
   #
   # The iOS Dart event-mapping + bindings suite is no longer a separate job: it
-  # now lives in dart_ping/test/ios_*.dart and runs under the `core` matrix via
+  # now lives in test/ios_*.dart and runs under the `core` matrix via
   # `dart test -x live` (consolidation #28 — single package).
   ios-swift:
     name: ios-swift (macos)
@@ -58,13 +55,13 @@ jobs:
           channel: stable
       - run: flutter --version
       - name: flutter pub get (example)
-        working-directory: dart_ping/example
+        working-directory: example
         run: flutter pub get
       - name: Build example for the simulator (generates Flutter artifacts)
-        working-directory: dart_ping/example
+        working-directory: example
         run: flutter build ios --simulator --no-codesign
       - name: Run RunnerTests via xcodebuild
-        working-directory: dart_ping/example/ios
+        working-directory: example/ios
         run: |
           set -o pipefail
           # Pick whatever iPhone simulator the runner image actually ships,
@@ -95,7 +92,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dart-lang/setup-dart@v1
       - name: Core coverage
-        working-directory: dart_ping
         run: |
           dart pub get --no-example
           dart test -x live --coverage=coverage
@@ -113,7 +109,7 @@ jobs:
           {
             echo "## Coverage"
             echo ""
-            echo "- **dart_ping**: $(summarize dart_ping/coverage/lcov.info)"
+            echo "- **dart_ping**: $(summarize coverage/lcov.info)"
           } >> "$GITHUB_STEP_SUMMARY"
 
   # NOTE: the live-network suite (`dart test -t live` — real `ping` to external
