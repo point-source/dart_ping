@@ -122,9 +122,7 @@ PingEvent mapNativeEvent(NativePingEvent ev) {
         transmitted: ev.transmitted,
         received: ev.received,
         // timeMicros == 0 means the engine reported no session duration.
-        time: ev.timeMicros == 0
-            ? null
-            : Duration(microseconds: ev.timeMicros),
+        time: ev.timeMicros == 0 ? null : Duration(microseconds: ev.timeMicros),
         errors: ev.errors.map((k) => PingError(_errorTypeFor(k))).toList(),
       );
   }

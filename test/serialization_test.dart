@@ -70,11 +70,7 @@ void main() {
         const Duration(milliseconds: 1),
         const Duration(milliseconds: 3),
       ]);
-      final summary = PingSummary(
-        transmitted: 2,
-        received: 2,
-        stats: stats,
-      );
+      final summary = PingSummary(transmitted: 2, received: 2, stats: stats);
       final deserialized = PingSummary.fromJson(summary.toJson());
       expect(deserialized, equals(summary));
       expect(deserialized.stats, equals(stats));

@@ -15,10 +15,10 @@ const _hardTimeout = Duration(seconds: 5);
 /// In-memory [Process] stand-in that emits canned stdout lines then exits.
 class FakeProcess implements Process {
   FakeProcess({List<String> stdoutLines = const [], required int exit})
-      : _stdout = Stream<List<int>>.fromIterable(
-          stdoutLines.map((l) => utf8.encode('$l\n')),
-        ),
-        _exitCode = Future<int>.value(exit);
+    : _stdout = Stream<List<int>>.fromIterable(
+        stdoutLines.map((l) => utf8.encode('$l\n')),
+      ),
+      _exitCode = Future<int>.value(exit);
 
   final Stream<List<int>> _stdout;
   final Future<int> _exitCode;
@@ -46,8 +46,8 @@ class FakeProcess implements Process {
 /// shared parse/accumulate engine runs deterministically on any host.
 class TestPing extends PingLinux {
   TestPing({required FakeProcess process})
-      : _process = process,
-        super('1.1.1.1', null, 1000, 1000, 255, IpVersion.ipv4);
+    : _process = process,
+      super('1.1.1.1', null, 1000, 1000, 255, IpVersion.ipv4);
 
   final FakeProcess _process;
 
@@ -81,8 +81,10 @@ void main() {
       // The terminal summary is the final event.
       expect(events.last, isA<PingSummary>());
       // ...and only the last event is a summary.
-      expect(events.sublist(0, events.length - 1).whereType<PingSummary>(),
-          isEmpty);
+      expect(
+        events.sublist(0, events.length - 1).whereType<PingSummary>(),
+        isEmpty,
+      );
 
       final err = events.whereType<PingError>().single;
       expect(err.error, ErrorType.requestTimedOut);
@@ -137,32 +139,34 @@ void main() {
       expect(stats.jitter, isNotNull);
     });
 
-    test('BasePing builds summary stats from the per-probe reply times',
-        () async {
-      final ping = TestPing(
-        process: FakeProcess(
-          stdoutLines: const [
-            '64 bytes from 1.1.1.1: icmp_seq=1 ttl=57 time=10.0 ms',
-            '64 bytes from 1.1.1.1: icmp_seq=2 ttl=57 time=20.0 ms',
-            '64 bytes from 1.1.1.1: icmp_seq=3 ttl=57 time=30.0 ms',
-            '3 packets transmitted, 3 received, 0% packet loss, time 2003ms',
-          ],
-          exit: 0,
-        ),
-      );
+    test(
+      'BasePing builds summary stats from the per-probe reply times',
+      () async {
+        final ping = TestPing(
+          process: FakeProcess(
+            stdoutLines: const [
+              '64 bytes from 1.1.1.1: icmp_seq=1 ttl=57 time=10.0 ms',
+              '64 bytes from 1.1.1.1: icmp_seq=2 ttl=57 time=20.0 ms',
+              '64 bytes from 1.1.1.1: icmp_seq=3 ttl=57 time=30.0 ms',
+              '3 packets transmitted, 3 received, 0% packet loss, time 2003ms',
+            ],
+            exit: 0,
+          ),
+        );
 
-      final events = await ping.stream.toList().timeout(_hardTimeout);
-      final summary = events.whereType<PingSummary>().single;
+        final events = await ping.stream.toList().timeout(_hardTimeout);
+        final summary = events.whereType<PingSummary>().single;
 
-      final expected = RoundTripStats.fromSamples(const [
-        Duration(milliseconds: 10),
-        Duration(milliseconds: 20),
-        Duration(milliseconds: 30),
-      ]);
-      expect(summary.stats, equals(expected));
-      expect(summary.stats!.stddev, isNotNull);
-      expect(summary.packetLoss, 0.0);
-    });
+        final expected = RoundTripStats.fromSamples(const [
+          Duration(milliseconds: 10),
+          Duration(milliseconds: 20),
+          Duration(milliseconds: 30),
+        ]);
+        expect(summary.stats, equals(expected));
+        expect(summary.stats!.stddev, isNotNull);
+        expect(summary.packetLoss, 0.0);
+      },
+    );
 
     test('a run with no replies yields an empty (absent-figures) stats '
         'snapshot', () async {
@@ -184,8 +188,10 @@ void main() {
       expect(summary.stats!.sampleCount, 0);
       expect(summary.stats!.avg, isNull);
       // The two timeouts plus the exit-code noReply are folded into errors.
-      expect(summary.errors.map((e) => e.error),
-          contains(ErrorType.requestTimedOut));
+      expect(
+        summary.errors.map((e) => e.error),
+        contains(ErrorType.requestTimedOut),
+      );
       expect(summary.errors.map((e) => e.error), contains(ErrorType.noReply));
     });
   });

@@ -21,10 +21,10 @@ const _hardTimeout = Duration(seconds: 5);
 /// own copy of the harness).
 class FakeProcess implements Process {
   FakeProcess({List<String> stdoutLines = const [], required int exit})
-      : _stdout = Stream<List<int>>.fromIterable(
-          stdoutLines.map((l) => utf8.encode('$l\n')),
-        ),
-        _exitCode = Future<int>.value(exit);
+    : _stdout = Stream<List<int>>.fromIterable(
+        stdoutLines.map((l) => utf8.encode('$l\n')),
+      ),
+      _exitCode = Future<int>.value(exit);
 
   final Stream<List<int>> _stdout;
   final Future<int> _exitCode;
@@ -52,8 +52,8 @@ class FakeProcess implements Process {
 /// shared parse/accumulate engine runs deterministically on any host.
 class TestPing extends PingLinux {
   TestPing({required FakeProcess process})
-      : _process = process,
-        super('1.1.1.1', null, 1000, 1000, 255, IpVersion.ipv4);
+    : _process = process,
+      super('1.1.1.1', null, 1000, 1000, 255, IpVersion.ipv4);
 
   final FakeProcess _process;
 
@@ -95,47 +95,56 @@ void main() {
       final probes = events.where((e) => e is PingResponse || e is PingError);
       expect(probes, isNotEmpty);
       for (final probe in probes) {
-        expect(probe.stats, isNotNull,
-            reason: 'every probe event must carry a running snapshot');
+        expect(
+          probe.stats,
+          isNotNull,
+          reason: 'every probe event must carry a running snapshot',
+        );
       }
     });
   });
 
   group('Live running stats — snapshot tracks the summary computation '
       '(§spec:stats-live / §spec:stats-tests)', () {
-    test('the i-th response snapshot equals fromSamples([rtt_0..rtt_i])',
-        () async {
-      final ping = TestPing(
-        process: FakeProcess(
-          stdoutLines: const [
-            '64 bytes from 1.1.1.1: icmp_seq=1 ttl=57 time=10.0 ms',
-            '64 bytes from 1.1.1.1: icmp_seq=2 ttl=57 time=20.0 ms',
-            '64 bytes from 1.1.1.1: icmp_seq=3 ttl=57 time=30.0 ms',
-            '3 packets transmitted, 3 received, 0% packet loss, time 2003ms',
-          ],
-          exit: 0,
-        ),
-      );
+    test(
+      'the i-th response snapshot equals fromSamples([rtt_0..rtt_i])',
+      () async {
+        final ping = TestPing(
+          process: FakeProcess(
+            stdoutLines: const [
+              '64 bytes from 1.1.1.1: icmp_seq=1 ttl=57 time=10.0 ms',
+              '64 bytes from 1.1.1.1: icmp_seq=2 ttl=57 time=20.0 ms',
+              '64 bytes from 1.1.1.1: icmp_seq=3 ttl=57 time=30.0 ms',
+              '3 packets transmitted, 3 received, 0% packet loss, time 2003ms',
+            ],
+            exit: 0,
+          ),
+        );
 
-      final events = await ping.stream.toList().timeout(_hardTimeout);
-      final responses = events.whereType<PingResponse>().toList();
-      expect(responses, hasLength(3));
+        final events = await ping.stream.toList().timeout(_hardTimeout);
+        final responses = events.whereType<PingResponse>().toList();
+        expect(responses, hasLength(3));
 
-      const rtts = [
-        Duration(milliseconds: 10),
-        Duration(milliseconds: 20),
-        Duration(milliseconds: 30),
-      ];
+        const rtts = [
+          Duration(milliseconds: 10),
+          Duration(milliseconds: 20),
+          Duration(milliseconds: 30),
+        ];
 
-      for (var i = 0; i < responses.length; i++) {
-        final expected = RoundTripStats.fromSamples(rtts.sublist(0, i + 1));
-        expect(responses[i].stats, equals(expected),
-            reason: 'snapshot on response #$i must summarize the first '
-                '${i + 1} replies and use identical computation');
-        // The snapshot grows one sample at a time as replies arrive.
-        expect(responses[i].stats!.sampleCount, i + 1);
-      }
-    });
+        for (var i = 0; i < responses.length; i++) {
+          final expected = RoundTripStats.fromSamples(rtts.sublist(0, i + 1));
+          expect(
+            responses[i].stats,
+            equals(expected),
+            reason:
+                'snapshot on response #$i must summarize the first '
+                '${i + 1} replies and use identical computation',
+          );
+          // The snapshot grows one sample at a time as replies arrive.
+          expect(responses[i].stats!.sampleCount, i + 1);
+        }
+      },
+    );
 
     test("a timeout's snapshot equals the snapshot of the successful replies "
         'seen so far — errors do not contribute RTT', () async {
@@ -260,64 +269,70 @@ void main() {
 
   group('Live running stats — loss-so-far matches terminal loss '
       '(§spec:stats-live / §spec:stats-tests)', () {
-    test('derived running loss at the final probe equals summary.packetLoss',
-        () async {
-      // Canned native summary: 3 transmitted, 2 received -> 33% loss.
-      final ping = TestPing(
-        process: FakeProcess(
-          stdoutLines: const [
-            '64 bytes from 1.1.1.1: icmp_seq=1 ttl=57 time=10.0 ms',
-            'no answer yet for icmp_seq=2',
-            '64 bytes from 1.1.1.1: icmp_seq=3 ttl=57 time=30.0 ms',
-            '3 packets transmitted, 2 received, 33% packet loss, time 2003ms',
-          ],
-          exit: 0,
-        ),
-      );
+    test(
+      'derived running loss at the final probe equals summary.packetLoss',
+      () async {
+        // Canned native summary: 3 transmitted, 2 received -> 33% loss.
+        final ping = TestPing(
+          process: FakeProcess(
+            stdoutLines: const [
+              '64 bytes from 1.1.1.1: icmp_seq=1 ttl=57 time=10.0 ms',
+              'no answer yet for icmp_seq=2',
+              '64 bytes from 1.1.1.1: icmp_seq=3 ttl=57 time=30.0 ms',
+              '3 packets transmitted, 2 received, 33% packet loss, time 2003ms',
+            ],
+            exit: 0,
+          ),
+        );
 
-      final events = await ping.stream.toList().timeout(_hardTimeout);
-      final summary = events.whereType<PingSummary>().single;
+        final events = await ping.stream.toList().timeout(_hardTimeout);
+        final summary = events.whereType<PingSummary>().single;
 
-      // Transmitted-so-far = count of probe events; received-so-far =
-      // running sampleCount on the final probe.
-      final probes =
-          events.where((e) => e is PingResponse || e is PingError).toList();
-      final transmittedSoFar = probes.length;
-      final receivedSoFar = _lastProbeEvent(events).stats!.sampleCount;
+        // Transmitted-so-far = count of probe events; received-so-far =
+        // running sampleCount on the final probe.
+        final probes = events
+            .where((e) => e is PingResponse || e is PingError)
+            .toList();
+        final transmittedSoFar = probes.length;
+        final receivedSoFar = _lastProbeEvent(events).stats!.sampleCount;
 
-      expect(transmittedSoFar, 3);
-      expect(receivedSoFar, 2);
+        expect(transmittedSoFar, 3);
+        expect(receivedSoFar, 2);
 
-      final derivedLoss = _lossPct(transmittedSoFar, receivedSoFar);
-      expect(derivedLoss, summary.packetLoss);
-      expect(derivedLoss, closeTo(33.33, 0.01));
-    });
+        final derivedLoss = _lossPct(transmittedSoFar, receivedSoFar);
+        expect(derivedLoss, summary.packetLoss);
+        expect(derivedLoss, closeTo(33.33, 0.01));
+      },
+    );
 
-    test('zero-reply run: derived running loss is 100%, matching summary',
-        () async {
-      final ping = TestPing(
-        process: FakeProcess(
-          stdoutLines: const [
-            'no answer yet for icmp_seq=1',
-            'no answer yet for icmp_seq=2',
-            '2 packets transmitted, 0 received, 100% packet loss, time 1001ms',
-          ],
-          exit: 1,
-        ),
-      );
+    test(
+      'zero-reply run: derived running loss is 100%, matching summary',
+      () async {
+        final ping = TestPing(
+          process: FakeProcess(
+            stdoutLines: const [
+              'no answer yet for icmp_seq=1',
+              'no answer yet for icmp_seq=2',
+              '2 packets transmitted, 0 received, 100% packet loss, time 1001ms',
+            ],
+            exit: 1,
+          ),
+        );
 
-      final events = await ping.stream.toList().timeout(_hardTimeout);
-      final summary = events.whereType<PingSummary>().single;
+        final events = await ping.stream.toList().timeout(_hardTimeout);
+        final summary = events.whereType<PingSummary>().single;
 
-      final probes =
-          events.where((e) => e is PingResponse || e is PingError).toList();
-      final transmittedSoFar = probes.length;
-      final receivedSoFar = _lastProbeEvent(events).stats!.sampleCount;
+        final probes = events
+            .where((e) => e is PingResponse || e is PingError)
+            .toList();
+        final transmittedSoFar = probes.length;
+        final receivedSoFar = _lastProbeEvent(events).stats!.sampleCount;
 
-      expect(receivedSoFar, 0);
-      final derivedLoss = _lossPct(transmittedSoFar, receivedSoFar);
-      expect(derivedLoss, 100.0);
-      expect(derivedLoss, summary.packetLoss);
-    });
+        expect(receivedSoFar, 0);
+        final derivedLoss = _lossPct(transmittedSoFar, receivedSoFar);
+        expect(derivedLoss, 100.0);
+        expect(derivedLoss, summary.packetLoss);
+      },
+    );
   });
 }

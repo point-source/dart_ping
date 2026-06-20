@@ -1,11 +1,12 @@
 import 'dart:io';
 
 /// Signature of [NetworkInterface.list]; the seam tests override.
-typedef NetworkInterfaceLister = Future<List<NetworkInterface>> Function({
-  bool includeLoopback,
-  bool includeLinkLocal,
-  InternetAddressType type,
-});
+typedef NetworkInterfaceLister =
+    Future<List<NetworkInterface>> Function({
+      bool includeLoopback,
+      bool includeLinkLocal,
+      InternetAddressType type,
+    });
 
 /// Enumeration backend, defaulting to the real SDK call. Tests override
 /// this (via a `package:dart_ping/src/interface_listing.dart` import) to
@@ -37,9 +38,8 @@ Future<List<NetworkInterface>> listNetworkInterfaces({
   bool includeLoopback = false,
   bool includeLinkLocal = false,
   InternetAddressType type = InternetAddressType.any,
-}) =>
-    networkInterfaceLister(
-      includeLoopback: includeLoopback,
-      includeLinkLocal: includeLinkLocal,
-      type: type,
-    );
+}) => networkInterfaceLister(
+  includeLoopback: includeLoopback,
+  includeLinkLocal: includeLinkLocal,
+  type: type,
+);

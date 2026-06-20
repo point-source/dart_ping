@@ -91,8 +91,7 @@ class IosPing implements Ping {
   set parser(PingParser parser) => throw UnimplementedError();
 
   @override
-  String get command =>
-      'Ping on iOS is provided by a native Swift ICMP engine';
+  String get command => 'Ping on iOS is provided by a native Swift ICMP engine';
 
   @override
   Stream<PingEvent> get stream {
@@ -121,12 +120,14 @@ class IosPing implements Ping {
     // isolate's event loop, which is what makes iOS ping work from any isolate
     // (#48). Keep a reference so it is not GC'd and so it can be closed at
     // teardown.
-    _callable =
-        NativeCallable<DartPingEventCallbackNative>.listener(_handleNativeEvent);
+    _callable = NativeCallable<DartPingEventCallbackNative>.listener(
+      _handleNativeEvent,
+    );
 
     final hostPtr = _host.toNativeUtf8();
-    final family =
-        _ipVersion == IpVersion.ipv6 ? DartPingFamily.v6 : DartPingFamily.v4;
+    final family = _ipVersion == IpVersion.ipv6
+        ? DartPingFamily.v6
+        : DartPingFamily.v4;
 
     try {
       _handle = dartPingStart(

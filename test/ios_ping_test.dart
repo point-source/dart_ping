@@ -92,10 +92,9 @@ void main() {
       // All constructed independently; the command is identical and constant,
       // confirming there is no per-instance mutation of shared state.
       expect(pings.length, 5);
-      expect(
-        pings.map((p) => p.command).toSet(),
-        {'Ping on iOS is provided by a native Swift ICMP engine'},
-      );
+      expect(pings.map((p) => p.command).toSet(), {
+        'Ping on iOS is provided by a native Swift ICMP engine',
+      });
     });
   });
 }

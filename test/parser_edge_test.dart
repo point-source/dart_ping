@@ -48,8 +48,7 @@ void main() {
     });
 
     test('an errorStrs match carries the raw line through as the message', () {
-      final res =
-          PingWindows.defaultParser.parse('General failure.');
+      final res = PingWindows.defaultParser.parse('General failure.');
       expect(res, isA<PingError>());
       expect((res as PingError).error, ErrorType.unknown);
       expect(res.message, 'General failure.');

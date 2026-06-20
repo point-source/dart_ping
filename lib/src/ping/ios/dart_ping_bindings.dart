@@ -163,10 +163,8 @@ final class DartPingEvent extends Struct {
 /// (`dart_ping_event_callback`): `void (*)(void *context, const
 /// dart_ping_event *event)`. WS2 wraps a Dart handler of this shape in a
 /// `NativeCallable.listen` and passes its `nativeFunction` to [dartPingStart].
-typedef DartPingEventCallbackNative = Void Function(
-  Pointer<Void> context,
-  Pointer<DartPingEvent> event,
-);
+typedef DartPingEventCallbackNative =
+    Void Function(Pointer<Void> context, Pointer<DartPingEvent> event);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // C entry points, bound to the `package:dart_ping/dart_ping_ffi` code asset.

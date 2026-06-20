@@ -20,11 +20,9 @@ const _hardTimeout = Duration(seconds: 5);
 /// path. That maximizes the chance of exposing cross-contamination between the
 /// two concurrent runs.
 class FakeProcess implements Process {
-  FakeProcess({
-    List<String> stdoutLines = const [],
-    required int exit,
-  })  : _stdout = _interleaved(stdoutLines),
-        _exitCode = Future<int>.value(exit);
+  FakeProcess({List<String> stdoutLines = const [], required int exit})
+    : _stdout = _interleaved(stdoutLines),
+      _exitCode = Future<int>.value(exit);
 
   /// Emits each line on a separate async tick so the merged line stream's
   /// events from two concurrent processes are interleaved rather than delivered
@@ -67,11 +65,9 @@ class FakeProcess implements Process {
 /// [PingLinux] is instantiated directly (not through the [Ping] platform
 /// factory) so the test is deterministic on any host OS.
 class TestPing extends PingLinux {
-  TestPing(
-    String host, {
-    required FakeProcess process,
-  })  : _process = process,
-        super(host, null, 1000, 1000, 255, IpVersion.ipv4);
+  TestPing(String host, {required FakeProcess process})
+    : _process = process,
+      super(host, null, 1000, 1000, 255, IpVersion.ipv4);
 
   final FakeProcess _process;
 
@@ -165,29 +161,45 @@ void main() {
       // identifying fields by stripping `stats` to a bare response.
       final responses = data
           .whereType<PingResponse>()
-          .map((r) => PingResponse(seq: r.seq, ttl: r.ttl, time: r.time, ip: r.ip))
+          .map(
+            (r) => PingResponse(seq: r.seq, ttl: r.ttl, time: r.time, ip: r.ip),
+          )
           .toList();
       expect(
         responses,
         fixture.expectedResponses,
-        reason: '${fixture.host} responses (seq/ttl/time/ip) must match only '
+        reason:
+            '${fixture.host} responses (seq/ttl/time/ip) must match only '
             'its own canned input, not the sibling run',
       );
 
       final summaries = data.whereType<PingSummary>().toList();
-      expect(summaries, hasLength(1),
-          reason: '${fixture.host} must emit exactly one summary');
+      expect(
+        summaries,
+        hasLength(1),
+        reason: '${fixture.host} must emit exactly one summary',
+      );
       final summary = summaries.single;
-      expect(summary.transmitted, fixture.expectedTransmitted,
-          reason: '${fixture.host} transmitted count must be its own');
-      expect(summary.received, fixture.expectedReceived,
-          reason: '${fixture.host} received count must be its own');
-      expect(summary.time, fixture.expectedSummaryTime,
-          reason: '${fixture.host} summary time must be its own');
+      expect(
+        summary.transmitted,
+        fixture.expectedTransmitted,
+        reason: '${fixture.host} transmitted count must be its own',
+      );
+      expect(
+        summary.received,
+        fixture.expectedReceived,
+        reason: '${fixture.host} received count must be its own',
+      );
+      expect(
+        summary.time,
+        fixture.expectedSummaryTime,
+        reason: '${fixture.host} summary time must be its own',
+      );
       expect(
         summary.errors.map((e) => e.error).toList(),
         fixture.expectedErrors,
-        reason: '${fixture.host} error list must reflect only its own run; '
+        reason:
+            '${fixture.host} error list must reflect only its own run; '
             'no error may bleed from the sibling',
       );
     }
@@ -204,20 +216,21 @@ void main() {
 
       // Drain both streams CONCURRENTLY so their interleaved events pass through
       // the shared parse/accumulate path at the same time.
-      final results = await Future.wait(<Future<List<PingEvent>>>[
-        pingA.stream.toList(),
-        pingB.stream.toList(),
-      ]).timeout(
-        _hardTimeout,
-        onTimeout: () => fail('concurrent streams hung within $_hardTimeout'),
-      );
+      final results =
+          await Future.wait(<Future<List<PingEvent>>>[
+            pingA.stream.toList(),
+            pingB.stream.toList(),
+          ]).timeout(
+            _hardTimeout,
+            onTimeout: () =>
+                fail('concurrent streams hung within $_hardTimeout'),
+          );
 
       expectIsolated(results[0], hostA);
       expectIsolated(results[1], hostB);
     });
 
-    test('sequential runs return the same distinct, isolated results',
-        () async {
+    test('sequential runs return the same distinct, isolated results', () async {
       // Regression guard: pinging one host at a time must yield each host's own
       // results unchanged — proving the fix changes nothing for sequential use.
       final pingA = TestPing(

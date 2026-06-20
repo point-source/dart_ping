@@ -64,10 +64,7 @@ void main() {
 
     test('covers every known OS (no unhandled target silently builds)', () {
       for (final os in OS.values) {
-        final builds = shouldBuildIosAsset(
-          buildCodeAssets: true,
-          targetOS: os,
-        );
+        final builds = shouldBuildIosAsset(buildCodeAssets: true, targetOS: os);
         expect(builds, os == OS.iOS, reason: 'only iOS builds; $os must not');
       }
     });

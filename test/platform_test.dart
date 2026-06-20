@@ -15,12 +15,20 @@ void main() {
   group('PingLinux', () {
     final ping = PingLinux('host', 3, 1, 2, 64, IpVersion.ipv4);
 
-    test('params force IPv4 with -4 and include the standard flags + count', () {
-      expect(
-        ping.params,
-        ['-4', '-O', '-n', '-W 2', '-i 1', '-t 64', '-c 3'],
-      );
-    });
+    test(
+      'params force IPv4 with -4 and include the standard flags + count',
+      () {
+        expect(ping.params, [
+          '-4',
+          '-O',
+          '-n',
+          '-W 2',
+          '-i 1',
+          '-t 64',
+          '-c 3',
+        ]);
+      },
+    );
 
     test('params force IPv6 with -6', () {
       final v6 = PingLinux('host', 3, 1, 2, 64, IpVersion.ipv6);
@@ -59,7 +67,15 @@ void main() {
     });
 
     test('interface name appends -I <name> as separate argv tokens', () {
-      final named = PingLinux('host', 3, 1, 2, 64, IpVersion.ipv4, interface: 'eth0');
+      final named = PingLinux(
+        'host',
+        3,
+        1,
+        2,
+        64,
+        IpVersion.ipv4,
+        interface: 'eth0',
+      );
       expect(named.params, containsAllInOrder(['-I', 'eth0']));
       // Regression guard: the flag and value must NOT be glued into one token,
       // which would reach ping (launched without a shell) as a single argument
@@ -69,15 +85,30 @@ void main() {
     });
 
     test('interface address appends -I <address> as separate argv tokens', () {
-      final addr =
-          PingLinux('host', 3, 1, 2, 64, IpVersion.ipv4, interface: '192.168.1.5');
+      final addr = PingLinux(
+        'host',
+        3,
+        1,
+        2,
+        64,
+        IpVersion.ipv4,
+        interface: '192.168.1.5',
+      );
       expect(addr.params, containsAllInOrder(['-I', '192.168.1.5']));
       expect(addr.params, isNot(contains('-I 192.168.1.5')));
       expect(addr.command, contains('-I 192.168.1.5'));
     });
 
     test('empty interface is a no-op (treated as no selection)', () {
-      final empty = PingLinux('host', 3, 1, 2, 64, IpVersion.ipv4, interface: '');
+      final empty = PingLinux(
+        'host',
+        3,
+        1,
+        2,
+        64,
+        IpVersion.ipv4,
+        interface: '',
+      );
       expect(empty.params, ['-4', '-O', '-n', '-W 2', '-i 1', '-t 64', '-c 3']);
       expect(empty.params, isNot(anyElement(startsWith('-I'))));
     });
@@ -86,7 +117,15 @@ void main() {
       // Backward-compat guard: the pre-feature params/command must be
       // identical whether `interface` is unset or explicitly null.
       const expected = ['-4', '-O', '-n', '-W 2', '-i 1', '-t 64', '-c 3'];
-      final nullIface = PingLinux('host', 3, 1, 2, 64, IpVersion.ipv4, interface: null);
+      final nullIface = PingLinux(
+        'host',
+        3,
+        1,
+        2,
+        64,
+        IpVersion.ipv4,
+        interface: null,
+      );
       expect(ping.params, expected);
       expect(nullIface.params, expected);
       expect(nullIface.params, ping.params);
@@ -130,7 +169,15 @@ void main() {
     });
 
     test('interface name appends -b <name> (boundif) as separate tokens', () {
-      final named = PingMac('host', 3, 1, 2, 64, IpVersion.ipv4, interface: 'en0');
+      final named = PingMac(
+        'host',
+        3,
+        1,
+        2,
+        64,
+        IpVersion.ipv4,
+        interface: 'en0',
+      );
       expect(named.params, containsAllInOrder(['-b', 'en0']));
       expect(named.params, isNot(contains('-b en0')));
       expect(named.command, contains('-b en0'));
@@ -138,23 +185,39 @@ void main() {
     });
 
     test('interface address appends -S <address> as separate tokens', () {
-      final addr =
-          PingMac('host', 3, 1, 2, 64, IpVersion.ipv4, interface: '192.168.1.5');
+      final addr = PingMac(
+        'host',
+        3,
+        1,
+        2,
+        64,
+        IpVersion.ipv4,
+        interface: '192.168.1.5',
+      );
       expect(addr.params, containsAllInOrder(['-S', '192.168.1.5']));
       expect(addr.params, isNot(contains('-S 192.168.1.5')));
       expect(addr.command, contains('-S 192.168.1.5'));
       expect(addr.params, isNot(contains('-b')));
     });
 
-    test('zone-scoped IPv6 source address is classified as an address (-S)',
-        () {
-      // `InternetAddress.tryParse` rejects the `%zone` suffix, so the zone is
-      // stripped for classification; the full value is still passed to ping.
-      final zoned =
-          PingMac('host', 3, 1, 2, 64, IpVersion.ipv4, interface: 'fe80::1%en0');
-      expect(zoned.params, containsAllInOrder(['-S', 'fe80::1%en0']));
-      expect(zoned.params, isNot(contains('-b')));
-    });
+    test(
+      'zone-scoped IPv6 source address is classified as an address (-S)',
+      () {
+        // `InternetAddress.tryParse` rejects the `%zone` suffix, so the zone is
+        // stripped for classification; the full value is still passed to ping.
+        final zoned = PingMac(
+          'host',
+          3,
+          1,
+          2,
+          64,
+          IpVersion.ipv4,
+          interface: 'fe80::1%en0',
+        );
+        expect(zoned.params, containsAllInOrder(['-S', 'fe80::1%en0']));
+        expect(zoned.params, isNot(contains('-b')));
+      },
+    );
 
     test('empty interface is a no-op (treated as no selection)', () {
       final empty = PingMac('host', 3, 1, 2, 64, IpVersion.ipv4, interface: '');
@@ -166,7 +229,15 @@ void main() {
     test('omitting interface (or null) is byte-for-byte unchanged', () {
       // Backward-compat guard: pre-feature params/command unchanged.
       const expected = ['-n', '-W 2000', '-i 1', '-m 64', '-c 3'];
-      final nullIface = PingMac('host', 3, 1, 2, 64, IpVersion.ipv4, interface: null);
+      final nullIface = PingMac(
+        'host',
+        3,
+        1,
+        2,
+        64,
+        IpVersion.ipv4,
+        interface: null,
+      );
       expect(ping.params, expected);
       expect(nullIface.params, expected);
       expect(nullIface.params, ping.params);
@@ -208,8 +279,15 @@ void main() {
     });
 
     test('interface address appends split -S <address> args', () {
-      final addr =
-          PingWindows('host', 3, 1, 2, 64, IpVersion.ipv4, interface: '192.168.1.5');
+      final addr = PingWindows(
+        'host',
+        3,
+        1,
+        2,
+        64,
+        IpVersion.ipv4,
+        interface: '192.168.1.5',
+      );
       expect(addr.params, containsAllInOrder(['-S', '192.168.1.5']));
       expect(addr.command, contains('-S 192.168.1.5'));
     });
@@ -220,7 +298,8 @@ void main() {
       // ping the default route. The rejection happens once at construction (not
       // lazily from `params`/`command`), so inspecting `command` never throws.
       expect(
-        () => PingWindows('host', 3, 1, 2, 64, IpVersion.ipv4, interface: 'eth0'),
+        () =>
+            PingWindows('host', 3, 1, 2, 64, IpVersion.ipv4, interface: 'eth0'),
         throwsA(
           isA<UnimplementedError>().having(
             (e) => e.toString(),
@@ -234,8 +313,15 @@ void main() {
     test('an accepted source-address selection lets command be inspected', () {
       // Regression guard for the fix that moved rejection to construction: the
       // pure inspection getters must never throw for a valid selection.
-      final addr =
-          PingWindows('host', 3, 1, 2, 64, IpVersion.ipv4, interface: '192.168.1.5');
+      final addr = PingWindows(
+        'host',
+        3,
+        1,
+        2,
+        64,
+        IpVersion.ipv4,
+        interface: '192.168.1.5',
+      );
       expect(() => addr.command, returnsNormally);
       expect(() => addr.params, returnsNormally);
     });
@@ -244,14 +330,29 @@ void main() {
       // A legitimate source address with an IPv6 zone id must not be mistaken
       // for a bare interface name and rejected.
       expect(
-        () =>
-            PingWindows('host', 3, 1, 2, 64, IpVersion.ipv4, interface: 'fe80::1%eth0'),
+        () => PingWindows(
+          'host',
+          3,
+          1,
+          2,
+          64,
+          IpVersion.ipv4,
+          interface: 'fe80::1%eth0',
+        ),
         returnsNormally,
       );
     });
 
     test('empty interface is a no-op, not a rejected name', () {
-      final empty = PingWindows('host', 3, 1, 2, 64, IpVersion.ipv4, interface: '');
+      final empty = PingWindows(
+        'host',
+        3,
+        1,
+        2,
+        64,
+        IpVersion.ipv4,
+        interface: '',
+      );
       expect(empty.params, ['-w', '2000', '-i', '64', '-4', '-n', '3']);
       expect(empty.params, isNot(contains('-S')));
     });
@@ -259,8 +360,15 @@ void main() {
     test('omitting interface (or null) is byte-for-byte unchanged', () {
       // Backward-compat guard: pre-feature params/command unchanged.
       const expected = ['-w', '2000', '-i', '64', '-4', '-n', '3'];
-      final nullIface =
-          PingWindows('host', 3, 1, 2, 64, IpVersion.ipv4, interface: null);
+      final nullIface = PingWindows(
+        'host',
+        3,
+        1,
+        2,
+        64,
+        IpVersion.ipv4,
+        interface: null,
+      );
       expect(ping.params, expected);
       expect(nullIface.params, expected);
       expect(nullIface.params, ping.params);

@@ -21,29 +21,59 @@ void main() {
     });
 
     test('nat64Synthesis threads the supplied value (true / false)', () {
-      final enabled =
-          PingLinux('host', 3, 1, 2, 64, IpVersion.ipv4, nat64Synthesis: true);
-      final disabled =
-          PingLinux('host', 3, 1, 2, 64, IpVersion.ipv4, nat64Synthesis: false);
+      final enabled = PingLinux(
+        'host',
+        3,
+        1,
+        2,
+        64,
+        IpVersion.ipv4,
+        nat64Synthesis: true,
+      );
+      final disabled = PingLinux(
+        'host',
+        3,
+        1,
+        2,
+        64,
+        IpVersion.ipv4,
+        nat64Synthesis: false,
+      );
       expect(enabled.nat64Synthesis, isTrue);
       expect(disabled.nat64Synthesis, isFalse);
     });
 
-    test('the option is an inert NO-OP: params/command are byte-for-byte equal',
-        () {
-      // Backward-compat guard: whether the option is omitted (default),
-      // explicitly true, or explicitly false, the spawned command must be
-      // identical — proving the subprocess option never touches the raw path.
-      final baseline = PingLinux('host', 3, 1, 2, 64, IpVersion.ipv4);
-      final enabled =
-          PingLinux('host', 3, 1, 2, 64, IpVersion.ipv4, nat64Synthesis: true);
-      final disabled =
-          PingLinux('host', 3, 1, 2, 64, IpVersion.ipv4, nat64Synthesis: false);
-      expect(enabled.params, baseline.params);
-      expect(enabled.command, baseline.command);
-      expect(disabled.params, baseline.params);
-      expect(disabled.command, baseline.command);
-    });
+    test(
+      'the option is an inert NO-OP: params/command are byte-for-byte equal',
+      () {
+        // Backward-compat guard: whether the option is omitted (default),
+        // explicitly true, or explicitly false, the spawned command must be
+        // identical — proving the subprocess option never touches the raw path.
+        final baseline = PingLinux('host', 3, 1, 2, 64, IpVersion.ipv4);
+        final enabled = PingLinux(
+          'host',
+          3,
+          1,
+          2,
+          64,
+          IpVersion.ipv4,
+          nat64Synthesis: true,
+        );
+        final disabled = PingLinux(
+          'host',
+          3,
+          1,
+          2,
+          64,
+          IpVersion.ipv4,
+          nat64Synthesis: false,
+        );
+        expect(enabled.params, baseline.params);
+        expect(enabled.command, baseline.command);
+        expect(disabled.params, baseline.params);
+        expect(disabled.command, baseline.command);
+      },
+    );
   });
 
   group('PingMac', () {
@@ -53,26 +83,56 @@ void main() {
     });
 
     test('nat64Synthesis threads the supplied value (true / false)', () {
-      final enabled =
-          PingMac('host', 3, 1, 2, 64, IpVersion.ipv4, nat64Synthesis: true);
-      final disabled =
-          PingMac('host', 3, 1, 2, 64, IpVersion.ipv4, nat64Synthesis: false);
+      final enabled = PingMac(
+        'host',
+        3,
+        1,
+        2,
+        64,
+        IpVersion.ipv4,
+        nat64Synthesis: true,
+      );
+      final disabled = PingMac(
+        'host',
+        3,
+        1,
+        2,
+        64,
+        IpVersion.ipv4,
+        nat64Synthesis: false,
+      );
       expect(enabled.nat64Synthesis, isTrue);
       expect(disabled.nat64Synthesis, isFalse);
     });
 
-    test('the option is an inert NO-OP: params/command are byte-for-byte equal',
-        () {
-      final baseline = PingMac('host', 3, 1, 2, 64, IpVersion.ipv4);
-      final enabled =
-          PingMac('host', 3, 1, 2, 64, IpVersion.ipv4, nat64Synthesis: true);
-      final disabled =
-          PingMac('host', 3, 1, 2, 64, IpVersion.ipv4, nat64Synthesis: false);
-      expect(enabled.params, baseline.params);
-      expect(enabled.command, baseline.command);
-      expect(disabled.params, baseline.params);
-      expect(disabled.command, baseline.command);
-    });
+    test(
+      'the option is an inert NO-OP: params/command are byte-for-byte equal',
+      () {
+        final baseline = PingMac('host', 3, 1, 2, 64, IpVersion.ipv4);
+        final enabled = PingMac(
+          'host',
+          3,
+          1,
+          2,
+          64,
+          IpVersion.ipv4,
+          nat64Synthesis: true,
+        );
+        final disabled = PingMac(
+          'host',
+          3,
+          1,
+          2,
+          64,
+          IpVersion.ipv4,
+          nat64Synthesis: false,
+        );
+        expect(enabled.params, baseline.params);
+        expect(enabled.command, baseline.command);
+        expect(disabled.params, baseline.params);
+        expect(disabled.command, baseline.command);
+      },
+    );
   });
 
   group('PingWindows', () {
@@ -84,25 +144,55 @@ void main() {
     });
 
     test('nat64Synthesis threads the supplied value (true / false)', () {
-      final enabled = PingWindows('host', 3, 1, 2, 64, IpVersion.ipv4,
-          nat64Synthesis: true);
-      final disabled = PingWindows('host', 3, 1, 2, 64, IpVersion.ipv4,
-          nat64Synthesis: false);
+      final enabled = PingWindows(
+        'host',
+        3,
+        1,
+        2,
+        64,
+        IpVersion.ipv4,
+        nat64Synthesis: true,
+      );
+      final disabled = PingWindows(
+        'host',
+        3,
+        1,
+        2,
+        64,
+        IpVersion.ipv4,
+        nat64Synthesis: false,
+      );
       expect(enabled.nat64Synthesis, isTrue);
       expect(disabled.nat64Synthesis, isFalse);
     });
 
-    test('the option is an inert NO-OP: params/command are byte-for-byte equal',
-        () {
-      final baseline = PingWindows('host', 3, 1, 2, 64, IpVersion.ipv4);
-      final enabled = PingWindows('host', 3, 1, 2, 64, IpVersion.ipv4,
-          nat64Synthesis: true);
-      final disabled = PingWindows('host', 3, 1, 2, 64, IpVersion.ipv4,
-          nat64Synthesis: false);
-      expect(enabled.params, baseline.params);
-      expect(enabled.command, baseline.command);
-      expect(disabled.params, baseline.params);
-      expect(disabled.command, baseline.command);
-    });
+    test(
+      'the option is an inert NO-OP: params/command are byte-for-byte equal',
+      () {
+        final baseline = PingWindows('host', 3, 1, 2, 64, IpVersion.ipv4);
+        final enabled = PingWindows(
+          'host',
+          3,
+          1,
+          2,
+          64,
+          IpVersion.ipv4,
+          nat64Synthesis: true,
+        );
+        final disabled = PingWindows(
+          'host',
+          3,
+          1,
+          2,
+          64,
+          IpVersion.ipv4,
+          nat64Synthesis: false,
+        );
+        expect(enabled.params, baseline.params);
+        expect(enabled.command, baseline.command);
+        expect(disabled.params, baseline.params);
+        expect(disabled.command, baseline.command);
+      },
+    );
   });
 }

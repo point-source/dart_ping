@@ -38,7 +38,10 @@ void main() {
       var ping = Ping('201.202.203.204', count: 2, ttl: 1);
       var data = await ping.stream.last;
       expect(data, isA<PingSummary>());
-      expect((data as PingSummary).errors.toString(), contains('requestTimedOut'));
+      expect(
+        (data as PingSummary).errors.toString(),
+        contains('requestTimedOut'),
+      );
     });
   });
 }
