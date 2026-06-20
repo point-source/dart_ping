@@ -88,7 +88,15 @@ class PingMac extends BasePing implements Ping {
 
   @override
   PingError? interpretExitCode(int exitCode) {
-    if (exitCode == 1) {
+    // BSD `ping` reports "no echo reply" with TWO exit codes: `1` on pure
+    // silence and `2` when the run drew ICMP errors back but no replies (the
+    // classic `ttl=1` / TTL-exceeded case). Both are the same logical outcome,
+    // so both map to a single recognized `noReply`. Because a recognized
+    // exit-code error short-circuits base_ping's unmapped-exit throw path, the
+    // already-assembled 100%-loss summary becomes the terminal event instead of
+    // a thrown `Exception('Ping process exited with code: 2')`
+    // (§spec:mac-all-timeout-summary).
+    if (exitCode == 1 || exitCode == 2) {
       return PingError(.noReply);
     } else if (exitCode == 68) {
       return PingError(.unknownHost);
@@ -99,7 +107,15 @@ class PingMac extends BasePing implements Ping {
 
   @override
   Exception? throwExit(int exitCode) {
-    return exitCode > 1 && exitCode != 68
+    // Recognized codes (`1`/`2` no-reply, `68` unknown host) are handled by
+    // interpretExitCode and must not surface a generic exit exception; every
+    // other non-success code remains an unmapped throw so a genuinely unknown
+    // failure still surfaces a catchable error then closes the stream
+    // (§spec:stream-lifecycle-robustness — the guarantee narrows by exactly the
+    // one well-understood exit `2`, it does not loosen).
+    const recognized = {1, 2, 68};
+
+    return exitCode != 0 && !recognized.contains(exitCode)
         ? Exception('Ping process exited with code: $exitCode')
         : null;
   }
