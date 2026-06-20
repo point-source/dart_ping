@@ -2,26 +2,27 @@ import Flutter
 import UIKit
 import XCTest
 
-// `ICMPPacket.swift` (the consolidated engine's framing/parsing code at
-// `dart_ping/native/ICMPPacket.swift`) is compiled directly into this test
-// target — see the RunnerTests Sources build phase in the Xcode project — so
-// its API is reachable without importing a plugin module. `dart_ping` is no
-// longer a Flutter plugin and exposes no Swift module to import.
+// The consolidated engine's deterministic logic lives in
+// `dart_ping/native/ICMPPacket.swift` (framing/parsing) and
+// `dart_ping/native/PingEngine.swift` (address-family / error-kind / NAT64
+// classification helpers). Both are Foundation/Darwin-only and are compiled
+// directly into this test target — see the RunnerTests Sources build phase in
+// the Xcode project — so their API is reachable without importing a plugin
+// module. `dart_ping` is no longer a Flutter plugin and exposes no Swift module
+// to import. (The `@_cdecl` C-ABI shim `ping_shim.swift` is NOT compiled in:
+// the tests reach no C-ABI symbol, and it needs the bridging header the app
+// target supplies.)
 //
 // These tests exercise the deterministic, network-free logic only: checksum
-// computation, Echo Request construction, Echo Reply parsing, and Time
-// Exceeded original-sequence extraction (§spec:ios-tests).
+// computation, Echo Request/Reply parsing, Time Exceeded original-sequence
+// extraction, and the engine's getaddrinfo/errno/NAT64 classification
+// (§spec:ios-tests).
 //
 // The wire format is the whole point of this code, so every test documents the
 // exact bytes/offsets/endianness it expects and (for the checksum) shows the
 // one's-complement arithmetic by hand.
 
 class RunnerTests: XCTestCase {
-
-  func testExample() {
-    // If you add code to the Runner application, consider adding tests here.
-    // See https://developer.apple.com/documentation/xctest for more information about using XCTest.
-  }
 
   // MARK: - checksum(_:) — RFC 1071 Internet checksum
 

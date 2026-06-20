@@ -10,6 +10,7 @@
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
 		331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C807B294A618700263BE5 /* RunnerTests.swift */; };
 		DA17C9A02ED2700000000002 /* ICMPPacket.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA17C9A02ED2700000000001 /* ICMPPacket.swift */; };
+		DA17C9A02ED2700000000004 /* PingEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA17C9A02ED2700000000003 /* PingEngine.swift */; };
 		3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */; };
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
 		7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */; };
@@ -62,6 +63,7 @@
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		784666492D4C4C64000A1A5F /* FlutterFramework */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = FlutterFramework; path = Flutter/ephemeral/Packages/.packages/FlutterFramework; sourceTree = "<group>"; };
 		DA17C9A02ED2700000000001 /* ICMPPacket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ICMPPacket.swift; path = ../../native/ICMPPacket.swift; sourceTree = SOURCE_ROOT; };
+		DA17C9A02ED2700000000003 /* PingEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PingEngine.swift; path = ../../native/PingEngine.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -81,6 +83,7 @@
 			children = (
 				331C807B294A618700263BE5 /* RunnerTests.swift */,
 				DA17C9A02ED2700000000001 /* ICMPPacket.swift */,
+				DA17C9A02ED2700000000003 /* PingEngine.swift */,
 			);
 			path = RunnerTests;
 			sourceTree = "<group>";
@@ -280,6 +283,7 @@
 			files = (
 				331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */,
 				DA17C9A02ED2700000000002 /* ICMPPacket.swift in Sources */,
+				DA17C9A02ED2700000000004 /* PingEngine.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
