@@ -294,7 +294,7 @@ discovery APIs, not ICMP to a routable host; this is noted so a reviewer
 does not mistake its absence for a defect.
 
 ## iOS behavior tests §spec:ios-tests
-*Status: implemented (Batch 3; iOS-test home consolidated in Batch #28-4) — Dart-side mapping is now covered by `dart_ping/test/ios_event_mapper_test.dart` / `ios_bindings_test.dart` / `ios_ping_test.dart` over the native-result → sealed-event seam (full ErrorType set, the combined response+error contract, and summary error-list population); these run under the `core` matrix via plain `dart test -x live` (no separate Flutter job). Swift-side ICMP framing/sequence/parse logic is covered by network-free XCTest cases in the `dart_ping/example` `RunnerTests` target, which compiles `dart_ping/native/ICMPPacket.swift` directly (no plugin module import); hand-verified, not compiled on the Linux host — run on macOS via the `ios-swift` job's `xcodebuild test -workspace Runner.xcworkspace -scheme Runner`. Live ICMP round-trips remain a manual example-app acceptance path by design.*
+*Status: implemented (Batch 3; iOS-test home consolidated in Batch #28-4) — Dart-side mapping is now covered by `test/ios_event_mapper_test.dart` / `ios_bindings_test.dart` / `ios_ping_test.dart` over the native-result → sealed-event seam (full ErrorType set, the combined response+error contract, and summary error-list population); these run under the `core` matrix via plain `dart test -x live` (no separate Flutter job). Swift-side ICMP framing/sequence/parse logic is covered by network-free XCTest cases in the `example` `RunnerTests` target, which compiles `native/ICMPPacket.swift` directly (no plugin module import); hand-verified, not compiled on the Linux host — run on macOS via the `ios-swift` job's `xcodebuild test -workspace Runner.xcworkspace -scheme Runner`. Live ICMP round-trips remain a manual example-app acceptance path by design.*
 
 Automated tests cover the iOS ping behavior where feasible
 (§req:success-criteria, §req:quality-attributes — testability).
@@ -542,7 +542,7 @@ non-zero exit, and the `onListen` body before the subscription is wired up —
 so the exception is swallowed and the stream controller is never closed.
 
 ## Stream always terminates and surfaces errors §spec:stream-lifecycle-robustness
-*Status: implemented (dart_ping 9.1.1) — teardown centralized through an idempotent `_closeController()` and a `try/finally` in `_cleanup`, so the `StreamController` closes exactly once on every terminal path. Launch failures (incl. a missing `ping` binary, which reports the binary could not be found) are caught in `_onListen` and routed to the error channel before closing; an unmapped non-zero exit surfaces `throwExit`'s exception via `addError` instead of swallowing/throwing in `onDone`. stderr/stdout are decoded and line-split independently before merging. Covered by network-free `dart test` cases in `dart_ping/test/stream_lifecycle_test.dart` (launch failure, unmapped exit, normal-completion regression guard, close-exactly-once across all paths) that fail on a hang or swallowed error; public API and normal-run output unchanged.*
+*Status: implemented (dart_ping 9.1.1) — teardown centralized through an idempotent `_closeController()` and a `try/finally` in `_cleanup`, so the `StreamController` closes exactly once on every terminal path. Launch failures (incl. a missing `ping` binary, which reports the binary could not be found) are caught in `_onListen` and routed to the error channel before closing; an unmapped non-zero exit surfaces `throwExit`'s exception via `addError` instead of swallowing/throwing in `onDone`. stderr/stdout are decoded and line-split independently before merging. Covered by network-free `dart test` cases in `test/stream_lifecycle_test.dart` (launch failure, unmapped exit, normal-completion regression guard, close-exactly-once across all paths) that fail on a hang or swallowed error; public API and normal-run output unchanged.*
 
 The `Ping` stream terminates on every code path and routes failures through
 its error channel rather than leaving the consumer to hang. Errors surface
@@ -600,7 +600,7 @@ the consumer), so it is closed in the same pass rather than tracked
 separately.
 
 **Why patch-level and API-frozen:** the change is internal to
-`dart_ping/lib/src/ping/base_ping.dart`; the `Ping` interface and the
+`lib/src/ping/base_ping.dart`; the `Ping` interface and the
 `PingData` / `PingResponse` / `PingSummary` / `PingError` shapes are
 unchanged, normal-run output is byte-for-byte equivalent, and failures
 surface through the error channel consumers already handle. It therefore
@@ -625,11 +625,11 @@ need a special host.
 matrix and the iOS Swift suite on macOS run on every pull request to `main`
 (and `develop`, §spec:ci-develop). `main` is branch-protected: no direct
 pushes, changes land only through a PR whose required checks are green. The
-Swift job builds `dart_ping/example` for the simulator to generate Flutter
+Swift job builds `example` for the simulator to generate Flutter
 artifacts, then runs `RunnerTests` via `xcodebuild`. Updated in #28-4 for the
 single-package consolidation: the separate `dart_ping_ios` Dart job was removed
 (its iOS Dart tests now run under the core matrix as plain `dart test`), and the
-Swift suite was re-homed onto `dart_ping/example` + `dart_ping/native`; the
+Swift suite was re-homed onto `example` + `native`; the
 dart-only `core`/`coverage` jobs pass `dart pub get --no-example` so the Flutter
 example is not resolved on a Flutter-less runner.*
 
@@ -640,11 +640,11 @@ through a passing PR.
 - A workflow shall trigger on `pull_request` to `main` and run:
   - the core `dart_ping` suite on **Linux, Windows and macOS** — so each
     platform class's OS-specific code path is exercised on its native host,
-    including the iOS Dart event-mapping/bindings tests (`dart_ping/test/ios_*`),
+    including the iOS Dart event-mapping/bindings tests (`test/ios_*`),
     which are plain `dart test` and need no Flutter runner
     (§spec:test-coverage, #77; consolidated in #28-4);
   - the Swift `RunnerTests` suite on a macOS runner via `xcodebuild test`,
-    building `dart_ping/example` and compiling `dart_ping/native/ICMPPacket.swift`
+    building `example` and compiling `native/ICMPPacket.swift`
     into the test target (#74, §spec:ios-tests).
 - The required (merge-gating) checks shall be **deterministic**: live
   ICMP round-trips to external hosts are not part of CI at all. Tests that
@@ -898,17 +898,17 @@ leaves no third "auto" value.
 
 ## Address-family mismatch fails fast §spec:address-family-mismatch-validation
 *Status: implemented (Batch #69-2) — a parse-only `ipLiteralFamily()` helper
-(`dart_ping/lib/src/address_family.dart`, wrapping `InternetAddress.tryParse`,
+(`lib/src/address_family.dart`, wrapping `InternetAddress.tryParse`,
 no DNS) classifies a target as an IPv4 literal, IPv6 literal, or hostname. A
 synchronous guard at the top of the shared `Ping(...)` factory
-(`dart_ping/lib/src/ping_interface.dart`), before the platform switch (so it
+(`lib/src/ping_interface.dart`), before the platform switch (so it
 covers every engine including the iOS factory path), throws `ArgumentError`
 when a literal's family contradicts the selected `IpVersion` — both directions
 (`IpVersion.ipv4`+IPv6-literal and `IpVersion.ipv6`+IPv4-literal) — naming an
 address-family mismatch, before any stream/process starts. A matching literal
 or a hostname (`literalFamily == null`) falls through unchanged with no DNS.
-Covered by network-free tests (`dart_ping/test/address_family_test.dart`,
-`dart_ping/test/address_family_validation_test.dart`).*
+Covered by network-free tests (`test/address_family_test.dart`,
+`test/address_family_validation_test.dart`).*
 
 When the target is a **literal IP address** whose family contradicts the
 selected `IpVersion`, the call fails immediately with a single,
@@ -1042,12 +1042,12 @@ through. It adds no DNS, no retries, and no family fallback
 
 ## Address-family error tests §spec:address-family-error-tests
 *Status: implemented — both bullets land. The literal-vs-selection validation
-bullet landed in Batch #69-2 (`dart_ping/test/address_family_validation_test.dart`):
+bullet landed in Batch #69-2 (`test/address_family_validation_test.dart`):
 deterministic, network-free cases asserting an IPv6 literal with
 `IpVersion.ipv4` and an IPv4 literal with `IpVersion.ipv6` each throw
 `ArgumentError` (including the `IpVersion.ipv4` default), while a matching
 literal and a hostname each construct without throwing. The error-mapping bullet
-landed in Batch #69-3 (`dart_ping/test/address_family_error_test.dart`): native
+landed in Batch #69-3 (`test/address_family_error_test.dart`): native
 outputs fed through each platform parser (routing / no-route lines → `noRoute`; a
 genuine unknown-host line → `unknownHost`; an ambiguous line → `unknown`), with the
 iOS seams covered by `dart_ping_ios/test/ping_event_mapper_test.dart` (a
@@ -1122,7 +1122,7 @@ name-vs-address mechanism choice onto the caller, which is exactly the
 platform detail this design hides.
 
 ## Interface selection on the subprocess platforms §spec:interface-selection
-*Status: implemented (dart_ping 9.2.0) — an optional `interface` value on the `Ping` factory and the `PingLinux`/`PingMac`/`PingWindows` constructors is classified as a name vs. a source address via `InternetAddress.tryParse` (shared `BasePing.interface` field + `interfaceIsAddress` getter) and mapped onto each tool's binding flag inside the existing `params` getter: Linux/Android `-I <value>` (either form), macOS `-b <value>` (name) / `-S <value>` (address), Windows `-S <value>` (address form only — bare-name rejection is §spec:interface-platform-rejection). Omitting `interface` leaves `params`/`command` byte-for-byte identical to 9.1.1; the iOS factory branch and the `PingData`/`PingResponse`/`PingSummary`/`PingError` shapes are unchanged. Covered by network-free `dart test` cases in `dart_ping/test/platform_test.dart` asserting the per-platform flag for name and address selections plus a backward-compat guard, all via the public `command`/`params` getters.*
+*Status: implemented (dart_ping 9.2.0) — an optional `interface` value on the `Ping` factory and the `PingLinux`/`PingMac`/`PingWindows` constructors is classified as a name vs. a source address via `InternetAddress.tryParse` (shared `BasePing.interface` field + `interfaceIsAddress` getter) and mapped onto each tool's binding flag inside the existing `params` getter: Linux/Android `-I <value>` (either form), macOS `-b <value>` (name) / `-S <value>` (address), Windows `-S <value>` (address form only — bare-name rejection is §spec:interface-platform-rejection). Omitting `interface` leaves `params`/`command` byte-for-byte identical to 9.1.1; the iOS factory branch and the `PingData`/`PingResponse`/`PingSummary`/`PingError` shapes are unchanged. Covered by network-free `dart test` cases in `test/platform_test.dart` asserting the per-platform flag for name and address selections plus a backward-compat guard, all via the public `command`/`params` getters.*
 
 A `Ping` constructed with an optional `interface` value pins its probes to
 that interface or source address on the platforms whose `ping` can bind by
@@ -1185,7 +1185,7 @@ doc comment states both forms explicitly so the dual meaning is discoverable
 at the call site.
 
 ## Loud rejection of unsupported selections §spec:interface-platform-rejection
-*Status: implemented (dart_ping 9.2.0) — a selection a platform cannot honor now fails loudly through a catchable error rather than a silent no-op. On Windows, `PingWindows.params` throws an `UnimplementedError` for a bare interface *name* (any non-null `interface` that is not an IP address) naming the limitation — Windows `ping` binds only by source address — while the `-S <address>` source form stays honored (§spec:interface-selection); because `params` is evaluated inside `BasePing._onListen`'s try/catch, the throw surfaces on the stream's error channel and the stream still closes (mirrors the existing IPv6 `UnimplementedError` precedent). On iOS, a new top-level `throwIfInterfaceUnsupportedOnIos(interface)` guard — called as the first statement of the `Ping` factory's `'ios'` branch, before delegating to `Ping.iosFactory` — throws `UnimplementedError('Interface selection is not supported on iOS')` for any non-null selection, so the `dart_ping_ios` factory signature and the native engine need no edit. A bad/non-existent interface (OS `ping` refusing the bind / non-zero exit) reuses the §spec:stream-lifecycle-robustness error-channel + bounded-time close with no new failure-reporting mechanism. Covered by network-free `dart test` cases: the Windows name rejection in `dart_ping/test/platform_test.dart`, the iOS guard (name, address, and null no-op) in `dart_ping/test/misuse_test.dart`, and the bad-interface error-then-close path in `dart_ping/test/stream_lifecycle_test.dart`.*
+*Status: implemented (dart_ping 9.2.0) — a selection a platform cannot honor now fails loudly through a catchable error rather than a silent no-op. On Windows, `PingWindows.params` throws an `UnimplementedError` for a bare interface *name* (any non-null `interface` that is not an IP address) naming the limitation — Windows `ping` binds only by source address — while the `-S <address>` source form stays honored (§spec:interface-selection); because `params` is evaluated inside `BasePing._onListen`'s try/catch, the throw surfaces on the stream's error channel and the stream still closes (mirrors the existing IPv6 `UnimplementedError` precedent). On iOS, a new top-level `throwIfInterfaceUnsupportedOnIos(interface)` guard — called as the first statement of the `Ping` factory's `'ios'` branch, before delegating to `Ping.iosFactory` — throws `UnimplementedError('Interface selection is not supported on iOS')` for any non-null selection, so the `dart_ping_ios` factory signature and the native engine need no edit. A bad/non-existent interface (OS `ping` refusing the bind / non-zero exit) reuses the §spec:stream-lifecycle-robustness error-channel + bounded-time close with no new failure-reporting mechanism. Covered by network-free `dart test` cases: the Windows name rejection in `test/platform_test.dart`, the iOS guard (name, address, and null no-op) in `test/misuse_test.dart`, and the bad-interface error-then-close path in `test/stream_lifecycle_test.dart`.*
 
 A selection a platform genuinely cannot honor produces a clear, catchable
 error and the stream terminates — never a silent no-op that misleads the
@@ -1241,7 +1241,7 @@ closure by §spec:stream-lifecycle-robustness. The feature deliberately adds
 no new failure-reporting mechanism (§req:interface-constraints).
 
 ## Enumerating available interfaces §spec:interface-listing
-*Status: implemented (dart_ping 9.2.0) — a top-level `listNetworkInterfaces({includeLoopback, includeLinkLocal, type})` helper in `dart_ping/lib/src/interface_listing.dart`, exported from `dart_ping/lib/dart_ping.dart`, returns the host's `dart:io` `NetworkInterface`s via `NetworkInterface.list()` (no `ifconfig`/`ip`/`ipconfig` parsing). Each returned interface exposes a `name` and `addresses`, either of which feeds straight back into a `Ping`'s `interface` value; the entrypoint re-exports `NetworkInterface`/`InternetAddress`/`InternetAddressType` so the return type is nameable without importing `dart:io`. No new public model type is introduced. The helper is a thin pass-through with no `try/catch`, so an enumeration failure propagates to the caller as a rejected future rather than being swallowed; that failure path is made testable network-free via an internal `networkInterfaceLister` seam (typedef + mutable top-level default, reachable from `package:dart_ping/src/interface_listing.dart` but not from the public entrypoint). Covered by network-free `dart test` cases in `dart_ping/test/interface_listing_test.dart` (exported surface/shape, round-trip of a returned name/address into `Ping(host, interface: ...)`, and the not-swallowed-failure contract via the seam). Documented in the README ("Selecting a network interface") and the 9.2.0 CHANGELOG entry.*
+*Status: implemented (dart_ping 9.2.0) — a top-level `listNetworkInterfaces({includeLoopback, includeLinkLocal, type})` helper in `lib/src/interface_listing.dart`, exported from `lib/dart_ping.dart`, returns the host's `dart:io` `NetworkInterface`s via `NetworkInterface.list()` (no `ifconfig`/`ip`/`ipconfig` parsing). Each returned interface exposes a `name` and `addresses`, either of which feeds straight back into a `Ping`'s `interface` value; the entrypoint re-exports `NetworkInterface`/`InternetAddress`/`InternetAddressType` so the return type is nameable without importing `dart:io`. No new public model type is introduced. The helper is a thin pass-through with no `try/catch`, so an enumeration failure propagates to the caller as a rejected future rather than being swallowed; that failure path is made testable network-free via an internal `networkInterfaceLister` seam (typedef + mutable top-level default, reachable from `package:dart_ping/src/interface_listing.dart` but not from the public entrypoint). Covered by network-free `dart test` cases in `test/interface_listing_test.dart` (exported surface/shape, round-trip of a returned name/address into `Ping(host, interface: ...)`, and the not-swallowed-failure contract via the seam). Documented in the README ("Selecting a network interface") and the 9.2.0 CHANGELOG entry.*
 
 A developer can discover the network interfaces available on the current
 host — enough to identify one and pass it back into a `Ping` — so an app can
@@ -1298,7 +1298,7 @@ IPs — so callers that pick the "fastest" host or chart latency act on
 fabricated numbers (§req:concurrent-user-stories).
 
 ## Concurrent ping isolation §spec:concurrent-isolation
-*Status: complete (both halves) — confirm-then-decide gate ran on each engine and required no production change. Core/subprocess: the offline guard `dart_ping/test/concurrent_isolation_test.dart` overlaps concurrent `Ping` runs with canned interleaved per-host output and asserts no field bleeds; it passes against the current source, confirming the design-level isolation invariant (no shared mutable state in `BasePing`). iOS bridge: `dart_ping_ios/test/concurrent_isolation_test.dart` overlaps two `DartPingIOS` runs over the single shared broadcast `EventChannel`, recovers each run's id from its `start` call, pushes INTERLEAVED distinctly-id'd events (responses, an error, and a summary per run), and asserts each run's stream receives only its own id's events (own seq/ttl/time/ip; own summary transmitted/received/time + errors) and never a sibling's, and that each stream still closes on its own summary — confirming the id-demux is isolation-correct (each `_onListen` filters the shared stream by its own unique per-run `_id`). Both tests stand as permanent offline regression guards.*
+*Status: complete (both halves) — confirm-then-decide gate ran on each engine and required no production change. Core/subprocess: the offline guard `test/concurrent_isolation_test.dart` overlaps concurrent `Ping` runs with canned interleaved per-host output and asserts no field bleeds; it passes against the current source, confirming the design-level isolation invariant (no shared mutable state in `BasePing`). iOS bridge: `dart_ping_ios/test/concurrent_isolation_test.dart` overlaps two `DartPingIOS` runs over the single shared broadcast `EventChannel`, recovers each run's id from its `start` call, pushes INTERLEAVED distinctly-id'd events (responses, an error, and a summary per run), and asserts each run's stream receives only its own id's events (own seq/ttl/time/ip; own summary transmitted/received/time + errors) and never a sibling's, and that each stream still closes on its own summary — confirming the id-demux is isolation-correct (each `_onListen` filters the shared stream by its own unique per-run `_id`). Both tests stand as permanent offline regression guards.*
 
 Concurrent `Ping` instances are fully independent: when several runs to
 distinct hosts overlap in time, every event a stream emits — response,
@@ -1432,7 +1432,7 @@ of that major, rather than each earlier area preserving the old shape
 (§req:stats-constraints).
 
 ## Sealed ping-event stream §spec:stats-event-model
-*Status: implemented (dart_ping 10.0.0) — the nullable `PingData` envelope is replaced by a `sealed class PingEvent` with three `final` subtypes: `PingResponse` (successful probe), `PingError` (probe/run error, now also carrying optional `seq`/`ip` so a self-identifying timeout/TTL probe stays a single event), and the terminal `PingSummary`. Each variant writes a `'type'` discriminator so `PingEvent.fromMap`/`fromJson` reconstruct the right subtype; the three files are a part/part-of library rooted at `ping_event.dart`. The stream (`Ping.stream`, `BasePing`, the parser transformer) is now `Stream<PingEvent>`, consumers branch with an exhaustive `switch`, and the summary is identifiable by type alone (`is PingSummary`) as the final event. Covered by network-free `dart test` cases in `dart_ping/test/{model_test,serialization_test,parse_test,stats_event_test}.dart`.*
+*Status: implemented (dart_ping 10.0.0) — the nullable `PingData` envelope is replaced by a `sealed class PingEvent` with three `final` subtypes: `PingResponse` (successful probe), `PingError` (probe/run error, now also carrying optional `seq`/`ip` so a self-identifying timeout/TTL probe stays a single event), and the terminal `PingSummary`. Each variant writes a `'type'` discriminator so `PingEvent.fromMap`/`fromJson` reconstruct the right subtype; the three files are a part/part-of library rooted at `ping_event.dart`. The stream (`Ping.stream`, `BasePing`, the parser transformer) is now `Stream<PingEvent>`, consumers branch with an exhaustive `switch`, and the summary is identifiable by type alone (`is PingSummary`) as the final event. Covered by network-free `dart test` cases in `test/{model_test,serialization_test,parse_test,stats_event_test}.dart`.*
 
 A `Ping` instance's stream emits a **sealed `PingEvent`** union with three
 explicit variants — a probe response, a probe error, and a terminal run
@@ -1490,7 +1490,7 @@ ambiguity; it is paid once, inside a release that already forces a
 migration, and the result is code the compiler checks for completeness.
 
 ## Round-trip statistics value object §spec:stats-round-trip
-*Status: implemented (dart_ping 10.0.0) — a single immutable `RoundTripStats` value object in `dart_ping/lib/src/models/round_trip_stats.dart` carries min/avg/max/**population** stddev/jitter plus the successful-`sampleCount`, computed incrementally by `RoundTripStatsAccumulator` so the batch (`RoundTripStats.fromSamples`) and one-at-a-time paths are identical. Honors the null/absent contract (0 samples → all figures null; 1 sample → stddev `Duration.zero`, jitter null; ≥2 → all present) and serializes Durations in microseconds to preserve sub-millisecond precision. Covered by network-free `dart test` cases in `dart_ping/test/round_trip_stats_test.dart`.*
+*Status: implemented (dart_ping 10.0.0) — a single immutable `RoundTripStats` value object in `lib/src/models/round_trip_stats.dart` carries min/avg/max/**population** stddev/jitter plus the successful-`sampleCount`, computed incrementally by `RoundTripStatsAccumulator` so the batch (`RoundTripStats.fromSamples`) and one-at-a-time paths are identical. Honors the null/absent contract (0 samples → all figures null; 1 sample → stddev `Duration.zero`, jitter null; ≥2 → all present) and serializes Durations in microseconds to preserve sub-millisecond precision. Covered by network-free `dart test` cases in `test/round_trip_stats_test.dart`.*
 
 A single reusable value object — `RoundTripStats` — carries the round-trip
 figures: **minimum, average, maximum, standard deviation, jitter**, and the
@@ -1548,7 +1548,7 @@ explicitly (§req:stats-success-criteria, §req:stats-user-stories — the
 zero-reply story).
 
 ## Run summary reports the full statistic set §spec:stats-summary
-*Status: implemented (dart_ping 10.0.0) — `PingSummary` gains a `RoundTripStats? stats` field (the run's round-trip figures) and a DERIVED `packetLoss` getter computed on read from `transmitted`/`received` (never stored, so it cannot drift; a run that transmitted nothing or received nothing reports 100% loss). `stats`/`packetLoss` participate in `copyWith`/`==`/`hashCode`/`toString`/`toMap`/`fromMap`. The round-trip figures come from the per-probe reply times accumulated during the run, so a zero-reply run carries the empty snapshot (figures absent, not fabricated zeros). Covered by network-free `dart test` cases in `dart_ping/test/{model_test,stats_event_test,serialization_test}.dart`.*
+*Status: implemented (dart_ping 10.0.0) — `PingSummary` gains a `RoundTripStats? stats` field (the run's round-trip figures) and a DERIVED `packetLoss` getter computed on read from `transmitted`/`received` (never stored, so it cannot drift; a run that transmitted nothing or received nothing reports 100% loss). `stats`/`packetLoss` participate in `copyWith`/`==`/`hashCode`/`toString`/`toMap`/`fromMap`. The round-trip figures come from the per-probe reply times accumulated during the run, so a zero-reply run carries the empty snapshot (figures absent, not fabricated zeros). Covered by network-free `dart test` cases in `test/{model_test,stats_event_test,serialization_test}.dart`.*
 
 The terminal run-summary event reports the complete statistic set: the
 round-trip `RoundTripStats` (§spec:stats-round-trip), a **packet-loss
@@ -1622,7 +1622,7 @@ end-of-run signal (§spec:stats-event-model) — it is the concrete reason the
 event model is redesigned rather than extended.
 
 ## Statistics computed uniformly across platforms §spec:stats-cross-platform
-*Status: implemented on every platform incl. iOS (dart_ping 10.0.0 for the subprocess platforms; the iOS portion landed in Batch #63-4 — §spec:stats-ios — where `dart_ping_ios`'s `NativeEventStatsMapper` feeds the per-probe times into the SAME core `RoundTripStatsAccumulator`, so the figures are identical by construction) — `BasePing` feeds every successful probe's RTT into a single `RoundTripStatsAccumulator` and, at `_cleanup`, builds the terminal summary's `RoundTripStats` from that per-probe accumulation rather than from any native `ping` stats line (the native min/avg/max/stddev line is not parsed). Because the same accumulator code runs on Linux/Android, macOS, and Windows, every subprocess platform reports the identical figure set — including a computed standard deviation on Windows, whose native `ping` does not emit one. Covered by network-free `dart test` cases in `dart_ping/test/stats_event_test.dart` (per-probe → populated stats incl. non-null stddev, and the end-to-end BasePing path via a fake process).*
+*Status: implemented on every platform incl. iOS (dart_ping 10.0.0 for the subprocess platforms; the iOS portion landed in Batch #63-4 — §spec:stats-ios — where `dart_ping_ios`'s `NativeEventStatsMapper` feeds the per-probe times into the SAME core `RoundTripStatsAccumulator`, so the figures are identical by construction) — `BasePing` feeds every successful probe's RTT into a single `RoundTripStatsAccumulator` and, at `_cleanup`, builds the terminal summary's `RoundTripStats` from that per-probe accumulation rather than from any native `ping` stats line (the native min/avg/max/stddev line is not parsed). Because the same accumulator code runs on Linux/Android, macOS, and Windows, every subprocess platform reports the identical figure set — including a computed standard deviation on Windows, whose native `ping` does not emit one. Covered by network-free `dart test` cases in `test/stats_event_test.dart` (per-probe → populated stats incl. non-null stddev, and the end-to-end BasePing path via a fake process).*
 
 The round-trip statistics are computed once, at the Dart boundary, from the
 **per-probe round-trip times the platform measured** — the same algorithm
@@ -1687,7 +1687,7 @@ microseconds from Batch #63-1, so the whole serialize→deserialize round trip
 preserves sub-millisecond resolution. The map key stays `'time'`; only the
 numeric scale changed, which the unreleased breaking 10.0.0 major absorbs.
 Covered by network-free round-trip tests in
-`dart_ping/test/serialization_test.dart` (§spec:stats-tests). The iOS
+`test/serialization_test.dart` (§spec:stats-tests). The iOS
 microseconds-over-channel half landed in Batch #63-4 (§spec:stats-ios): the
 Swift engine now sends each probe's RTT (and the summary total) in microseconds
 instead of rounding to whole milliseconds, and `ping_event_mapper_test.dart`
@@ -1770,14 +1770,14 @@ is normative.
 ## Statistics behavior tests §spec:stats-tests
 *Status: in progress — the round-trip computations, packet-loss derivation /
 zero-reply case, and the sealed-event contract landed with the model redesign
-(Batch #63-1, `dart_ping/test/stats_event_test.dart`). The **sub-millisecond
+(Batch #63-1, `test/stats_event_test.dart`). The **sub-millisecond
 precision round-trip** bullet is covered (Batch #63-3):
-`dart_ping/test/serialization_test.dart` serializes and deserializes
+`test/serialization_test.dart` serializes and deserializes
 sub-millisecond `PingResponse.time` and a `RoundTripStats` derived from
 sub-millisecond samples (carried on a `PingSummary`) and asserts every
 round-trip `Duration` survives to the microsecond (§spec:stats-precision). The
 **live-consistency** coverage landed (Batch #63-2):
-`dart_ping/test/live_stats_test.dart` asserts every probe event
+`test/live_stats_test.dart` asserts every probe event
 (`PingResponse` and per-probe `PingError`) carries a non-null running
 `RoundTripStats` snapshot; the running snapshot tracks the same computation as
 the summary step by step (the i-th response equals
@@ -1968,7 +1968,7 @@ error, keeping a cross-platform call identical. dartdoc on the factory
 parameter describes what it does, the default, which platform synthesizes (iOS)
 vs. treats it as a no-op, and that disabling restores raw pass-through;
 CHANGELOG (dart_ping 10.0.0 / dart_ping_ios 6.0.0) and the root README document
-it. Covered by network-free tests (`dart_ping/test/nat64_option_test.dart` —
+it. Covered by network-free tests (`test/nat64_option_test.dart` —
 presence/default/threading plus the `params`/`command` no-op guard — and the
 `dart_ping_ios` bridge `start`-argument assertions). The native engine acting on
 the flag (actual NAT64 synthesis) lands in Batch #52-2,
@@ -2095,7 +2095,7 @@ path (§req:nat64-open-decisions — interaction with #69 validation).
 ## NAT64 reachability tests §spec:nat64-tests
 *Status: implemented offline (Batches #52-1, #52-2); live leg on-device only —
 the option-presence / default-enabled / threading bullet is covered offline
-(Batch #52-1): `dart_ping/test/nat64_option_test.dart` asserts the option
+(Batch #52-1): `test/nat64_option_test.dart` asserts the option
 defaults to enabled on every subprocess class, threads the supplied value, and is
 an inert no-op (`params`/`command` byte-for-byte unchanged), and
 `dart_ping_ios/test/dart_ping_ios_test.dart` asserts the bridge `start` arguments
@@ -2182,7 +2182,7 @@ listing↔selection round-trip contract honest per platform and proves it on a
 real Windows host, with no change to any platform's runtime behavior.
 
 ## Per-platform round-trip honesty §spec:windows-roundtrip-contract
-*Status: implemented (Batch #85-1) — the round-trip test `dart_ping/test/interface_listing_test.dart` ("each interface has the right shape and round-trips into Ping") now branches the listed-**name** expectation on the platform's binding ability (`Platform.isWindows`): a name round-trips (`returnsNormally`) on name-binding platforms (Linux/Android, macOS) and is expected to throw the catchable `UnimplementedError` on Windows (which `PingWindows` raises at construction), while a listed source **address** round-trips (`returnsNormally`) on every desktop platform. The expectation no longer depends on which names/addresses a runner reports, so it is deterministic on any host and the `core (windows-latest)` job goes green alongside Linux and macOS. The listing helper's dartdoc, the README "Selecting a network interface" section, and the CHANGELOG note that on Windows a listed interface is passed back as its source address, not its name. No runtime, command, stream, or public-API change on any platform. Covered by network-free `dart test` (the full core suite passes `-x live`, 196 tests).*
+*Status: implemented (Batch #85-1) — the round-trip test `test/interface_listing_test.dart` ("each interface has the right shape and round-trips into Ping") now branches the listed-**name** expectation on the platform's binding ability (`Platform.isWindows`): a name round-trips (`returnsNormally`) on name-binding platforms (Linux/Android, macOS) and is expected to throw the catchable `UnimplementedError` on Windows (which `PingWindows` raises at construction), while a listed source **address** round-trips (`returnsNormally`) on every desktop platform. The expectation no longer depends on which names/addresses a runner reports, so it is deterministic on any host and the `core (windows-latest)` job goes green alongside Linux and macOS. The listing helper's dartdoc, the README "Selecting a network interface" section, and the CHANGELOG note that on Windows a listed interface is passed back as its source address, not its name. No runtime, command, stream, or public-API change on any platform. Covered by network-free `dart test` (the full core suite passes `-x live`, 196 tests).*
 
 The handle a developer carries from `listNetworkInterfaces()` back into a
 `Ping(interface: …)` round-trips per the platform's actual binding ability:
@@ -2356,7 +2356,7 @@ gate, the auto-wiring, the background-isolate fix, and the retirement of
 `dart_ping_ios`.
 
 ## iOS native engine ships as a build-hook code asset §spec:ios-code-asset-build-hook
-*Status: implemented (Batch #28-1) — `dart_ping/hook/build.dart` (pure-Dart `hooks`/`code_assets` deps, no `flutter`) compiles the in-repo native engine into a single `dart:ffi` code asset named `dart_ping_ffi` ONLY when the target OS is iOS, via `xcrun`/`swiftc` against the iOS SDK. The PRIMARY language path was taken: the audited Swift `PingEngine`/`ICMPPacket` are carried verbatim into `dart_ping/native/` behind a flat C ABI (`native/include/dart_ping_ffi.h`) fronted by a hand-written `@_cdecl` shim (`native/ping_shim.swift`, 3-entry surface: start/stop/one event callback — no swift2objc/ffigen, no `objective_c` bridge). The target gate is factored into `hook/gating.dart` and covered by network-free `dart test` cases (`test/build_hook_gating_test.dart`); the hook was confirmed to run and short-circuit on the Linux host (empty `native_assets.yaml`, no toolchain invoked). The Swift/iOS cross-compile is hand-verified on macOS (`swiftc -emit-library -sdk $(xcrun --sdk iphoneos --show-sdk-path) -target arm64-apple-ios13.0 -import-objc-header …`, see `native/README.md`), not compilable on the Linux CI host (§spec:ci, §spec:ios-tests). The Dart FFI binding that opens this asset is a later batch (#28-2, §spec:ios-ffi-binding). NOTE: the engine is a transient byte-for-byte duplicate of the `dart_ping_ios` source until that package is retired.*
+*Status: implemented (Batch #28-1) — `hook/build.dart` (pure-Dart `hooks`/`code_assets` deps, no `flutter`) compiles the in-repo native engine into a single `dart:ffi` code asset named `dart_ping_ffi` ONLY when the target OS is iOS, via `xcrun`/`swiftc` against the iOS SDK. The PRIMARY language path was taken: the audited Swift `PingEngine`/`ICMPPacket` are carried verbatim into `native/` behind a flat C ABI (`native/include/dart_ping_ffi.h`) fronted by a hand-written `@_cdecl` shim (`native/ping_shim.swift`, 3-entry surface: start/stop/one event callback — no swift2objc/ffigen, no `objective_c` bridge). The target gate is factored into `hook/gating.dart` and covered by network-free `dart test` cases (`test/build_hook_gating_test.dart`); the hook was confirmed to run and short-circuit on the Linux host (empty `native_assets.yaml`, no toolchain invoked). The Swift/iOS cross-compile is hand-verified on macOS (`swiftc -emit-library -sdk $(xcrun --sdk iphoneos --show-sdk-path) -target arm64-apple-ios13.0 -import-objc-header …`, see `native/README.md`), not compilable on the Linux CI host (§spec:ci, §spec:ios-tests). The Dart FFI binding that opens this asset is a later batch (#28-2, §spec:ios-ffi-binding). NOTE: the engine is a transient byte-for-byte duplicate of the `dart_ping_ios` source until that package is retired.*
 
 `dart_ping` carries the native iOS ICMP engine and compiles it into a
 **code asset** (a native dynamic library, linked at app-build time and reached
@@ -2444,7 +2444,7 @@ floor). This is accepted as the price of one package; the hook's target-gated
 short-circuit keeps the cost off every non-iOS consumer.
 
 ## Pure-Dart consumers need no Flutter SDK §spec:pure-dart-preserved
-*Status: implemented (Batch #28-1) — the non-negotiable gate holds. `dart_ping`'s only new deps are the pure-Dart `hooks`/`code_assets`; `dart pub deps` shows NO `flutter` SDK dependency anywhere in the graph, and `dart pub get` / `dart analyze --fatal-infos` / `dart test -x live` all pass with no Flutter SDK on the resolve path. On a non-iOS build the build hook (§spec:ios-code-asset-build-hook) emits no code asset and invokes no Swift/iOS toolchain — empirically confirmed on the Linux host: the hook ran and produced an empty `native_assets.yaml` with no compilation (and `xcrun` is absent here, so any leak into the iOS branch would have failed loudly). The SDK floor was raised from ≥3.8.0 to ≥3.10.0 (Dart 3.10 / Flutter 3.38, where build hooks / code assets are stable), recorded in `dart_ping/CHANGELOG.md` (10.0.0). The gate was satisfiable, so consolidation proceeds (the last-resort "do not consolidate" path was not needed).*
+*Status: implemented (Batch #28-1) — the non-negotiable gate holds. `dart_ping`'s only new deps are the pure-Dart `hooks`/`code_assets`; `dart pub deps` shows NO `flutter` SDK dependency anywhere in the graph, and `dart pub get` / `dart analyze --fatal-infos` / `dart test -x live` all pass with no Flutter SDK on the resolve path. On a non-iOS build the build hook (§spec:ios-code-asset-build-hook) emits no code asset and invokes no Swift/iOS toolchain — empirically confirmed on the Linux host: the hook ran and produced an empty `native_assets.yaml` with no compilation (and `xcrun` is absent here, so any leak into the iOS branch would have failed loudly). The SDK floor was raised from ≥3.8.0 to ≥3.10.0 (Dart 3.10 / Flutter 3.38, where build hooks / code assets are stable), recorded in `CHANGELOG.md` (10.0.0). The gate was satisfiable, so consolidation proceeds (the last-resort "do not consolidate" path was not needed).*
 
 `dart_ping` remains a pure-Dart package. A CLI, server, or backend project adds
 it with `dart pub add dart_ping` and pings on Linux / Windows / macOS desktop
@@ -2481,7 +2481,7 @@ Flutter 3.38 or later, where build hooks and code assets are stable. Raising
 §spec:sdk-floor) rises to ≥3.10 as part of 10.0.0.
 
 ## iOS talks to the engine over `dart:ffi` §spec:ios-ffi-binding
-*Status: implemented (Batch #28-2) — the iOS Dart↔Swift seam moved from `MethodChannel`/`EventChannel` to `dart:ffi` over the `dart_ping_ffi` code asset. `dart_ping/lib/src/ping/ios/dart_ping_bindings.dart` binds `dart_ping_start`/`dart_ping_stop` (`@Native`, assetId `package:dart_ping/dart_ping_ffi`) and the flat `dart_ping_event` struct; per-probe events stream back through a `NativeCallable.listener` delivered to the owning isolate's event loop. Each `IosPing` (`lib/src/ping/ios/ios_ping.dart`) owns its own native handle + callback — no shared broadcast stream, no run-`id` demux (§spec:concurrent-isolation). The FFI start call carries the full run config (host, count, interval, timeout, ttl, `ipVersion`→family, `nat64Synthesis`), so NAT64 IPv4-literal synthesis is preserved across the seam (§spec:nat64-literal-synthesis). Native events map to the sealed `PingResponse`/`PingError`/`PingSummary` via `lib/src/ping/ios/ios_event_mapper.dart`, reusing the core `RoundTripStatsAccumulator` so iOS stats match the other platforms by construction (§spec:stats-cross-platform / §spec:stats-ios); RTTs cross the seam in microseconds (§spec:stats-precision). The event payload is heap-allocated by the `@_cdecl` shim and freed by the Dart receiver via the new `dart_ping_free_event` entry point, making the async `.listener` delivery memory-safe. iOS is still obtained via the `register()`/`iosFactory` seam (`package:dart_ping/dart_ping_ios_ffi.dart` → `registerDartPingIosFfi()`); its removal and `dart_ping_ios` retirement are #28-3. Dart-side bindings, mapping/accumulator, and `Ping` construction are covered by network-free `dart test` (`test/ios_bindings_test.dart`, `test/ios_event_mapper_test.dart`, `test/ios_ping_test.dart`, `test/ios_registrar_test.dart`). The Swift shim heap-transfer change and live ICMP are hand-verified on macOS / a real iOS target — not compilable on the Linux CI host (§spec:ci, §spec:ios-tests).*
+*Status: implemented (Batch #28-2) — the iOS Dart↔Swift seam moved from `MethodChannel`/`EventChannel` to `dart:ffi` over the `dart_ping_ffi` code asset. `lib/src/ping/ios/dart_ping_bindings.dart` binds `dart_ping_start`/`dart_ping_stop` (`@Native`, assetId `package:dart_ping/dart_ping_ffi`) and the flat `dart_ping_event` struct; per-probe events stream back through a `NativeCallable.listener` delivered to the owning isolate's event loop. Each `IosPing` (`lib/src/ping/ios/ios_ping.dart`) owns its own native handle + callback — no shared broadcast stream, no run-`id` demux (§spec:concurrent-isolation). The FFI start call carries the full run config (host, count, interval, timeout, ttl, `ipVersion`→family, `nat64Synthesis`), so NAT64 IPv4-literal synthesis is preserved across the seam (§spec:nat64-literal-synthesis). Native events map to the sealed `PingResponse`/`PingError`/`PingSummary` via `lib/src/ping/ios/ios_event_mapper.dart`, reusing the core `RoundTripStatsAccumulator` so iOS stats match the other platforms by construction (§spec:stats-cross-platform / §spec:stats-ios); RTTs cross the seam in microseconds (§spec:stats-precision). The event payload is heap-allocated by the `@_cdecl` shim and freed by the Dart receiver via the new `dart_ping_free_event` entry point, making the async `.listener` delivery memory-safe. iOS is still obtained via the `register()`/`iosFactory` seam (`package:dart_ping/dart_ping_ios_ffi.dart` → `registerDartPingIosFfi()`); its removal and `dart_ping_ios` retirement are #28-3. Dart-side bindings, mapping/accumulator, and `Ping` construction are covered by network-free `dart test` (`test/ios_bindings_test.dart`, `test/ios_event_mapper_test.dart`, `test/ios_ping_test.dart`, `test/ios_registrar_test.dart`). The Swift shim heap-transfer change and live ICMP are hand-verified on macOS / a real iOS target — not compilable on the Linux CI host (§spec:ci, §spec:ios-tests).*
 
 On iOS the Dart layer drives the native engine over `dart:ffi`, not over a
 `MethodChannel` / `EventChannel`. Starting a run is a foreign-function call;
@@ -2570,7 +2570,7 @@ acceptance path, since live ICMP and an iOS runtime are not reproducible in CI
 (§spec:ci, §spec:ios-tests).
 
 ## iOS auto-wires; no `register()` §spec:ios-auto-wiring
-*Status: implemented (Batch #28-3) — the `Ping` factory's `'ios'` branch now constructs `IosPing(host, count, interval, timeout, ttl, ipVersion, nat64Synthesis)` directly on `Platform.operatingSystem == 'ios'`, exactly like the linux/mac/windows branches build theirs (`dart_ping/lib/src/ping_interface.dart`). The `Ping.iosFactory` static field + typedef and the transitional `registerDartPingIosFfi()` registrar (`dart_ping/lib/dart_ping_ios_ffi.dart`) and `IosPing.fromFactory` adapter are removed, along with `ios_registrar_test.dart`. Referencing `IosPing` from shared Dart code pulls no native symbols into non-iOS builds — `dart:ffi` is core SDK and the `dart_ping_ffi` code asset is only opened on the iOS branch — so the pure-Dart gate (§spec:pure-dart-preserved) still holds (`dart pub deps` shows no `flutter`; `dart analyze --fatal-infos`/`dart test -x live` green). Removing `register()` is the one intentional break to §spec:public-api-stability beyond the 10.0.0 model redesign (§spec:stats-event-model), documented in migration (§spec:dart-ping-ios-retired). Network-free factory/guard + `IosPing` construction covered by `dart test`; on-iOS dispatch is the manual acceptance path (§spec:ci, §spec:ios-tests).*
+*Status: implemented (Batch #28-3) — the `Ping` factory's `'ios'` branch now constructs `IosPing(host, count, interval, timeout, ttl, ipVersion, nat64Synthesis)` directly on `Platform.operatingSystem == 'ios'`, exactly like the linux/mac/windows branches build theirs (`lib/src/ping_interface.dart`). The `Ping.iosFactory` static field + typedef and the transitional `registerDartPingIosFfi()` registrar (`lib/dart_ping_ios_ffi.dart`) and `IosPing.fromFactory` adapter are removed, along with `ios_registrar_test.dart`. Referencing `IosPing` from shared Dart code pulls no native symbols into non-iOS builds — `dart:ffi` is core SDK and the `dart_ping_ffi` code asset is only opened on the iOS branch — so the pure-Dart gate (§spec:pure-dart-preserved) still holds (`dart pub deps` shows no `flutter`; `dart analyze --fatal-infos`/`dart test -x live` green). Removing `register()` is the one intentional break to §spec:public-api-stability beyond the 10.0.0 model redesign (§spec:stats-event-model), documented in migration (§spec:dart-ping-ios-retired). Network-free factory/guard + `IosPing` construction covered by `dart test`; on-iOS dispatch is the manual acceptance path (§spec:ci, §spec:ios-tests).*
 
 iOS support activates with no consumer-written wiring. The `Ping` factory's
 `'ios'` branch constructs the FFI-backed iOS implementation directly, the same
@@ -2601,7 +2601,7 @@ break to the §spec:public-api-stability contract this area makes, beyond the
 (§spec:dart-ping-ios-retired).
 
 ## `dart_ping_ios` is retired §spec:dart-ping-ios-retired
-*Status: implemented (Batch #28-4) — the `dart_ping_ios` package directory is physically removed from the repository: getting iOS support requires no `dart_ping_ios` dependency, `dart_ping` alone suffices, and nothing in the repo depends on, imports, or `register()`s it (the deprecated no-op `register()` shim and the second `ICMPPacket`/`PingEngine` copy went with it). The pub.dev "discontinued" flag is a publisher action set out-of-band (like the §spec:ci-develop branch protection); prior channel-based releases remain published/resolvable for consumers who cannot adopt the raised SDK floor. Migration notes (remove the `dart_ping_ios` dependency, delete the `DartPingIOS.register()` call, raise the SDK floor to ≥3.10.0 — no other source change, since the public `Ping` API and event model are otherwise unchanged) are in `dart_ping`'s README + CHANGELOG, and the root README now describes the single-package iOS story. The Flutter/iOS example was re-homed to `dart_ping/example` (depends only on `dart_ping`, no `dependency_overrides`, SPM, no Podfile; imports only `dart_ping`, calls no `register()`), and its Swift `RunnerTests` were retargeted to compile `dart_ping/native/ICMPPacket.swift` directly (no plugin module to import). CI was repointed: the macOS `ios-swift` job builds `dart_ping/example` and runs `RunnerTests` against `dart_ping/native`, the redundant `ios-dart` job was removed (its Dart event-mapping/bindings tests now run under the `core` matrix via `dart_ping/test/ios_*`), and the `coverage` job drops its `dart_ping_ios` step. The Xcode `xcodebuild test` of the relocated `RunnerTests` and the on-device single-package / background-isolate acceptance path are macOS-only and not reproducible on the Linux CI host (§spec:ci, §spec:ios-tests).*
+*Status: implemented (Batch #28-4) — the `dart_ping_ios` package directory is physically removed from the repository: getting iOS support requires no `dart_ping_ios` dependency, `dart_ping` alone suffices, and nothing in the repo depends on, imports, or `register()`s it (the deprecated no-op `register()` shim and the second `ICMPPacket`/`PingEngine` copy went with it). The pub.dev "discontinued" flag is a publisher action set out-of-band (like the §spec:ci-develop branch protection); prior channel-based releases remain published/resolvable for consumers who cannot adopt the raised SDK floor. Migration notes (remove the `dart_ping_ios` dependency, delete the `DartPingIOS.register()` call, raise the SDK floor to ≥3.10.0 — no other source change, since the public `Ping` API and event model are otherwise unchanged) are in `dart_ping`'s README + CHANGELOG, and the root README now describes the single-package iOS story. The Flutter/iOS example was re-homed to `example` (depends only on `dart_ping`, no `dependency_overrides`, SPM, no Podfile; imports only `dart_ping`, calls no `register()`), and its Swift `RunnerTests` were retargeted to compile `native/ICMPPacket.swift` directly (no plugin module to import). CI was repointed: the macOS `ios-swift` job builds `example` and runs `RunnerTests` against `native`, the redundant `ios-dart` job was removed (its Dart event-mapping/bindings tests now run under the `core` matrix via `test/ios_*`), and the `coverage` job drops its `dart_ping_ios` step. The Xcode `xcodebuild test` of the relocated `RunnerTests` and the on-device single-package / background-isolate acceptance path are macOS-only and not reproducible on the Linux CI host (§spec:ci, §spec:ios-tests).*
 
 `dart_ping_ios` is discontinued. iOS support is no longer obtained from a
 second package, and no new functional release of `dart_ping_ios` is required to

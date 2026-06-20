@@ -1,4 +1,4 @@
-# `dart_ping/native/` — iOS ICMP engine + flat-C FFI shim
+# `native/` — iOS ICMP engine + flat-C FFI shim
 
 This directory carries the native iOS ICMP ping engine and the thin C ABI that
 the Dart layer reaches it through. It exists for the package consolidation in
@@ -24,7 +24,7 @@ issue #28 (§spec:ios-code-asset-build-hook, §spec:ios-ffi-binding,
 ## How this is built (and when it is NOT)
 
 This native tree is compiled into a **single iOS `dart:ffi` code asset** by
-`dart_ping/hook/build.dart` **only when the build target's operating system is
+`hook/build.dart` **only when the build target's operating system is
 iOS**. For every other target — pure-Dart
 desktop, server, Android, and the analyzer / `dart pub get` path — the hook
 emits no code asset and invokes no native toolchain
@@ -62,4 +62,4 @@ The exact flags the build hook invokes may differ (e.g. emitting a static
 archive / `.a` for code-signed framework embedding, additional architectures,
 bitcode settings); the point of this command is the hand-verification a macOS
 reviewer runs to confirm the engine + shim cross-compile for iOS and export the
-flat C ABI. `dart_ping/hook/build.dart` owns the production invocation.
+flat C ABI. `hook/build.dart` owns the production invocation.
