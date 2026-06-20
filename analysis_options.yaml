@@ -1,9 +1,9 @@
-# Defines a default set of lint rules enforced for
-# projects at Google. For details and rationale,
-# see https://github.com/dart-lang/pedantic#enabled-lints.
+# Enables the `recommended` lint rule set from package:lints, the rules the
+# Dart team recommends for published packages.
+# See https://github.com/dart-lang/lints for the rule list and rationale.
 include: package:lints/recommended.yaml
 
-# For lint rules and documentation, see http://dart-lang.github.io/linter/lints.
+# For lint rules and documentation, see https://dart.dev/tools/linter-rules.
 # Uncomment to specify additional rules.
 # linter:
 #   rules:

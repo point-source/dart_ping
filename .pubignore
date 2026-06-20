@@ -1,0 +1,5 @@
+# Internal governance documents — kept in the repository for contributors but
+# not shipped to pub.dev, where they would dominate the published archive and
+# add no value for package consumers.
+SPEC.md
+REQUIREMENTS.md
