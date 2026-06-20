@@ -47,6 +47,12 @@ This document covers the following areas, matching REQUIREMENTS.md:
   and preserves its observable behavior (§spec:ios-ping-behavior,
   §spec:ios-error-parity, §spec:ios-ttl, §spec:stats-ios) while replacing the
   binding mechanism and the package boundary of §spec:spm-distribution.
+- **macOS all-timeout summary (#92)** — `§spec:mac-all-timeout-summary`
+  at the very end (not started). A focused refinement of
+  `§spec:stream-lifecycle-robustness`: a macOS run where every probe
+  times out but the first hop returns TTL-exceeded ICMP errors (native
+  exit `2`) yields a deterministic 100%-loss summary instead of a thrown
+  exception, matching the pure-silence (exit `1`) outcome.
 
 Solution-space design for issue #73 — native, Swift Package Manager
 (SPM)-compatible iOS support for `dart_ping`.
@@ -2641,3 +2647,108 @@ raised SDK floor; they continue to work over the channel implementation
 rather than waiting for a future major, because 10.0.0 is already a breaking
 release (§spec:stats-event-model) and `register()`-removal and the SDK-floor
 raise are breaking changes best shipped once, together.
+
+---
+
+# macOS all-timeout summary
+
+Solution-space design for issue #92 (`§req:mac-all-timeout-*`), a
+focused refinement of the stream-lifecycle robustness work
+(`§spec:stream-lifecycle-robustness`). The work is confined to the
+core `dart_ping` package's macOS subprocess path and changes no public
+surface; it is independent of the iOS, stats, and consolidation areas.
+
+The problem (from §req:mac-all-timeout-problem-statement): on macOS,
+the BSD `ping` binary exits with code `2` when a run draws ICMP error
+packets back but no echo replies — the classic `ttl=1` / TTL-exceeded
+case — and with code `1` on pure silence. The macOS exit-code mapping
+recognizes `1` as a no-reply outcome but leaves `2` unmapped, so the
+*same* logical result — "we got no reply" — sometimes terminates with
+a clean 100%-loss `PingSummary` and sometimes surfaces a generic
+`Exception('Ping process exited with code: 2')`, depending only on
+whether an intermediate hop happened to return a TTL-exceeded packet.
+A consumer awaiting the terminal summary (`stream.last`, `.drain()`,
+`await for`, `stop()`) gets the exception on the exit-`2` path even
+though a complete 100%-loss summary was already built. That
+environment-dependent non-determinism is why the existing TTL-exceeded
+test is tagged `live` and excluded from CI, where it would be flaky.
+
+## macOS all-timeout yields a summary §spec:mac-all-timeout-summary
+*Status: not started*
+
+On macOS, a run in which every probe fails terminates with a terminal
+`PingSummary` reporting 100% packet loss — never a thrown exception —
+regardless of whether the network returned TTL-exceeded ICMP errors or
+pure silence. The macOS exit-code mapping treats "no echo reply"
+(native exit `1` *and* exit `2`) as a single recognized `noReply`
+outcome, so both resolve to the same observable result. This refines
+§spec:stream-lifecycle-robustness by moving macOS exit `2` out of its
+"unmapped non-zero exit" bucket and into a known outcome; the public
+API and the `PingData` / `PingResponse` / `PingSummary` / `PingError`
+shapes are unchanged (§spec:public-api-stability,
+§req:mac-all-timeout-quality-attributes — compatibility).
+
+- When a macOS run elicits no echo replies but draws ICMP errors back
+  (native exit `2`), the stream shall terminate with a `PingSummary`
+  event reporting 100% packet loss, and a consumer's `stream.last`
+  shall return that summary rather than throwing
+  (§req:mac-all-timeout-success-criteria,
+  §req:mac-all-timeout-user-stories).
+- The observable outcome of an all-timeout macOS run shall not depend
+  on whether the network returned TTL-exceeded errors (exit `2`) or
+  pure silence (exit `1`): both shall resolve to the same 100%-loss
+  summary (§req:mac-all-timeout-success-criteria — determinism;
+  §req:mac-all-timeout-quality-attributes — reliability).
+- The terminal summary's `errors` list for the exit-`2` path shall
+  carry the per-probe errors actually observed (`requestTimedOut` /
+  `timeToLiveExceeded`) plus a run-level `noReply`, matching the shape
+  a pure-silence (exit `1`) run already produces — no synthetic or
+  duplicate error beyond that, and in particular no generic
+  process-exit exception alongside the summary
+  (§req:mac-all-timeout-success-criteria — honest error record).
+- A macOS `ping` exit code that is neither a success nor a recognized
+  "no reply" code (`1` / `2`) nor a recognized error code shall still
+  surface a catchable error and then close the stream, preserving
+  §spec:stream-lifecycle-robustness
+  (§req:mac-all-timeout-success-criteria — regression guard;
+  §req:mac-all-timeout-constraints).
+- A successful macOS run (zero exit) and a recognized error exit (e.g.
+  unknown host) shall deliver the same per-probe responses, summary,
+  and `errors` list as before
+  (§req:mac-all-timeout-success-criteria — regression guard).
+- The all-timeout / TTL-exceeded path shall be covered by an automated
+  test that asserts a summary is produced (not an exception) and runs
+  under `dart test` without a live network and without being excluded
+  via `-x live` (§req:mac-all-timeout-success-criteria — coverage;
+  §req:mac-all-timeout-quality-attributes — testability).
+
+**Why map exit `2` to `noReply` rather than catch it specially:** the
+stream lifecycle already builds a complete 100%-loss summary from the
+observed per-probe errors and only throws because the exit code is
+unmapped. Mapping exit `2` to the same `noReply` outcome as exit `1`
+both records the run-level no-reply in the summary's `errors` list and
+suppresses the generic exit exception — because a recognized exit-code
+error short-circuits the unmapped-exit throw path. The summary that
+was already assembled simply becomes the terminal event, with no new
+machinery (§req:mac-all-timeout-problem-statement). A bespoke "catch
+exit 2 and synthesize a summary" path was rejected as redundant: it
+would duplicate the summary-building the lifecycle already performs and
+risk diverging from the exit-`1` shape consumers already handle.
+
+**Why this does not weaken robustness:** §spec:stream-lifecycle-robustness
+guarantees that an *unmapped* non-zero exit surfaces a catchable error
+and closes the stream. This section reclassifies exactly one code —
+macOS exit `2` — as a recognized no-reply outcome; every code that
+remains unmapped still flows through the unchanged throw-then-close
+path. The guarantee narrows by one well-understood code, it does not
+loosen (§req:mac-all-timeout-constraints).
+
+**Why macOS-only and patch-level:** exit `2` is specific to BSD `ping`
+semantics; Windows and Linux use different exit codes and output paths
+and are out of scope (§req:mac-all-timeout-constraints). The change is
+internal to the macOS subprocess path (`lib/src/ping/mac_ping.dart`,
+with the existing lifecycle in `lib/src/ping/base_ping.dart`), the
+public API and normal-run output are unchanged, and the no-reply
+summary surfaces through the stream consumers already use — so it ships
+as a non-breaking, patch-level change to `dart_ping`
+(§req:mac-all-timeout-constraints, §req:mac-all-timeout-priorities).
