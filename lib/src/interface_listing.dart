@@ -37,7 +37,7 @@ NetworkInterfaceLister networkInterfaceLister = NetworkInterface.list;
 Future<List<NetworkInterface>> listNetworkInterfaces({
   bool includeLoopback = false,
   bool includeLinkLocal = false,
-  InternetAddressType type = InternetAddressType.any,
+  InternetAddressType type = .any,
 }) => networkInterfaceLister(
   includeLoopback: includeLoopback,
   includeLinkLocal: includeLinkLocal,

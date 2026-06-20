@@ -11,10 +11,12 @@ IpVersion? ipLiteralFamily(String host) {
   final address = InternetAddress.tryParse(host);
   if (address == null) return null;
   switch (address.type) {
-    case InternetAddressType.IPv4:
-      return IpVersion.ipv4;
-    case InternetAddressType.IPv6:
-      return IpVersion.ipv6;
+    case .IPv4:
+      return .ipv4;
+
+    case .IPv6:
+      return .ipv6;
+
     default:
       return null; // unix socket / other — not an IP literal family
   }

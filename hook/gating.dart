@@ -32,4 +32,4 @@ import 'package:code_assets/code_assets.dart';
 bool shouldBuildIosAsset({
   required bool buildCodeAssets,
   required OS? targetOS,
-}) => buildCodeAssets && targetOS == OS.iOS;
+}) => buildCodeAssets && targetOS == .iOS;

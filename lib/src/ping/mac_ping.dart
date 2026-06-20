@@ -4,32 +4,7 @@ import 'package:dart_ping/dart_ping.dart';
 import 'package:dart_ping/src/ping/base_ping.dart';
 
 class PingMac extends BasePing implements Ping {
-  PingMac(
-    String host,
-    int? count,
-    int interval,
-    int timeout,
-    int ttl,
-    IpVersion ipVersion, {
-    PingParser? parser,
-    Encoding encoding = const Utf8Codec(),
-    String? interface,
-    bool nat64Synthesis = true,
-  }) : super(
-         host,
-         count,
-         interval,
-         timeout,
-         ttl,
-         ipVersion,
-         parser ?? defaultParser,
-         encoding,
-         false,
-         interface,
-         nat64Synthesis,
-       );
-
-  static PingParser get defaultParser => PingParser(
+  static PingParser get defaultParser => .new(
     responseRgx: RegExp(
       r'bytes from (?<ip>.*): icmp_seq=(?<seq>\d+) ttl=(?<ttl>\d+) time=(?<time>(\d+).?(\d+))',
     ),
@@ -64,33 +39,59 @@ class PingMac extends BasePing implements Ping {
     // explicit, honest error rather than a misleading generic process failure
     // (§spec:address-family-error-honesty). iOS IPv6 is served by dart_ping's
     // own native Swift engine, not this subprocess path.
-    if (ipVersion == IpVersion.ipv6) {
+    if (ipVersion == .ipv6) {
       throw UnimplementedError(
         'IPv6 is not supported on macOS via dart_ping; use a hostname over '
         'IPv4 (iOS supports native IPv6 directly)',
       );
     }
-    var params = ['-n', '-W ${timeout * 1000}', '-i $interval', '-m $ttl'];
-    if (count != null) params.add('-c $count');
+    final args = ['-n', '-W ${timeout * 1000}', '-i $interval', '-m $ttl'];
+    if (count != null) args.add('-c $count');
     // macOS binds a source address with `-S` and an interface name with `-b`
     // (boundif), so pick the flag from the value's classified form. The flag
     // and value are SEPARATE argv tokens — `Process.start` runs without a
     // shell, so a glued `'-S $interface'` token would reach ping as one
     // argument whose value carries a leading space and fail to bind.
-    if (hasInterface) {
-      params.add(interfaceIsAddress ? '-S' : '-b');
-      params.add(interface!);
+    final interface = this.interface;
+    if (interface != null && interface.isNotEmpty) {
+      args.add(interfaceIsAddress ? '-S' : '-b');
+      args.add(interface);
     }
 
-    return params;
+    return args;
   }
+
+  PingMac(
+    String host,
+    int? count,
+    int interval,
+    int timeout,
+    int ttl,
+    IpVersion ipVersion, {
+    PingParser? parser,
+    Encoding encoding = const Utf8Codec(),
+    String? interface,
+    bool nat64Synthesis = true,
+  }) : super(
+         host,
+         count,
+         interval,
+         timeout,
+         ttl,
+         ipVersion,
+         parser ?? defaultParser,
+         encoding,
+         false,
+         interface,
+         nat64Synthesis,
+       );
 
   @override
   PingError? interpretExitCode(int exitCode) {
     if (exitCode == 1) {
-      return PingError(ErrorType.noReply);
+      return PingError(.noReply);
     } else if (exitCode == 68) {
-      return PingError(ErrorType.unknownHost);
+      return PingError(.unknownHost);
     }
 
     return null;
@@ -98,10 +99,8 @@ class PingMac extends BasePing implements Ping {
 
   @override
   Exception? throwExit(int exitCode) {
-    if (exitCode > 1 && exitCode != 68) {
-      return Exception('Ping process exited with code: $exitCode');
-    }
-
-    return null;
+    return exitCode > 1 && exitCode != 68
+        ? Exception('Ping process exited with code: $exitCode')
+        : null;
   }
 }

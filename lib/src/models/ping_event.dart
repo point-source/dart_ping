@@ -14,8 +14,6 @@ part 'ping_summary.dart';
 /// Consumers branch with an exhaustive `switch`; the terminal summary is the
 /// final event and is identifiable by type alone (`is PingSummary`).
 sealed class PingEvent {
-  const PingEvent();
-
   /// Round-trip statistics associated with this event, or null when none apply.
   ///
   /// On a probe event ([PingResponse] / [PingError]) this is the **running**
@@ -28,12 +26,7 @@ sealed class PingEvent {
   /// bare parsed/deserialized event).
   RoundTripStats? get stats;
 
-  /// Serializes this event to a map. Each variant writes a `'type'`
-  /// discriminator (`'response'` / `'error'` / `'summary'`) so
-  /// [PingEvent.fromMap] can reconstruct the correct variant.
-  Map<String, dynamic> toMap();
-
-  String toJson() => json.encode(toMap());
+  const PingEvent();
 
   /// Reconstructs the correct variant from its serialized form using the
   /// `'type'` discriminator each variant writes.
@@ -41,15 +34,30 @@ sealed class PingEvent {
     switch (map['type']) {
       case 'response':
         return PingResponse.fromMap(map);
+
       case 'error':
         return PingError.fromMap(map);
+
       case 'summary':
         return PingSummary.fromMap(map);
+
       default:
         throw ArgumentError('Unknown PingEvent type: ${map['type']}');
     }
   }
 
-  factory PingEvent.fromJson(String source) =>
-      PingEvent.fromMap(json.decode(source) as Map<String, dynamic>);
+  factory PingEvent.fromJson(String source) {
+    // `json.decode` returns `dynamic`; the typed local is an implicit downcast
+    // (it still throws on a non-object payload) without an explicit `as` cast.
+    final Map<String, dynamic> map = json.decode(source);
+
+    return PingEvent.fromMap(map);
+  }
+
+  /// Serializes this event to a map. Each variant writes a `'type'`
+  /// discriminator (`'response'` / `'error'` / `'summary'`) so
+  /// [PingEvent.fromMap] can reconstruct the correct variant.
+  Map<String, dynamic> toMap();
+
+  String toJson() => json.encode(toMap());
 }

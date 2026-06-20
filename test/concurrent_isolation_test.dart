@@ -20,9 +20,30 @@ const _hardTimeout = Duration(seconds: 5);
 /// path. That maximizes the chance of exposing cross-contamination between the
 /// two concurrent runs.
 class FakeProcess implements Process {
+  final Stream<List<int>> _stdout;
+
+  final Future<int> _exitCode;
+
+  @override
+  Stream<List<int>> get stdout => _stdout;
+  @override
+  Stream<List<int>> get stderr => const .empty();
+
+  @override
+  Future<int> get exitCode => _exitCode;
+
+  @override
+  int get pid => throw UnimplementedError();
+
+  @override
+  IOSink get stdin => throw UnimplementedError();
+
   FakeProcess({List<String> stdoutLines = const [], required int exit})
     : _stdout = _interleaved(stdoutLines),
-      _exitCode = Future<int>.value(exit);
+      _exitCode = Future.value(exit);
+
+  @override
+  bool kill([ProcessSignal signal = .sigterm]) => true;
 
   /// Emits each line on a separate async tick so the merged line stream's
   /// events from two concurrent processes are interleaved rather than delivered
@@ -30,31 +51,10 @@ class FakeProcess implements Process {
   static Stream<List<int>> _interleaved(List<String> lines) async* {
     for (final line in lines) {
       // Yield control between lines so a sibling process can emit in between.
-      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(.zero);
       yield utf8.encode('$line\n');
     }
   }
-
-  final Stream<List<int>> _stdout;
-  final Future<int> _exitCode;
-
-  @override
-  Stream<List<int>> get stdout => _stdout;
-
-  @override
-  Stream<List<int>> get stderr => const Stream.empty();
-
-  @override
-  Future<int> get exitCode => _exitCode;
-
-  @override
-  bool kill([ProcessSignal signal = ProcessSignal.sigterm]) => true;
-
-  @override
-  int get pid => throw UnimplementedError();
-
-  @override
-  IOSink get stdin => throw UnimplementedError();
 }
 
 /// [PingLinux] subclass that replaces the OS process launch with a configured
@@ -65,19 +65,28 @@ class FakeProcess implements Process {
 /// [PingLinux] is instantiated directly (not through the [Ping] platform
 /// factory) so the test is deterministic on any host OS.
 class TestPing extends PingLinux {
-  TestPing(String host, {required FakeProcess process})
-    : _process = process,
-      super(host, null, 1000, 1000, 255, IpVersion.ipv4);
-
   final FakeProcess _process;
 
   @override
   Future<Process> get platformProcess async => _process;
+
+  TestPing(String host, {required FakeProcess process})
+    : _process = process,
+      super(host, null, 1000, 1000, 255, .ipv4);
 }
 
 /// One host's canned, distinct ping output plus the values it should produce.
 class _HostFixture {
-  _HostFixture({
+  final String host;
+
+  final List<String> lines;
+  final List<PingResponse> expectedResponses;
+  final int expectedTransmitted;
+  final int expectedReceived;
+  final Duration expectedSummaryTime;
+  final List<ErrorType> expectedErrors;
+
+  const _HostFixture({
     required this.host,
     required this.lines,
     required this.expectedResponses,
@@ -86,14 +95,6 @@ class _HostFixture {
     required this.expectedSummaryTime,
     required this.expectedErrors,
   });
-
-  final String host;
-  final List<String> lines;
-  final List<PingResponse> expectedResponses;
-  final int expectedTransmitted;
-  final int expectedReceived;
-  final Duration expectedSummaryTime;
-  final List<ErrorType> expectedErrors;
 }
 
 void main() {
@@ -120,7 +121,7 @@ void main() {
       expectedTransmitted: 2,
       expectedReceived: 1,
       expectedSummaryTime: const Duration(milliseconds: 1001),
-      expectedErrors: const [ErrorType.requestTimedOut],
+      expectedErrors: const [.requestTimedOut],
     );
 
     // Host B: deliberately DIFFERENT ttl (53) and time (236.0 ms) so any swap
@@ -217,7 +218,7 @@ void main() {
       // Drain both streams CONCURRENTLY so their interleaved events pass through
       // the shared parse/accumulate path at the same time.
       final results =
-          await Future.wait(<Future<List<PingEvent>>>[
+          await Future.wait([
             pingA.stream.toList(),
             pingB.stream.toList(),
           ]).timeout(
@@ -226,7 +227,7 @@ void main() {
                 fail('concurrent streams hung within $_hardTimeout'),
           );
 
-      expectIsolated(results[0], hostA);
+      expectIsolated(results.first, hostA);
       expectIsolated(results[1], hostB);
     });
 

@@ -3,16 +3,6 @@ import 'dart:async';
 import 'package:dart_ping/src/models/ping_event.dart';
 
 class PingParser {
-  PingParser({
-    required this.responseRgx,
-    required this.summaryRgx,
-    required this.timeoutRgx,
-    required this.timeToLiveRgx,
-    required this.unknownHostStr,
-    this.noRouteStrs = const [],
-    this.errorStrs = const [],
-  });
-
   /// Parses a standard ping response
   /// groups: host, icmp_seq, ttl, time
   RegExp responseRgx;
@@ -36,13 +26,22 @@ class PingParser {
   /// String(s) used to detect misc unknown error(s)
   List<RegExp> errorStrs;
 
-  StreamTransformer<String, PingEvent> get transformParser =>
-      StreamTransformer<String, PingEvent>.fromHandlers(
-        handleData: (data, sink) {
-          final event = parse(data);
-          if (event != null) sink.add(event);
-        },
-      );
+  StreamTransformer<String, PingEvent> get transformParser => .fromHandlers(
+    handleData: (data, sink) {
+      final event = parse(data);
+      if (event != null) sink.add(event);
+    },
+  );
+
+  PingParser({
+    required this.responseRgx,
+    required this.summaryRgx,
+    required this.timeoutRgx,
+    required this.timeToLiveRgx,
+    required this.unknownHostStr,
+    this.noRouteStrs = const [],
+    this.errorStrs = const [],
+  });
 
   PingEvent? parse(String data) {
     RegExpMatch? match;
@@ -50,12 +49,12 @@ class PingParser {
     // Timeout
     match = timeoutRgx.firstMatch(data);
     if (match != null) {
-      var seq = match.groupNames.contains('seq')
+      String? seq = match.groupNames.contains('seq')
           ? match.namedGroup('seq')
           : null;
 
       return PingError(
-        ErrorType.requestTimedOut,
+        .requestTimedOut,
         seq: seq == null ? null : int.parse(seq),
       );
     }
@@ -63,27 +62,27 @@ class PingParser {
     // Successful response
     match = responseRgx.firstMatch(data);
     if (match != null) {
-      var seq = match.groupNames.contains('seq')
+      String? seq = match.groupNames.contains('seq')
           ? match.namedGroup('seq')
           : null;
-      var ttl = match.namedGroup('ttl');
-      var time = match.namedGroup('time');
+      String? ttl = match.namedGroup('ttl');
+      String? time = match.namedGroup('time');
 
       return PingResponse(
         ip: match.namedGroup('ip'),
-        seq: seq?.isEmpty ?? true ? null : int.parse(seq!),
+        seq: seq == null || seq.isEmpty ? null : int.parse(seq),
         ttl: ttl == null ? null : int.parse(ttl),
         time: time == null
             ? null
-            : Duration(microseconds: ((double.parse(time)) * 1000).floor()),
+            : Duration(microseconds: (double.parse(time) * 1000).floor()),
       );
     }
 
     // Summary
     match = summaryRgx.firstMatch(data);
     if (match != null) {
-      var tx = match.namedGroup('tx');
-      var rx = match.namedGroup('rx');
+      String? tx = match.namedGroup('tx');
+      String? rx = match.namedGroup('rx');
       String? time;
       if (match.groupNames.contains('time')) {
         time = match.namedGroup('time');
@@ -103,12 +102,12 @@ class PingParser {
     // TTL Exceeded
     match = timeToLiveRgx.firstMatch(data);
     if (match != null) {
-      var seq = match.groupNames.contains('seq')
+      String? seq = match.groupNames.contains('seq')
           ? match.namedGroup('seq')
           : null;
 
       return PingError(
-        ErrorType.timeToLiveExceeded,
+        .timeToLiveExceeded,
         // Parse consistently with the timeout branch above: the `seq` named
         // group only matches digits, so `int.parse` is safe and a malformed
         // value surfaces loudly rather than silently dropping the probe id.
@@ -119,7 +118,7 @@ class PingParser {
 
     // Unknown Host
     if (data.contains(unknownHostStr)) {
-      return PingError(ErrorType.unknownHost);
+      return PingError(.unknownHost);
     }
 
     // Routing / address-family failures are classified before the generic

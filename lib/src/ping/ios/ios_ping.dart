@@ -38,33 +38,17 @@ import 'package:dart_ping/src/ping/ios/ios_event_mapper.dart';
 /// type and math the subprocess platforms use — so iOS stats match core by
 /// construction (§spec:stats-ios).
 class IosPing implements Ping {
-  /// Creates an iOS ping bound to [host], mirroring the field set the channel
-  /// bridge carried. The address-family guard runs in the constructor — exactly
-  /// as every other platform does — so a literal IP whose family contradicts
-  /// [ipVersion] fails fast with the identical [ArgumentError], regardless of
-  /// whether the instance is ever listened to.
-  IosPing(
-    this._host,
-    this._count,
-    this._interval,
-    this._timeout,
-    this._ttl,
-    this._ipVersion,
-    this._nat64Synthesis,
-  ) {
-    validateAddressFamily(_host, _ipVersion);
-  }
-
   final String _host;
+
   final int? _count;
   final int _interval;
   final int _timeout;
   final int _ttl;
   final IpVersion _ipVersion;
-  final bool _nat64Synthesis;
-
-  // Per-instance run state (§spec:concurrent-isolation). None of this is static.
+  final bool
+  _nat64Synthesis; // Per-instance run state (§spec:concurrent-isolation). None of this is static.
   StreamController<PingEvent>? _controller;
+
   NativeCallable<DartPingEventCallbackNative>? _callable;
   NativeEventStatsMapper? _statsMapper;
   Pointer<Void> _handle = nullptr;
@@ -86,10 +70,6 @@ class IosPing implements Ping {
   @override
   PingParser get parser => throw UnimplementedError();
 
-  /// Unused on iOS and should not be called.
-  @override
-  set parser(PingParser parser) => throw UnimplementedError();
-
   @override
   String get command => 'Ping on iOS is provided by a native Swift ICMP engine';
 
@@ -101,6 +81,27 @@ class IosPing implements Ping {
     );
 
     return controller.stream;
+  }
+
+  /// Unused on iOS and should not be called.
+  @override
+  set parser(PingParser value) => throw UnimplementedError();
+
+  /// Creates an iOS ping bound to [host], mirroring the field set the channel
+  /// bridge carried. The address-family guard runs in the constructor — exactly
+  /// as every other platform does — so a literal IP whose family contradicts
+  /// [ipVersion] fails fast with the identical [ArgumentError], regardless of
+  /// whether the instance is ever listened to.
+  IosPing(
+    this._host,
+    this._count,
+    this._interval,
+    this._timeout,
+    this._ttl,
+    this._ipVersion,
+    this._nat64Synthesis,
+  ) {
+    validateAddressFamily(_host, _ipVersion);
   }
 
   @override
@@ -125,9 +126,7 @@ class IosPing implements Ping {
     );
 
     final hostPtr = _host.toNativeUtf8();
-    final family = _ipVersion == IpVersion.ipv6
-        ? DartPingFamily.v6
-        : DartPingFamily.v4;
+    final family = _ipVersion == .ipv6 ? DartPingFamily.v6 : DartPingFamily.v4;
 
     try {
       _handle = dartPingStart(
@@ -138,6 +137,8 @@ class IosPing implements Ping {
         _ttl,
         family,
         _nat64Synthesis,
+        // _callable is created just above, before this native start call.
+        // ignore: avoid-non-null-assertion
         _callable!.nativeFunction,
         nullptr,
       );
@@ -147,6 +148,7 @@ class IosPing implements Ping {
       // of leaking the trampoline; the host string is freed in `finally`.
       _controller?.addError(error, stack);
       _teardown();
+
       return;
     } finally {
       // The shim copies the host into the Swift Config, so the C string is no
@@ -185,6 +187,8 @@ class IosPing implements Ping {
       }
 
       // Map to a sealed PingEvent carrying the running stats snapshot and forward.
+      // _statsMapper is initialized in the constructor, before any event fires.
+      // ignore: avoid-non-null-assertion
       _forward(_statsMapper!.map(dto));
     } catch (error, stack) {
       // A malformed event must not escape as an unhandled async error (this runs
@@ -219,7 +223,7 @@ class IosPing implements Ping {
   NativePingEvent _decodeEvent(DartPingEvent ev) {
     final kind = _eventKind(ev.kind);
     switch (kind) {
-      case NativeEventKind.response:
+      case .response:
         return NativePingEvent(
           kind: kind,
           seq: ev.hasSeq ? ev.seq : null,
@@ -227,14 +231,16 @@ class IosPing implements Ping {
           timeMicros: ev.timeMicros,
           ip: ev.hasIp ? ev.ip.toDartString() : null,
         );
-      case NativeEventKind.error:
+
+      case .error:
         return NativePingEvent(
           kind: kind,
           seq: ev.hasSeq ? ev.seq : null,
           ip: ev.hasIp ? ev.ip.toDartString() : null,
           errorKind: _errorKind(ev.errorKind),
         );
-      case NativeEventKind.summary:
+
+      case .summary:
         final errors = <NativeErrorKind>[];
         if (ev.errorsLen > 0 && ev.errors != nullptr) {
           final codes = ev.errors.asTypedList(ev.errorsLen);
@@ -256,33 +262,44 @@ class IosPing implements Ping {
   static NativeEventKind _eventKind(int kind) {
     switch (kind) {
       case DartPingEventKind.response:
-        return NativeEventKind.response;
+        return .response;
+
       case DartPingEventKind.error:
-        return NativeEventKind.error;
+        return .error;
+
       case DartPingEventKind.summary:
-        return NativeEventKind.summary;
+        return .summary;
+
+      // The `default` deliberately shares `.error` with the error case but is a
+      // distinct, documented unreachable fallback — keep them separate.
+      // ignore: no-equal-switch-case
       default:
         // The C ABI only emits the three known kinds; treat anything else as a
         // summary-shaped terminal would be wrong, so map to an error event the
         // mapper can render. This is unreachable in practice.
-        return NativeEventKind.error;
+        return .error;
     }
   }
 
   static NativeErrorKind _errorKind(int kind) {
     switch (kind) {
       case DartPingErrorKind.requestTimedOut:
-        return NativeErrorKind.requestTimedOut;
+        return .requestTimedOut;
+
       case DartPingErrorKind.timeToLiveExceeded:
-        return NativeErrorKind.timeToLiveExceeded;
+        return .timeToLiveExceeded;
+
       case DartPingErrorKind.noReply:
-        return NativeErrorKind.noReply;
+        return .noReply;
+
       case DartPingErrorKind.unknownHost:
-        return NativeErrorKind.unknownHost;
+        return .unknownHost;
+
       case DartPingErrorKind.noRoute:
-        return NativeErrorKind.noRoute;
+        return .noRoute;
+
       default:
-        return NativeErrorKind.unknown;
+        return .unknown;
     }
   }
 
@@ -325,6 +342,8 @@ class IosPing implements Ping {
 
     final controller = _controller;
     if (controller != null && !controller.isClosed) {
+      // Fire-and-forget close from synchronous teardown.
+      // ignore: avoid-ignoring-return-values
       controller.close();
     }
 

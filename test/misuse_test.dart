@@ -5,7 +5,7 @@ import 'package:test/test.dart';
 void main() {
   group('Misuse: ', () {
     test('Termination before starting', () async {
-      var ping = Ping('1.1.1.1', count: 5);
+      Ping ping = Ping('1.1.1.1', count: 5);
       expect(await ping.stop(), isFalse);
     });
   });

@@ -10,31 +10,6 @@ import 'package:dart_ping/src/models/round_trip_stats.dart';
 import 'package:dart_ping/src/models/ping_parser.dart';
 
 abstract class BasePing {
-  BasePing(
-    this.host,
-    this.count,
-    this.interval,
-    this.timeout,
-    this.ttl,
-    this.ipVersion,
-    this.parser,
-    this.encoding,
-    this.forceCodepage,
-    this.interface,
-    this.nat64Synthesis,
-  ) {
-    // Enforce the literal/family guard on EVERY construction path, not only the
-    // `Ping(...)` factory — direct construction of a platform class must fail
-    // fast the same way (§spec:address-family-mismatch-validation).
-    validateAddressFamily(host, ipVersion);
-    _controller = StreamController<PingEvent>(
-      onListen: _onListen,
-      onCancel: _onCancel,
-      onPause: () => _sub?.pause(),
-      onResume: () => _sub?.resume(),
-    );
-  }
-
   /// Hostname, domain, or IP which you would like to ping
   String host;
 
@@ -76,22 +51,6 @@ abstract class BasePing {
   /// no interface binding is applied.
   String? interface;
 
-  /// Whether an interface selection that should actually be applied was
-  /// supplied. An empty string is treated the same as `null` (no selection),
-  /// so it never produces a dangling binding flag.
-  bool get hasInterface => interface != null && interface!.isNotEmpty;
-
-  /// Whether [interface] holds a source IP address (rather than an interface
-  /// name), determined by parsing it as an IP literal via
-  /// [InternetAddress.tryParse].
-  ///
-  /// An IPv6 zone id (e.g. `fe80::1%eth0`) is stripped before parsing because
-  /// [InternetAddress.tryParse] rejects the `%zone` suffix; without this a
-  /// zone-scoped source address would be misclassified as an interface name.
-  bool get interfaceIsAddress =>
-      hasInterface &&
-      InternetAddress.tryParse(interface!.split('%').first) != null;
-
   /// Whether the platform may reach an IPv4 literal on an IPv6-only
   /// (NAT64/DNS64) network via the platform's own address synthesis
   /// (§spec:nat64-option).
@@ -112,17 +71,19 @@ abstract class BasePing {
   // concurrent runs to distinct hosts cannot cross-contaminate. Guarded offline
   // by `test/concurrent_isolation_test.dart`.
   late final StreamController<PingEvent> _controller;
+
   Process? _process;
+
   StreamSubscription<PingEvent>? _sub;
 
   /// Raw parsed summary; its `stats` is null until finalized in [_cleanup].
   PingSummary? _summaryData;
-  final List<PingError> _errors = [];
+  final _errors = <PingError>[];
 
   /// Accumulates per-probe round-trip times so the terminal summary's
   /// [RoundTripStats] is computed from the per-probe replies — the same code on
   /// every subprocess platform (§spec:stats-cross-platform).
-  final RoundTripStatsAccumulator _rttStats = RoundTripStatsAccumulator();
+  final _rttStats = RoundTripStatsAccumulator();
 
   /// Whether a consumer has begun listening (so [_onListen] has started). Used
   /// by [stop] to decide whether awaiting closure could ever return.
@@ -131,6 +92,33 @@ abstract class BasePing {
   /// Whether [stop] was requested before the process finished launching, so the
   /// process can be killed as soon as it exists.
   bool _stopRequested = false;
+
+  /// Whether an interface selection that should actually be applied was
+  /// supplied. An empty string is treated the same as `null` (no selection),
+  /// so it never produces a dangling binding flag.
+  bool get hasInterface {
+    final interface = this.interface;
+
+    return interface != null && interface.isNotEmpty;
+  }
+
+  /// Whether [interface] holds a source IP address (rather than an interface
+  /// name), determined by parsing it as an IP literal via
+  /// [InternetAddress.tryParse].
+  ///
+  /// An IPv6 zone id (e.g. `fe80::1%eth0`) is stripped before parsing because
+  /// [InternetAddress.tryParse] rejects the `%zone` suffix; without this a
+  /// zone-scoped source address would be misclassified as an interface name.
+  bool get interfaceIsAddress {
+    final interface = this.interface;
+    if (interface == null || interface.isEmpty) return false;
+    // Strip an IPv6 zone id (e.g. `fe80::1%eth0`) before parsing, since
+    // InternetAddress.tryParse rejects the `%zone` suffix.
+    final zone = interface.indexOf('%');
+    final address = zone == -1 ? interface : interface.substring(0, zone);
+
+    return InternetAddress.tryParse(address) != null;
+  }
 
   /// Command to set english locale before running ping command
   Map<String, String> get locale;
@@ -161,19 +149,74 @@ abstract class BasePing {
     );
   }
 
-  /// Decodes and line-splits a single raw byte stream so that whole lines are
-  /// produced before the streams are merged.
-  Stream<String> _lines(Stream<List<int>> raw) =>
-      raw.transform(encoding.decoder).transform(const LineSplitter());
+  Stream<PingEvent> get stream => _controller.stream;
 
   /// Transforms the ping process output into [PingEvent] objects
   ///
   /// Each raw stream is decoded and line-split independently before merging, so
   /// interleaved stderr/stdout writes cannot corrupt or split a line.
-  Stream<PingEvent> get _parsedOutput => StreamGroup.merge([
-    _lines(_process!.stderr),
-    _lines(_process!.stdout),
-  ]).transform<PingEvent>(parser.transformParser);
+  Stream<PingEvent> get _parsedOutput {
+    // Only read after `_onListen` assigns `_process`, so the process is set.
+    // ignore: avoid-non-null-assertion
+    final process = _process!;
+
+    return StreamGroup.merge([
+      _lines(process.stderr),
+      _lines(process.stdout),
+    ]).transform(parser.transformParser);
+  }
+
+  BasePing(
+    this.host,
+    this.count,
+    this.interval,
+    this.timeout,
+    this.ttl,
+    this.ipVersion,
+    this.parser,
+    this.encoding,
+    this.forceCodepage,
+    this.interface,
+    this.nat64Synthesis,
+  ) {
+    // Enforce the literal/family guard on EVERY construction path, not only the
+    // `Ping(...)` factory — direct construction of a platform class must fail
+    // fast the same way (§spec:address-family-mismatch-validation).
+    validateAddressFamily(host, ipVersion);
+    _controller = StreamController<PingEvent>(
+      onListen: _onListen,
+      onCancel: _onCancel,
+      onPause: () => _sub?.pause(),
+      onResume: () => _sub?.resume(),
+    );
+  }
+
+  /// Interprets exit code into a PingError
+  PingError? interpretExitCode(int exitCode);
+
+  /// Converts error exit codes into Exceptions
+  Exception? throwExit(int exitCode);
+
+  Future<bool> stop() async {
+    _stopRequested = true;
+    final killed = _process?.kill(.sigint) ?? false;
+    // Await closure whenever a consumer has started listening — even if the
+    // process is still launching, since _onListen will kill it once it exists —
+    // so stop() never returns before the stream terminates. When nothing was
+    // ever started, the controller will never close, so do not await.
+    if (_started && !_controller.isClosed) {
+      // Awaited for its completion signal; the future carries no value.
+      // ignore: avoid-ignoring-return-values
+      await _controller.done;
+    }
+
+    return killed;
+  }
+
+  /// Decodes and line-splits a single raw byte stream so that whole lines are
+  /// produced before the streams are merged.
+  Stream<String> _lines(Stream<List<int>> raw) =>
+      raw.transform(encoding.decoder).transform(const LineSplitter());
 
   Future<void> _onListen() async {
     _started = true;
@@ -197,8 +240,10 @@ abstract class BasePing {
               // `stats.sampleCount` (received-so-far) and the count of probe
               // events it has seen (transmitted-so-far), consistent with the
               // terminal `packetLoss`.
-              if (event.time != null) _rttStats.add(event.time!);
+              final rtt = event.time;
+              if (rtt != null) _rttStats.add(rtt);
               _controller.add(event.copyWith(stats: _rttStats.snapshot()));
+
             case PingError():
               // Accumulate the BARE error so it is folded into the summary's
               // errors list at cleanup unchanged. Emit a copy carrying the
@@ -207,6 +252,7 @@ abstract class BasePing {
               // so far (§spec:stats-live).
               _errors.add(event);
               _controller.add(event.copyWith(stats: _rttStats.snapshot()));
+
             case PingSummary():
               // Hold the raw parsed summary; it is finalized (stats + errors)
               // in _cleanup.
@@ -226,13 +272,16 @@ abstract class BasePing {
       // A stop() that arrived while the process was still launching could not
       // kill it yet; honor that request now that the process exists.
       if (_stopRequested) {
-        _process!.kill(ProcessSignal.sigint);
+        // _process is set just above; kill() is fire-and-forget by design.
+        // ignore: avoid-non-null-assertion, avoid-ignoring-return-values
+        _process!.kill(.sigint);
       }
     } catch (error, stackTrace) {
       // The launch failed before a subscription was established; surface the
       // error and close the stream so the consumer never hangs. If the process
       // had already started before the failure, do not leave it running.
-      _process?.kill(ProcessSignal.sigint);
+      // ignore: avoid-ignoring-return-values
+      _process?.kill(.sigint);
       final mappedError =
           (error is ProcessException && error.errorCode == 2) ||
               error.toString().contains('No such file')
@@ -248,6 +297,8 @@ abstract class BasePing {
   /// Closes the stream controller exactly once.
   Future<void> _closeController() async {
     if (!_controller.isClosed) {
+      // Awaited for completion; close() returns no meaningful value.
+      // ignore: avoid-ignoring-return-values
       await _controller.close();
     }
   }
@@ -260,6 +311,8 @@ abstract class BasePing {
   /// channel instead of leaving the consumer to hang.
   Future<void> _cleanup() async {
     try {
+      // _cleanup only runs as the subscription's onDone, after _process is set.
+      // ignore: avoid-non-null-assertion
       final exitCode = await _process!.exitCode;
 
       PingError? exitError;
@@ -288,11 +341,9 @@ abstract class BasePing {
       // error (§spec:stats-cross-platform).
       final errors = [..._errors, ?exitError];
       final stats = _rttStats.snapshot();
+      final summaryData = _summaryData;
       final PingSummary summary;
-      if (_summaryData != null) {
-        // The native summary line is authoritative for transmitted/received.
-        summary = _summaryData!.copyWith(stats: stats, errors: errors);
-      } else {
+      if (summaryData == null) {
         // No native summary line was parsed (e.g. an unmapped exit, or the
         // process was killed before printing one). Still emit a terminal
         // summary so the run's final event is always a `PingSummary`
@@ -308,19 +359,19 @@ abstract class BasePing {
         final probeFailures = _errors
             .where(
               (e) =>
-                  e.error == ErrorType.requestTimedOut ||
-                  e.error == ErrorType.timeToLiveExceeded,
+                  e.error == .requestTimedOut || e.error == .timeToLiveExceeded,
             )
             .length;
         summary = PingSummary(
           transmitted: received + probeFailures,
           received: received,
-          time: null,
           stats: stats,
           errors: errors,
         );
+      } else {
+        // The native summary line is authoritative for transmitted/received.
+        summary = summaryData.copyWith(stats: stats, errors: errors);
       }
-
       _controller.add(summary);
     } catch (error, stackTrace) {
       // The controller is only closed in the finally below, so it is still
@@ -332,29 +383,9 @@ abstract class BasePing {
     }
   }
 
-  /// Interprets exit code into a PingError
-  PingError? interpretExitCode(int exitCode);
-
-  /// Converts error exit codes into Exceptions
-  Exception? throwExit(int exitCode);
-
-  Stream<PingEvent> get stream => _controller.stream;
-
-  Future<void> _onCancel() async {
-    _process?.kill(ProcessSignal.sigint);
-  }
-
-  Future<bool> stop() async {
-    _stopRequested = true;
-    final killed = _process?.kill(ProcessSignal.sigint) ?? false;
-    // Await closure whenever a consumer has started listening — even if the
-    // process is still launching, since _onListen will kill it once it exists —
-    // so stop() never returns before the stream terminates. When nothing was
-    // ever started, the controller will never close, so do not await.
-    if (_started && !_controller.isClosed) {
-      await _controller.done;
-    }
-
-    return killed;
+  void _onCancel() {
+    // Fire-and-forget: the consumer cancelled, so just signal the process.
+    // ignore: avoid-ignoring-return-values
+    _process?.kill(.sigint);
   }
 }

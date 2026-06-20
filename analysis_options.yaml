@@ -19,3 +19,106 @@ analyzer:
     # checked by the macOS `ios-swift` CI job (flutter build), not by this
     # package's `dart analyze`.
     - "example/**"
+
+# DCM (dcm.dev) configuration. Run `dcm analyze .` to lint, `dcm fix .` to apply
+# the auto-fixable rules. The rule set is the `recommended` preset plus a curated
+# group of warning-severity correctness rules and the low-risk auto-fixable style
+# rules. Framework-specific (bloc/intl/provider/...) rules are omitted as this is
+# a pure-Dart package, and the tall-style formatter owns trailing commas so those
+# rules are left off too. Intent-sensitive rules are scoped away from test/ so
+# tests can keep explicit, self-documenting argument lists.
+dart_code_metrics:
+  extends:
+    - recommended
+  rules:
+    # Curated correctness rules (warning severity), production code only.
+    - avoid-type-casts:
+        exclude:
+          - test/**
+    - avoid-non-null-assertion:
+        exclude:
+          - test/**
+    - avoid-ignoring-return-values:
+        exclude:
+          - test/**
+    # Production-robustness rules kept ON for lib/ but scoped off test/, where
+    # the flagged forms are deliberate test idioms (e.g. `.first`/`.last` on a
+    # known-non-empty list, asserting `a == a`, constructing equal objects, a
+    # no-op callback body, an intentional unrelated cast, a fire-and-forget
+    # subscription).
+    - avoid-unsafe-collection-methods:
+        exclude:
+          - test/**
+    - avoid-self-compare:
+        exclude:
+          - test/**
+    - avoid-duplicate-initializers:
+        exclude:
+          - test/**
+    - no-empty-block:
+        exclude:
+          - test/**
+    - avoid-unrelated-type-casts:
+        exclude:
+          - test/**
+    - avoid-unassigned-stream-subscriptions:
+        exclude:
+          - test/**
+    # Low-risk auto-fixable style rules.
+    - member-ordering
+    - newline-before-case
+    - newline-before-return
+    - newline-before-constructor
+    - newline-before-throw
+    - prefer-type-over-var
+    - avoid-explicit-type-declaration
+    - avoid-inferrable-type-arguments
+    - avoid-unnecessary-enum-prefix
+    - avoid-negated-conditions
+    - avoid-unnecessary-parentheses
+    - binary-expression-operand-order
+    - prefer-addition-subtraction-assignments
+    - prefer-first
+    - prefer-returning-conditional-expressions
+    # Removes arguments equal to the parameter default. Kept off test/ so tests
+    # can pass explicit values to document the behavior under test.
+    - avoid-passing-default-values:
+        exclude:
+          - test/**
+    # Recommended-preset rules turned OFF: each fires only as a false positive
+    # against a deliberate, documented convention in this package.
+    #   prefer-match-file-name: platform/binding classes intentionally don't
+    #     match their file (PingLinux in linux_ping.dart, NativeBindings in
+    #     dart_ping_bindings.dart, Ping in ping_interface.dart).
+    - prefer-match-file-name: false
+    #   avoid-nullable-interpolation: toString()/error-message interpolation
+    #     intentionally renders an absent value as "null" (or the value is
+    #     guarded by a preceding non-null check).
+    - avoid-nullable-interpolation: false
+    #   avoid-default-tostring: fires on enum interpolation, where the default
+    #     `EnumType.value` toString is meaningful and intended.
+    - avoid-default-tostring: false
+    #   match-getter-setter-field-names: backing-field names are deliberate
+    #     (e.g. `sampleCount` reads `_count`).
+    - match-getter-setter-field-names: false
+    #   prefer-prefixed-global-constants: the Flutter `k` constant convention is
+    #     not used in this pure-Dart package.
+    - prefer-prefixed-global-constants: false
+    #   avoid-commented-out-code: false-positives on explanatory comments and
+    #     file-header banners (e.g. the `dart:ffi` bindings header).
+    - avoid-commented-out-code: false
+    #   avoid-passing-async-when-sync-expected: the only hits are the async
+    #     `StreamController.onListen` / `Stream.listen(onDone:)` callbacks in
+    #     base_ping, which are intentionally fire-and-forget — `stop()` awaits
+    #     `_controller.done` rather than the callback futures (#30).
+    - avoid-passing-async-when-sync-expected: false
+  # NOTE: several ordering rules are intentionally NOT enabled because order
+  # carries meaning in this package and their auto-fix is destructive here:
+  #   - arguments-ordering / parameters-ordering: reorder *positional* args and
+  #     params (used widely), which breaks call sites and does not compile.
+  #   - map-keys-ordering: alphabetizes `toJson()` map literals, changing the
+  #     public JSON output (the `type` discriminator is intentionally first).
+  #   - enum-constants-ordering: reorders the FFI-boundary `Native*Kind` enums
+  #     whose order mirrors the native Swift side (and would shift `.index`).
+  #   - format-comment: its (unsafe) auto-fix deletes/rewrites comments and drops
+  #     semantic nuance (e.g. an "in emission order" note), so it is left off.
