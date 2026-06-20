@@ -1,11 +1,17 @@
 # SPM build mode — iOS example (no CocoaPods)
 
 This example app uses **Flutter's Swift Package Manager (SPM) build mode**.
-There is **no `Podfile` and no CocoaPods** in `example/ios/`: the iOS plugin
-implementation (`dart_ping_ios`) is consumed as a Swift Package, and the
-Xcode project contains no `[CP]` CocoaPods build phases and no `Pods`
-references. This is the primary acceptance surface for issue #73
-(see `SPEC.md` §spec:spm-distribution).
+There is **no `Podfile` and no CocoaPods** in `example/ios/`: iOS support is
+built directly into `dart_ping`, whose native ICMP engine is compiled by a
+Dart build hook into a `dart:ffi` code asset — no Flutter plugin, no second
+package, no `register()`. The Xcode project contains no `[CP]` CocoaPods
+build phases and no `Pods` references. This is the primary acceptance surface
+for the consolidation (see `SPEC.md` §spec:single-package-ios,
+§spec:dart-ping-ios-retired; originally issue #73 §spec:spm-distribution).
+
+The deterministic Swift ICMP framing/parse tests run in the `RunnerTests`
+target, which compiles `../../native/ICMPPacket.swift` (the consolidated
+engine's framing code) directly — there is no plugin module to import.
 
 ## Run the live acceptance test (macOS only)
 
@@ -21,7 +27,7 @@ SDK) and **cannot be executed on a Linux CI host**.
 2. Run the example on an iOS simulator or device:
 
    ```sh
-   cd dart_ping_ios/example
+   cd dart_ping/example
    flutter run
    ```
 

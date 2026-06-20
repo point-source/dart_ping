@@ -2,15 +2,19 @@ import Flutter
 import UIKit
 import XCTest
 
-// We import the plugin module to reach the (now `public`) ICMP framing/parsing
-// API in `ICMPPacket.swift`. These tests exercise the deterministic, network-free
-// logic only: checksum computation, Echo Request construction, Echo Reply
-// parsing, and Time Exceeded original-sequence extraction (§spec:ios-tests).
+// `ICMPPacket.swift` (the consolidated engine's framing/parsing code at
+// `dart_ping/native/ICMPPacket.swift`) is compiled directly into this test
+// target — see the RunnerTests Sources build phase in the Xcode project — so
+// its API is reachable without importing a plugin module. `dart_ping` is no
+// longer a Flutter plugin and exposes no Swift module to import.
+//
+// These tests exercise the deterministic, network-free logic only: checksum
+// computation, Echo Request construction, Echo Reply parsing, and Time
+// Exceeded original-sequence extraction (§spec:ios-tests).
 //
 // The wire format is the whole point of this code, so every test documents the
 // exact bytes/offsets/endianness it expects and (for the checksum) shows the
 // one's-complement arithmetic by hand.
-import dart_ping_ios
 
 class RunnerTests: XCTestCase {
 
