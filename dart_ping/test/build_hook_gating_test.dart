@@ -50,6 +50,18 @@ void main() {
       );
     });
 
+    test('builds for iOS when code assets were requested', () {
+      // The positive case stated directly. The matrix below asserts it too, but
+      // this fails loudly and unambiguously if the iOS gate ever regresses (and
+      // it cannot pass vacuously the way an all-`isFalse` matrix could if `OS`
+      // ever dropped its iOS value).
+      expect(
+        shouldBuildIosAsset(buildCodeAssets: true, targetOS: OS.iOS),
+        isTrue,
+        reason: 'iOS + code assets requested must build the native code asset',
+      );
+    });
+
     test('covers every known OS (no unhandled target silently builds)', () {
       for (final os in OS.values) {
         final builds = shouldBuildIosAsset(

@@ -207,6 +207,14 @@ public func dart_ping_start(_ host: UnsafePointer<CChar>?,
 /// Stop a ping run and release its handle. Recovers the box, calls the engine's
 /// `stop()`, and lets the box (and engine) deallocate. NULL is ignored.
 ///
+/// OWNERSHIP — call AT MOST ONCE per non-NULL handle. `takeRetainedValue()`
+/// consumes the single retain that `dart_ping_start` returned, so a second call
+/// on the SAME handle would over-release (a use-after-free of the box). The Dart
+/// owner enforces exactly-once: `IosPing._stopNative()` is guarded by a `_stopped`
+/// flag, runs only on its single owning isolate, and nulls its handle field right
+/// after calling — so the same non-NULL handle is never passed here twice. (A NULL
+/// handle is always safe and ignored.)
+///
 /// LIFECYCLE BOUNDARY (finalized by #28-2, §spec:ios-ffi-binding): after `stop()`
 /// the engine may still deliver an already-queued event on its background queue
 /// (e.g. the terminal summary). This shim does NOT guard against a post-stop

@@ -165,24 +165,40 @@ class IosPing implements Ping {
 
   /// Runs on this isolate's event loop (the native C call has already returned).
   void _handleNativeEvent(Pointer<Void> ctx, Pointer<DartPingEvent> evPtr) {
-    // 1. Copy EVERYTHING we need out of the heap-owned struct, then free it
-    //    exactly once. The event is heap-owned by us (WS1's lifetime contract),
-    //    so the free is in a `finally`: a decode failure (e.g. a malformed IP
-    //    string on a probe event) must never leak the native payload. Such a
-    //    failure only affects non-terminal events — the summary carries no IP —
-    //    so a dropped probe never skips teardown.
-    final NativePingEvent dto;
-    try {
-      dto = _decodeEvent(evPtr.ref);
-    } finally {
-      freeNativeEvent(evPtr);
-    }
+    // Read the kind discriminator from the raw struct BEFORE the fallible decode
+    // so the terminal summary ALWAYS drives teardown — even if decoding or
+    // mapping a (malformed) event throws. Otherwise a throw on a terminal event
+    // would skip teardown and leave the consumer hanging.
+    final isSummary = evPtr.ref.kind == DartPingEventKind.summary;
 
-    // 2. Map to a sealed PingEvent carrying the running stats snapshot, forward
-    //    it, and tear down once the terminal summary has been delivered.
-    final event = _statsMapper!.map(dto);
-    _forward(event);
-    if (event is PingSummary) _teardown();
+    try {
+      // Copy EVERYTHING we need out of the heap-owned struct, then free it
+      // exactly once. The event is heap-owned by us (the lifetime contract), so
+      // the free is in a `finally`: a decode failure (e.g. a malformed IP
+      // string) must never leak the native payload.
+      final NativePingEvent dto;
+      try {
+        dto = _decodeEvent(evPtr.ref);
+      } finally {
+        freeNativeEvent(evPtr);
+      }
+
+      // Map to a sealed PingEvent carrying the running stats snapshot and forward.
+      _forward(_statsMapper!.map(dto));
+    } catch (error, stack) {
+      // A malformed event must not escape as an unhandled async error (this runs
+      // on a NativeCallable.listener callback) or skip teardown; surface it on
+      // the stream's error channel that consumers already handle.
+      final controller = _controller;
+      if (!_cancelled && controller != null && !controller.isClosed) {
+        controller.addError(error, stack);
+      }
+    } finally {
+      // Tear down once the terminal summary has been seen — guaranteed even if
+      // the decode/map/forward above threw, so a malformed terminal event can
+      // never hang the consumer.
+      if (isSummary) _teardown();
+    }
   }
 
   /// Forwards a mapped event to the stream, unless the run was cancelled (cancel
