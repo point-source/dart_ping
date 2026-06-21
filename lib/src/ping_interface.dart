@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'address_family.dart';
+import 'host_validation.dart';
 import 'ip_version.dart';
 import 'models/ping_event.dart';
 import 'models/ping_parser.dart';
@@ -105,6 +106,15 @@ abstract class Ping {
     /// raw pass-through: the family-pinned resolve with no synthesis.
     bool nat64Synthesis = true,
   }) {
+    // Synchronous host-safety guard: a [host] is data, never a command. Reject
+    // any value that is not a syntactically valid hostname or IP literal — i.e.
+    // one carrying shell metacharacters, whitespace, or control characters —
+    // before anything launches, so a `host` can never reach a shell as code on
+    // any platform or on the Windows `forceCodepage` path (§spec:host-input-is-data).
+    // Checked first so a garbage string fails on the safety rule rather than
+    // slipping past the family parse below as an unclassified "hostname".
+    validateHostSafety(host);
+
     // Synchronous address-family guard: if [host] is a literal IP address, its
     // family MUST match the selected [ipVersion]. This runs before any platform
     // dispatch (including the iOS factory path) and before any stream/process

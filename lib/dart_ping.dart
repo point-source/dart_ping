@@ -6,6 +6,8 @@ export 'package:dart_ping/src/models/round_trip_stats.dart'
 export 'package:dart_ping/src/ip_version.dart';
 export 'package:dart_ping/src/address_family.dart'
     show ipLiteralFamily, validateAddressFamily;
+export 'package:dart_ping/src/host_validation.dart'
+    show isHostSafe, validateHostSafety;
 export 'package:dart_ping/src/ping_interface.dart';
 export 'package:dart_ping/src/models/ping_parser.dart';
 export 'package:dart_ping/src/interface_listing.dart'
