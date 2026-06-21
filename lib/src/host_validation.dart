@@ -31,24 +31,18 @@ final RegExp _zoneId = RegExp(r'^[A-Za-z0-9_.-]+$');
 bool isHostSafe(String host) {
   if (host.isEmpty) return false;
 
-  // A clean IPv4/IPv6 literal (no zone). `InternetAddress.tryParse` accepts
-  // these and rejects anything with stray characters.
-  final literal = InternetAddress.tryParse(host);
-  if (literal != null &&
-      (literal.type == InternetAddressType.IPv4 ||
-          literal.type == InternetAddressType.IPv6)) {
-    return true;
-  }
-
-  // A scoped/zoned IPv6 literal: `<ipv6>%<zone>`. `InternetAddress.tryParse`
-  // does accept zoned IPv6, but its zone handling is environment-dependent — it
-  // validates the zone against the host's actual scope ids, so `fe80::1%eth0`
-  // parses only where `eth0` exists. To accept a syntactically-valid scoped
-  // literal DETERMINISTICALLY (and portably, off the spawning host), validate
-  // the two parts ourselves: the body must parse as an IPv6 literal and the zone
-  // must be shell-safe. This is the ONLY position in which `%` is admitted — a
-  // free-standing `%` (e.g. `8.8.8.8%calc`, `%VAR%`) does not reach a valid IPv6
-  // body and is refused, and any zone carrying a metacharacter fails `_zoneId`.
+  // A scoped/zoned IPv6 literal: `<ipv6>%<zone>`. This MUST be decided before
+  // the plain `InternetAddress.tryParse` below, because that parse's zone
+  // handling is environment-dependent: on macOS it accepts a zoned IPv6 with an
+  // arbitrary, UNVALIDATED zone string, so a dangerous zone such as
+  // `fe80::1%a&b` would parse as a valid IPv6 address and wrongly return `true`
+  // (on Linux/Windows the same parse is strict and returns null). Deciding every
+  // `%`-bearing host here — validating the two parts ourselves: the body must
+  // parse as an IPv6 literal and the zone must be shell-safe — makes the result
+  // DETERMINISTIC and portable across platforms. This is the ONLY position in
+  // which `%` is admitted: a free-standing `%` (e.g. `8.8.8.8%calc`, `%VAR%`)
+  // does not reach a valid IPv6 body and is refused, and any zone carrying a
+  // metacharacter fails `_zoneId`.
   final pct = host.indexOf('%');
   if (pct > 0) {
     final body = host.substring(0, pct);
@@ -58,6 +52,16 @@ bool isHostSafe(String host) {
         bodyAddr.type == InternetAddressType.IPv6 &&
         zone.isNotEmpty &&
         _zoneId.hasMatch(zone);
+  }
+
+  // A clean IPv4/IPv6 literal (no zone). `InternetAddress.tryParse` accepts
+  // these and rejects anything with stray characters. Any `%`-bearing host has
+  // already been decided above, so this only ever sees an unzoned candidate.
+  final literal = InternetAddress.tryParse(host);
+  if (literal != null &&
+      (literal.type == InternetAddressType.IPv4 ||
+          literal.type == InternetAddressType.IPv6)) {
+    return true;
   }
 
   // Otherwise it must be a syntactically valid hostname: dot-separated labels,
