@@ -80,27 +80,23 @@ void main() {
     // both flag values, plus through the public `Ping(...)` factory.
     group('rejection is independent of platform and forceCodepage', () {
       for (final host in const ['8.8.8.8&calc', 'x|whoami', 'a>b', 'a^b']) {
-        test('PingWindows($host) rejected with forceCodepage: false', () {
-          expect(
-            () => PingWindows(host, 1, 1, 2, 255, IpVersion.ipv4),
-            throwsArgumentError,
-          );
-        });
-
-        test('PingWindows($host) rejected with forceCodepage: true', () {
-          expect(
-            () => PingWindows(
-              host,
-              1,
-              1,
-              2,
-              255,
-              IpVersion.ipv4,
-              forceCodepage: true,
-            ),
-            throwsArgumentError,
-          );
-        });
+        for (final forceCodepage in const [false, true]) {
+          test('PingWindows($host) rejected with forceCodepage: $forceCodepage',
+              () {
+            expect(
+              () => PingWindows(
+                host,
+                1,
+                1,
+                2,
+                255,
+                IpVersion.ipv4,
+                forceCodepage: forceCodepage,
+              ),
+              throwsArgumentError,
+            );
+          });
+        }
 
         test('Ping($host) factory rejected before the stream starts', () {
           expect(() => Ping(host), throwsArgumentError);

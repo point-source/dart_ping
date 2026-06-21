@@ -52,8 +52,8 @@ bool isHostSafe(String host) {
   // Otherwise it must be a syntactically valid hostname: dot-separated labels,
   // each a run of hostname-safe characters. A single trailing dot (the FQDN
   // root) is tolerated.
-  var name = host;
-  if (name.endsWith('.')) name = name.substring(0, name.length - 1);
+  final name =
+      host.endsWith('.') ? host.substring(0, host.length - 1) : host;
   if (name.isEmpty || name.length > 253) return false;
   for (final label in name.split('.')) {
     if (label.isEmpty || label.length > 63 || !_hostnameLabel.hasMatch(label)) {
