@@ -4,6 +4,7 @@ import 'dart:ffi';
 import 'package:ffi/ffi.dart';
 
 import 'package:dart_ping/src/address_family.dart';
+import 'package:dart_ping/src/host_validation.dart';
 import 'package:dart_ping/src/ip_version.dart';
 import 'package:dart_ping/src/models/ping_event.dart';
 import 'package:dart_ping/src/models/ping_parser.dart';
@@ -88,8 +89,9 @@ class IosPing implements Ping {
   set parser(PingParser value) => throw UnimplementedError();
 
   /// Creates an iOS ping bound to [host], mirroring the field set the channel
-  /// bridge carried. The address-family guard runs in the constructor — exactly
-  /// as every other platform does — so a literal IP whose family contradicts
+  /// bridge carried. The host-safety and address-family guards run in the
+  /// constructor — exactly as every other platform does — so an unsafe `host`
+  /// (§spec:host-input-is-data) or a literal IP whose family contradicts
   /// [ipVersion] fails fast with the identical [ArgumentError], regardless of
   /// whether the instance is ever listened to.
   IosPing(
@@ -101,6 +103,7 @@ class IosPing implements Ping {
     this._ipVersion,
     this._nat64Synthesis,
   ) {
+    validateHostSafety(_host);
     validateAddressFamily(_host, _ipVersion);
   }
 

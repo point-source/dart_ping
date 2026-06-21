@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:async/async.dart';
 import 'package:dart_ping/src/address_family.dart';
+import 'package:dart_ping/src/host_validation.dart';
 import 'package:dart_ping/src/ip_version.dart';
 import 'package:dart_ping/src/models/ping_event.dart';
 import 'package:dart_ping/src/models/round_trip_stats.dart';
@@ -179,9 +180,14 @@ abstract class BasePing {
     this.interface,
     this.nat64Synthesis,
   ) {
-    // Enforce the literal/family guard on EVERY construction path, not only the
-    // `Ping(...)` factory — direct construction of a platform class must fail
-    // fast the same way (§spec:address-family-mismatch-validation).
+    // Enforce the host-safety and literal/family guards on EVERY construction
+    // path, not only the `Ping(...)` factory — direct construction of a platform
+    // class must fail fast the same way. The host-safety guard makes the value
+    // that ultimately reaches the Windows `chcp 437 && ping …` shell chain inert
+    // by construction (§spec:host-input-is-data,
+    // §spec:forcecodepage-injection-closed); the family guard rejects a
+    // literal/ipVersion mismatch (§spec:address-family-mismatch-validation).
+    validateHostSafety(host);
     validateAddressFamily(host, ipVersion);
     _controller = StreamController<PingEvent>(
       onListen: _onListen,

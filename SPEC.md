@@ -53,6 +53,13 @@ This document covers the following areas, matching REQUIREMENTS.md:
   times out but the first hop returns TTL-exceeded ICMP errors (native
   exit `2`) yields a deterministic 100%-loss summary instead of a thrown
   exception, matching the pure-silence (exit `1`) outcome.
+- **Host injection safety (#90)** — `§spec:host-input-is-data` …
+  `§spec:host-injection-tests` at the very end (implemented). A security
+  fix closing a command-injection hole on the Windows `forceCodepage`
+  path, where a `host` carrying shell metacharacters could break out of
+  `cmd.exe` and run an arbitrary command. A shared, cross-platform
+  fail-fast guard makes a `host` value data, never a command. Shipped as
+  a patch-level change.
 
 Solution-space design for issue #73 — native, Swift Package Manager
 (SPM)-compatible iOS support for `dart_ping`.
@@ -2752,3 +2759,194 @@ public API and normal-run output are unchanged, and the no-reply
 summary surfaces through the stream consumers already use — so it ships
 as a non-breaking, patch-level change to `dart_ping`
 (§req:mac-all-timeout-constraints, §req:mac-all-timeout-priorities).
+---
+
+# Host injection safety
+
+Solution-space design for issue #90 (`§req:host-injection-*`). A security
+fix closing a command-injection hole on the Windows `forceCodepage` path.
+
+The problem (from §req:host-injection-problem-statement): when a caller
+opts into `forceCodepage: true`, the library launches the ping process
+*through* `cmd.exe` (`runInShell` plus a `chcp 437 && ping …` chain). The
+shell interprets `&`, `|`, `<`, `>`, and `^` in arguments as command
+separators and redirections; per-argument escaping does not neutralize
+them. A `host` such as `8.8.8.8&calc` or `x|whoami` is therefore read by
+the shell as "ping this, *then* run that," executing an arbitrary command
+with the calling process's privileges. The only pre-existing input check
+on `host` validates an IP literal's address family
+(§spec:address-family-mismatch-validation); a hostname-shaped string laced
+with metacharacters passes straight through. The hole is Windows-only,
+fires only when `forceCodepage` is on (off by default), and needs an
+untrusted `host` — but where it applies the cost is silent,
+attacker-controlled code execution, and a diagnostics library that pings
+user-supplied targets is exactly where untrusted hosts appear.
+
+The two sections below place a single cross-platform guard so a `host`
+value can never reach a shell as code, and pin its automated coverage.
+The guarantee is deliberately stated and enforced on *every* path — all
+platforms, both the default and `forceCodepage` launch paths — not only
+where it currently bites (§req:host-injection-success-criteria).
+
+## A host value is data, never a command §spec:host-input-is-data
+*Status: implemented (dart_ping 10.0.0) — a shared `validateHostSafety(host)` allow-list guard (`lib/src/host_validation.dart`) accepts only a syntactically valid hostname or IPv4/IPv6 literal (incl. scoped/zoned IPv6 and ASCII/punycode IDN) and throws an `ArgumentError` for anything carrying shell metacharacters, whitespace, control characters, an option-flag shape (leading/trailing hyphen, e.g. `-f`), or bracketed-IPv6 URL notation (`[::1]`). The guard runs at the shared `Ping(...)` factory boundary AND in the platform/`IosPing` constructor path (alongside `validateAddressFamily`), so neither construction path can bypass it, on every platform and regardless of `forceCodepage`. Covered network-free in `test/host_injection_test.dart`.*
+
+A `host` value is only ever a ping target. It can never be interpreted as
+a command, and it never reaches a shell as code — on any platform, with or
+without `forceCodepage`. A `host` that is not a syntactically valid
+hostname or IP literal is rejected before anything launches, with a single
+catchable error, identical in shape on every platform.
+
+- When `host` contains a character that has no place in a hostname or IP
+  literal — shell metacharacters (`&`, `|`, `<`, `>`, `^`, `(`, `)`, `"`,
+  `'`, `` ` ``, `;`, `$`, `%`, backslash), whitespace, or any control
+  character — the system shall throw an `ArgumentError` that names an
+  unsafe/invalid host value, before the ping stream starts, identical in
+  shape across all platforms and regardless of `forceCodepage`
+  (§req:host-injection-success-criteria — fails fast and clearly, and
+  holds on every path; §req:host-injection-user-stories).
+- A `host` that is an ordinary hostname or an IPv4/IPv6 literal — including
+  IPv6 forms with `:` and scoped/zone notation, and ASCII/punycode
+  internationalized names — shall start the ping exactly as it does today,
+  on every platform and on the `forceCodepage` happy path, with the same
+  responses, summary, and errors (§req:host-injection-success-criteria —
+  legitimate hosts unaffected; §req:host-injection-quality-attributes —
+  compatibility).
+- The guard shall run at the shared `Ping(...)` factory boundary *and* in
+  the platform constructor path (alongside the existing address-family
+  guard), so neither the factory nor direct construction of a platform
+  class can bypass it (§req:host-injection-success-criteria — holds on
+  every path; §spec:address-family-mismatch-validation).
+- The same guarantee shall extend to any other launch-path value that
+  could transit the shell; on Windows `interface` is already constrained
+  to an IP literal (§spec:interface-platform-rejection), so the practical
+  untrusted vector is `host`, but the rule is "a launch input is data, not
+  code" rather than "sanitize `host`"
+  (§req:host-injection-quality-attributes — security).
+
+**Why reject with a synchronous `ArgumentError`, not a stream error
+event:** an unsafe `host` is a programming error in the *call*, knowable
+before any process launches and without a network. Surfacing it as a
+thrown `ArgumentError` lets the caller catch it at the call site and keeps
+it distinct from runtime network failures, which belong on the stream's
+error channel. This deliberately mirrors the address-family mismatch guard
+(§spec:address-family-mismatch-validation), which already rejects a
+bad-by-construction `host`/`ipVersion` pairing the same way — one more
+fail-fast reason on the same input, surfaced through the same mechanism,
+so callers learn one rejection model (§req:host-injection-quality-attributes
+— reliability; §req:robustness-success-criteria).
+
+**Why an allow-list of hostname/IP-literal characters, not a blacklist of
+shell metacharacters:** the guarantee must not depend on enumerating every
+character a shell treats specially — different shells differ, and a missed
+metacharacter silently reopens the hole. Defining what a *valid hostname
+or IP literal* may contain is a small, fixed, well-specified set; anything
+outside it is refused. A `host` that survives the allow-list contains no
+character `cmd.exe` (or any shell) could act on, so the surviving value is
+safe to launch *even through the existing shell path* — the safety comes
+from what the value is, not from how it is launched
+(§req:host-injection-open-decisions — exact rejection rule). The precise
+character set is an implementation detail; the observable contract is the
+two bullets above — every valid hostname and IPv4/IPv6 literal pings
+unchanged, everything else is refused.
+
+**Why the guard lives once in shared Dart, applied on every platform:**
+placing it at the `Ping(...)` boundary makes the rejection identical
+everywhere by construction, satisfying the must-have that the guarantee
+hold on every path, not only the exploitable Windows one
+(§req:host-injection-success-criteria). Restricting the check to the
+Windows `forceCodepage` path was rejected: it would leave the "host is
+data" guarantee unstated on the paths that happen to be safe today, so a
+future launch-path change (a new shelled step, a new platform) could
+reintroduce injection with no guard in place. A metacharacter `host` is
+not a valid target on any platform — on the non-shell paths it already
+fails as an unknown host — so rejecting it everywhere refuses nothing a
+legitimate caller relies on (§req:host-injection-constraints — security
+patch, not a breaking change).
+
+**Why this is a patch, not a breaking change:** the strings now refused —
+hosts carrying shell metacharacters or control characters — are not valid
+hostnames or IP literals, and no legitimate caller depends on them. The
+public API surface is unchanged (the `Ping` interface and
+`PingData`/`PingResponse`/`PingSummary`/`PingError` types are untouched);
+only never-valid inputs are now refused. It ships as a patch-level release
+of `dart_ping` (§req:host-injection-constraints;
+§req:host-injection-priorities).
+
+## The `forceCodepage` path carries no injection §spec:forcecodepage-injection-closed
+*Status: implemented (dart_ping 10.0.0) — closed by construction via §spec:host-input-is-data: a host that survives the allow-list contains no character `cmd.exe` could act on, so a metacharacter host (`8.8.8.8&calc`, `x|whoami`, `a>b`, `a^b`) is rejected before the `chcp 437 && ping …` shell chain is ever built. The shell launch was intentionally NOT removed (de-shelling deferred as future hardening; validation is the load-bearing mechanism). Pinned by tests asserting a metacharacter host produces no launchable `PingWindows` command/params with `forceCodepage: true`, and that the `forceCodepage` happy path is byte-for-byte unchanged.*
+
+On Windows with `forceCodepage: true`, a `host` carrying shell
+metacharacters launches, spawns, or runs nothing but the ping itself.
+Opting into readable Windows output (the codepage-437 round-trip,
+§req:windows-roundtrip-problem-statement) carries no security cost.
+
+- When `forceCodepage: true` on Windows and `host` is a metacharacter
+  string such as `8.8.8.8&calc`, `x|whoami`, `a>b`, or `a^b`, the system
+  shall run no program other than the ping — no injected process, no side
+  effect — and shall instead reject the call per §spec:host-input-is-data
+  before the stream starts (§req:host-injection-success-criteria —
+  metacharacter host never executes anything).
+- When `forceCodepage: true` and `host` is a legitimate hostname or IP
+  literal, the produced launch shall set codepage 437 and ping exactly as
+  it does today, with byte-for-byte identical observable behavior
+  (§req:host-injection-success-criteria — legitimate hosts unaffected,
+  including the `forceCodepage` happy path; §spec:windows-roundtrip-contract).
+
+**Why validation at the boundary suffices to close the shell path:** the
+injection exists because the host transits `cmd.exe` on this path, but the
+allow-list guard (§spec:host-input-is-data) removes from the host every
+character the shell could interpret *before* launch. A host that reaches
+the `chcp 437 && ping …` command line has already been proven to contain
+only hostname/IP-literal characters, so the shell has nothing to act on —
+the breakout is closed at the source, not patched at the launch site.
+
+**Why the shell launch was not removed outright (de-shelling considered
+and deferred):** removing `cmd.exe` from this path — e.g. setting the
+console output codepage through a Win32 FFI call (`SetConsoleOutputCP`)
+before spawning `ping`, so the `chcp … &&` chain and `runInShell` are gone
+— was weighed as defense-in-depth (§req:host-injection-open-decisions —
+reject vs. never-shell, or both). It is rejected for this focused security
+patch: it adds Windows-only native FFI for no additional safety, because
+the boundary guard already makes the surviving host inert to any shell. It
+would also not, on its own, satisfy the must-have that an unsafe host
+*fail fast* (§req:host-injection-success-criteria) — de-shelling alone
+would silently pass a malformed host to `ping`. Validation is therefore
+the load-bearing mechanism; de-shelling is left as a possible future
+hardening with no behavior the user could observe today.
+
+## Host-safety tests §spec:host-injection-tests
+*Status: implemented (dart_ping 10.0.0) — `test/host_injection_test.dart` runs network-free under `dart test` (no real Windows shell): metacharacter payloads rejected with the fail-fast `ArgumentError` independent of platform and `forceCodepage` (incl. via `PingWindows` constructed directly and the `Ping(...)` factory); the `forceCodepage` path builds no command for a metacharacter host; option-flag-shaped and bracketed-IPv6 hosts rejected; and regression guards assert ordinary hostnames and IPv4/IPv6 literals — including the `forceCodepage` happy path — produce the same command/params as before.*
+
+The injection vector and the rejection rule are pinned by automated tests
+that fail if an injected command could run or a dangerous host could be
+accepted, runnable under `dart test` with no live network and no real
+Windows shell (§req:host-injection-success-criteria — covered by automated
+tests; §req:host-injection-priorities — high).
+
+- A test shall assert that a metacharacter `host` is rejected with the
+  fail-fast `ArgumentError` of §spec:host-input-is-data — exercised for the
+  representative payloads (`8.8.8.8&calc`, `x|whoami`, `a>b`, `a^b`) and
+  asserted independent of platform and of `forceCodepage`, since the guard
+  is shared Dart over pure input (§req:host-injection-success-criteria —
+  rejection of metacharacter hosts; §spec:address-family-error-tests).
+- A test shall assert that on the `forceCodepage` path a metacharacter
+  `host` produces no launchable ping command — the dangerous value never
+  reaches the constructed command/launch — so an injected command could not
+  run even though no Windows shell executes in CI
+  (§req:host-injection-success-criteria — the `forceCodepage` injection
+  vector; §req:host-injection-quality-attributes — testability).
+- Regression-guard tests shall assert that ordinary hostnames and
+  IPv4/IPv6 literals — including the `forceCodepage` happy path — are
+  accepted and produce the same command/params as today
+  (§req:host-injection-success-criteria — legitimate hosts unaffected).
+
+**Why test through the public surface over pure input:** the guard is
+synchronous validation over a `host` string, so the injection and
+rejection are exercisable without spawning a process or a shell — the same
+network-free, deterministic approach the address-family tests use
+(§spec:address-family-error-tests). A test that needed a real `cmd.exe` to
+prove the breakout is closed would be unrunnable on the Linux CI host
+(§req:host-injection-quality-attributes — testability); asserting that the
+dangerous host is refused before any command is built proves the same
+property deterministically on every runner.
