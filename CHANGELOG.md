@@ -162,6 +162,16 @@ consumers who cannot adopt the raised floor.
 
 ### Fixed
 
+- **Host command-injection safety (#90).** A `host` is now validated as a
+  syntactically valid hostname or IPv4/IPv6 literal before anything launches; an
+  unsafe value throws an `ArgumentError` on every platform and both the default
+  and Windows `forceCodepage` launch paths, so a `host` can never reach a shell
+  as code (closing a `cmd.exe` breakout on the `forceCodepage` path) and is
+  never read by the subprocess as an option flag. The allow-list rejects shell
+  metacharacters, whitespace, and control characters, and — being shaped like a
+  hostname/IP literal — also rejects leading/trailing-hyphen values (e.g. `-f`,
+  `--flood`) and bracketed IPv6 (`[::1]`; use the unbracketed `::1`). Every
+  valid host pings exactly as before.
 - **Stream lifecycle robustness (#76).** The `Ping` stream could hang forever
   on a process-launch failure (e.g. a missing `ping` binary) or an unmapped
   non-zero exit code. Both now surface a catchable error through the stream's

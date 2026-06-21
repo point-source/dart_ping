@@ -38,11 +38,30 @@ void main() {
     'sub.example.com',
     'localhost',
     'my-host_1.internal',
+    'a-b.example.com', // interior hyphen must keep passing
     'xn--nxasmq6b.example.com', // punycode / IDN
     'example.com.', // FQDN trailing dot
     '8.8.8.8',
     '127.0.0.1',
   ];
+
+  // Hosts shaped like a `ping` option flag. They contain no shell metacharacter,
+  // but `host` is handed to the subprocess as an argument, so a leading-dash
+  // value would be read as a flag rather than a target (argument injection). No
+  // valid hostname (RFC 952/1123 labels start alphanumeric) or IP literal starts
+  // or ends with a hyphen, so these are refused (§spec:host-input-is-data).
+  const optionFlagHosts = <String>[
+    '-f',
+    '-c1000000',
+    '--flood',
+    '-foo.com', // leading-dash label
+    'foo-.com', // trailing-dash label
+    '-', // bare hyphen
+  ];
+
+  // Bracketed IPv6 is URL authority notation, not a bare ping target; the
+  // unbracketed literal is the supported form. Deliberately rejected.
+  const bracketedHosts = <String>['[::1]', '[fe80::1%eth0]', '[2001:db8::1]'];
 
   group('Host injection safety (#90): ', () {
     group('validateHostSafety rejects metacharacter / unsafe hosts', () {
@@ -56,6 +75,33 @@ void main() {
 
       test('rejects an empty host', () {
         expect(() => validateHostSafety(''), throwsArgumentError);
+      });
+    });
+
+    group('rejects option-flag-shaped hosts (argument injection)', () {
+      for (final host in optionFlagHosts) {
+        test('rejects $host', () {
+          expect(() => validateHostSafety(host), throwsArgumentError);
+          expect(isHostSafe(host), isFalse);
+        });
+      }
+
+      test('Ping(-f) factory rejected before the stream starts', () {
+        expect(() => Ping('-f'), throwsArgumentError);
+      });
+    });
+
+    group('rejects bracketed IPv6 (use the unbracketed literal instead)', () {
+      for (final host in bracketedHosts) {
+        test('rejects $host', () {
+          expect(() => validateHostSafety(host), throwsArgumentError);
+          expect(isHostSafe(host), isFalse);
+        });
+      }
+
+      test('the unbracketed literal IS accepted', () {
+        expect(isHostSafe('::1'), isTrue);
+        expect(isHostSafe('fe80::1%eth0'), isTrue);
       });
     });
 

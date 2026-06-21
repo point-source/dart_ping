@@ -1,9 +1,15 @@
 import 'dart:io';
 
-/// Matches a single hostname label: ASCII letters, digits, hyphen and
-/// underscore. Punycode/IDN labels (`xn--…`) are ASCII and therefore covered.
-/// No shell metacharacter, whitespace or control character can match.
-final RegExp _hostnameLabel = RegExp(r'^[A-Za-z0-9_-]+$');
+/// Matches a single hostname label: ASCII letters, digits, underscore, and
+/// interior hyphens. A label may NOT start or end with a hyphen (RFC 952/1123),
+/// which also prevents a host shaped like a `ping` option flag (e.g. `-f`,
+/// `-c1000000`, `--flood`): `host` is handed to the subprocess as an argument,
+/// so a leading-dash value would be read as a flag rather than a target —
+/// argument injection, adjacent to the shell-injection this guard closes.
+/// Punycode/IDN labels (`xn--…`) start with a letter and so are covered. No
+/// shell metacharacter, whitespace or control character can match.
+final RegExp _hostnameLabel =
+    RegExp(r'^[A-Za-z0-9_]([A-Za-z0-9_-]*[A-Za-z0-9_])?$');
 
 /// Matches an IPv6 zone/scope id (the part after `%` in `fe80::1%eth0`): an
 /// interface name or numeric index. Restricted to characters that are inert to
@@ -57,6 +63,12 @@ bool isHostSafe(String host) {
   // Otherwise it must be a syntactically valid hostname: dot-separated labels,
   // each a run of hostname-safe characters. A single trailing dot (the FQDN
   // root) is tolerated.
+  //
+  // Bracketed IPv6 (`[::1]`) is deliberately NOT accepted: the brackets are URL
+  // authority notation, not a bare ping target — `host` is passed verbatim to
+  // the subprocess, where `ping [::1]` fails as an unknown host on every
+  // platform. The unbracketed literal (`::1`) is the supported form (handled
+  // above). The `[`/`]` fail the label charset below, so such input is refused.
   final name =
       host.endsWith('.') ? host.substring(0, host.length - 1) : host;
   if (name.isEmpty || name.length > 253) return false;
