@@ -34,10 +34,15 @@ bool isHostSafe(String host) {
     return true;
   }
 
-  // A scoped/zoned IPv6 literal: `<ipv6>%<zone>`. `tryParse` rejects the zone
-  // suffix, so validate the two parts ourselves. This is the ONLY position in
-  // which `%` is admitted — a free-standing `%` (e.g. `8.8.8.8%calc`, `%VAR%`)
-  // does not reach a valid IPv6 body and is refused.
+  // A scoped/zoned IPv6 literal: `<ipv6>%<zone>`. `InternetAddress.tryParse`
+  // does accept zoned IPv6, but its zone handling is environment-dependent — it
+  // validates the zone against the host's actual scope ids, so `fe80::1%eth0`
+  // parses only where `eth0` exists. To accept a syntactically-valid scoped
+  // literal DETERMINISTICALLY (and portably, off the spawning host), validate
+  // the two parts ourselves: the body must parse as an IPv6 literal and the zone
+  // must be shell-safe. This is the ONLY position in which `%` is admitted — a
+  // free-standing `%` (e.g. `8.8.8.8%calc`, `%VAR%`) does not reach a valid IPv6
+  // body and is refused, and any zone carrying a metacharacter fails `_zoneId`.
   final pct = host.indexOf('%');
   if (pct > 0) {
     final body = host.substring(0, pct);

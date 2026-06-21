@@ -11,7 +11,7 @@ import 'package:test/test.dart';
 void main() {
   // Representative metacharacter payloads from the spec — each would break out
   // of `cmd.exe` on the Windows `forceCodepage` path if it reached the shell.
-  const metacharHosts = <String>[
+  final metacharHosts = <String>[
     '8.8.8.8&calc',
     'x|whoami',
     'a>b',
@@ -27,6 +27,9 @@ void main() {
     'a\nb', // control character (newline)
     '%VAR%', // bare percent (cmd.exe variable expansion)
     '8.8.8.8%calc', // free-standing `%` that is not a valid IPv6 zone
+    'fe80::1%a&b', // scoped IPv6 with a metacharacter in the zone id
+    'fe80::1%a;b', // scoped IPv6 with a metacharacter in the zone id
+    'a${'b' * 64}.com', // label longer than the 63-char limit
   ];
 
   // Hosts that must keep working byte-for-byte after the fix.
@@ -66,11 +69,25 @@ void main() {
 
       test('accepts IPv6 literals (selected with ipv6)', () {
         // Family matching is enforced separately; here we only assert host
-        // SAFETY, so test the safety guard directly for IPv6 literals.
-        for (final host in const ['::1', '2001:db8::1', 'fe80::1%eth0']) {
+        // SAFETY, so test the safety guard directly for IPv6 literals. Scoped
+        // IPv6 with a named or numeric zone must be accepted DETERMINISTICALLY —
+        // independent of whether the zone names a real interface on this host.
+        for (final host in const [
+          '::1',
+          '2001:db8::1',
+          '::ffff:1.2.3.4', // IPv4-mapped IPv6
+          'fe80::1%eth0', // named zone
+          'fe80::1%12', // numeric zone
+        ]) {
           expect(() => validateHostSafety(host), returnsNormally, reason: host);
           expect(isHostSafe(host), isTrue, reason: host);
         }
+      });
+
+      test('accepts a maximum-length (63-char) label', () {
+        final host = 'a${'b' * 62}.com'; // 63-char label
+        expect(() => validateHostSafety(host), returnsNormally);
+        expect(isHostSafe(host), isTrue);
       });
     });
 
