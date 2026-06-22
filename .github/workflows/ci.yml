@@ -1,0 +1,119 @@
+name: CI
+
+# Runs on pull requests targeting main and develop. Both branches are
+# protected and cannot be pushed to directly, so every change lands through a
+# PR that these checks gate. workflow_dispatch allows a manual run from the
+# Actions tab.
+on:
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ---- Required, deterministic gate -------------------------------------
+  # The core Dart suite on every host OS. Running the suite on Linux, Windows
+  # and macOS executes each platform class's OS-specific code natively (#77).
+  # Live-network tests are excluded (`-x live`) so the gate stays reproducible.
+  core:
+    name: core (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+      # --no-example: this dart-only runner has no Flutter SDK, and the bundled
+      # example/ is a Flutter package. Skipping its resolution keeps the gate
+      # clean (the example is built by the macOS ios-swift job, not here).
+      - run: dart pub get --no-example
+      - run: dart analyze --fatal-infos
+      - run: dart test -x live
+
+  # The Swift ICMP framing/parse suite. Requires a macOS runner with Xcode and
+  # an iOS simulator (#74). Building the example first generates the Flutter
+  # artifacts the Runner target links against.
+  #
+  # The iOS Dart event-mapping + bindings suite is no longer a separate job: it
+  # now lives in test/ios_*.dart and runs under the `core` matrix via
+  # `dart test -x live` (consolidation #28 — single package).
+  ios-swift:
+    name: ios-swift (macos)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter --version
+      - name: flutter pub get (example)
+        working-directory: example
+        run: flutter pub get
+      - name: Build example for the simulator (generates Flutter artifacts)
+        working-directory: example
+        run: flutter build ios --simulator --no-codesign
+      - name: Run RunnerTests via xcodebuild
+        working-directory: example/ios
+        run: |
+          set -o pipefail
+          # Pick whatever iPhone simulator the runner image actually ships,
+          # rather than hard-coding a model that may not exist.
+          DEVICE=$(xcrun simctl list devices available \
+            | grep -oE 'iPhone [0-9]+( Pro( Max)?)?' | head -1)
+          DEVICE=${DEVICE:-iPhone 15}
+          echo "Using simulator: $DEVICE"
+          xcodebuild test \
+            -workspace Runner.xcworkspace \
+            -scheme Runner \
+            -destination "platform=iOS Simulator,name=$DEVICE" \
+            -only-testing:RunnerTests \
+            CODE_SIGNING_ALLOWED=NO
+
+  # ---- Informational, non-gating ----------------------------------------
+  # Coverage report for dart_ping, published as a build artifact and a job
+  # summary. There is no coverage-threshold gate (by decision); this surfaces
+  # the numbers without blocking merges. Live tests are excluded so the number
+  # is reproducible — note `base_ping`'s spawn/cleanup path is therefore not
+  # measured here (hosted Linux/Windows runners block ICMP anyway); it is
+  # exercised by the local/manual live suite.
+  coverage:
+    name: coverage (report only)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+      - name: Core coverage
+        run: |
+          dart pub get --no-example
+          dart test -x live --coverage=coverage
+          dart run coverage:format_coverage \
+            --lcov --in=coverage --out=coverage/lcov.info --report-on=lib
+      - name: Summarize
+        run: |
+          summarize() {
+            awk '
+              /^LF:/ { sub("LF:",""); f += $0 }
+              /^LH:/ { sub("LH:",""); h += $0 }
+              END { if (f > 0) printf "%.1f%% (%d/%d lines)\n", 100*h/f, h, f }
+            ' "$1"
+          }
+          {
+            echo "## Coverage"
+            echo ""
+            echo "- **dart_ping**: $(summarize coverage/lcov.info)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # NOTE: the live-network suite (`dart test -t live` — real `ping` to external
+  # hosts) is intentionally NOT run in CI. Hosted Linux/Windows runners block
+  # unprivileged ICMP, so those tests can never pass there, and live round
+  # trips are non-deterministic everywhere. They stay tagged `live`, run by
+  # default locally, and remain the manual acceptance path (§spec:ci).

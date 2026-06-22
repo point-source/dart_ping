@@ -1,0 +1,11 @@
+# Test tag declarations.
+#
+# `live` marks tests that spawn the real `ping` binary and reach the network.
+# They are excluded from the deterministic gate with `dart test -x live` (hosted
+# CI runners block unprivileged ICMP) and run on demand with `dart test -t live`
+# as a local/manual acceptance path.
+tags:
+  live:
+    # Give live tests room for slow DNS / round trips without flaking on the
+    # default per-test timeout.
+    timeout: 2x
