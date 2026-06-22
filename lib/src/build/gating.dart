@@ -1,11 +1,17 @@
 // Target-gating decision for the dart_ping build hook
 // (§spec:ios-code-asset-build-hook, §spec:pure-dart-preserved).
 //
-// This is factored out of `build.dart` as a pure function so the gate that
+// This is factored out of `hook/build.dart` as a pure function so the gate that
 // guarantees "non-iOS builds invoke no native toolchain" is unit-testable
 // offline (`dart test`) on the Linux CI host, where the Swift/iOS cross-compile
 // itself cannot run (§spec:ci, §spec:ios-tests). The hook calls this before
 // touching any toolchain; the test asserts the full matrix.
+//
+// It lives under `lib/` (importable as `package:dart_ping/src/build/gating.dart`)
+// rather than in `hook/` because pub's experimental native-asset-hook rule
+// permits only the recognized entrypoint `hook/build.dart` inside `hook/`; a
+// non-entrypoint helper there aborts `dart pub publish`
+// (§spec:publishable-hook-layout).
 
 import 'package:code_assets/code_assets.dart';
 

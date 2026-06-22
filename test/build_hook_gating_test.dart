@@ -12,7 +12,7 @@
 import 'package:code_assets/code_assets.dart';
 import 'package:test/test.dart';
 
-import '../hook/gating.dart';
+import 'package:dart_ping/src/build/gating.dart';
 
 void main() {
   group('shouldBuildIosAsset', () {

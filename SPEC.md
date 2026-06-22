@@ -2950,3 +2950,153 @@ prove the breakout is closed would be unrunnable on the Linux CI host
 (§req:host-injection-quality-attributes — testability); asserting that the
 dangerous host is refused before any command is built proves the same
 property deterministically on every runner.
+
+---
+
+# Release publishability
+
+Solution-space design for §req:publishable-*, a release-blocking fix
+discovered at publish time for `dart_ping` 10.0.0. The package builds,
+analyzes, and tests cleanly, yet `dart pub publish` aborts before
+uploading the archive with:
+
+> Hook files are experimental and `hook/gating.dart` is not allowed yet.
+
+The cause (from §req:publishable-problem-statement) is a collision between
+two correct decisions. 10.0.0 ships a native-asset **build hook**
+(`hook/build.dart`) that compiles the iOS ICMP engine into a code asset
+only for iOS targets (§spec:ios-code-asset-build-hook). Native-asset hooks
+are still an *experimental* pub feature, and while experimental, pub
+permits only the recognized hook entrypoint — `hook/build.dart` — to live
+in `hook/`; any other Dart file there is refused, and the refusal aborts
+the publish. Separately, to keep the non-negotiable pure-Dart gate
+(§spec:pure-dart-preserved) honest and offline-testable on the Linux CI
+host where the Swift/iOS cross-compile cannot run (§spec:ci,
+§spec:ci-develop, §spec:ios-tests), the target-gating decision was
+factored out of the hook into a pure function in `hook/gating.dart`. That
+helper is good engineering but is exactly the kind of non-entrypoint file
+in `hook/` the experimental rule forbids.
+
+The fix is a source-layout move, not a behavior change: relocate the
+gating helper out of `hook/` to a `package:`-resolvable location, leaving
+the build hook's behavior, the pure-Dart gate, and the offline gate test
+all intact (§req:publishable-constraints). A second, lighter capability
+makes publishability a checkable property so this class of wall is caught
+before tagging, not at release time.
+
+## Only permitted entrypoints live in `hook/` §spec:publishable-hook-layout
+*Status: implemented — the gating helper was moved out of `hook/`: `shouldBuildIosAsset` now lives in `lib/src/build/gating.dart`, importable as `package:dart_ping/src/build/gating.dart`, and both `hook/build.dart` and `test/build_hook_gating_test.dart` import it from that single location (`hook/gating.dart` deleted). `hook/` now contains only the permitted entrypoint `hook/build.dart`. The helper keeps its `package:code_assets` import (already a regular dependency), so no new dependency is added and pure-Dart consumers are unaffected. A `!lib/src/build/` negation was added to `.gitignore` so the relocated source is tracked (the generic `build/` output-ignore rule was masking it). `dart pub publish --dry-run` from the package root now reports **0 warnings** and no "Hook files are experimental … is not allowed yet" complaint; `dart analyze --fatal-infos` is clean and the offline gate test (`test/build_hook_gating_test.dart`) still passes under `dart test` on Linux with no iOS SDK / no network. Build-hook behavior and the pure-Dart gate (§spec:pure-dart-preserved) are unchanged.*
+
+The published `dart_ping` package passes a publish dry run: from the
+package root, `dart pub publish --dry-run` reports no errors and, in
+particular, no "Hook files are experimental and … is not allowed yet"
+complaint, so the maintainer can publish manually
+(§req:publishable-success-criteria — passes a publish dry run;
+§req:publishable-user-stories — a green build means shippable). The
+`hook/` directory holds only the hook entrypoint(s) pub permits under the
+experimental rule — `hook/build.dart` — and no helper, support, or
+test-only Dart file (§req:publishable-success-criteria — `hook/` contains
+only permitted entrypoints; §req:publishable-constraints — pub permits
+only recognized entrypoints in `hook/`).
+
+- The target-gating decision (`shouldBuildIosAsset`) lives in a
+  `package:`-importable Dart file under `lib/` (`lib/src/build/gating.dart`,
+  imported as `package:dart_ping/src/build/gating.dart`), not in `hook/`.
+  Both the build hook (`hook/build.dart`) and its test
+  (`test/build_hook_gating_test.dart`) import it from that one location, so
+  there is a single source of truth for the gate
+  (§req:publishable-constraints — relocated helper importable by both the
+  hook and its test; §req:publishable-open-decisions — where the gating
+  helper lives).
+- The build hook's behavior is unchanged: an iOS target build still
+  compiles the in-repo native engine and emits the `dart_ping_ffi` code
+  asset, and every non-iOS target — pure-Dart desktop/server, Android, and
+  the analyzer / `dart pub get` path — still emits no code asset and
+  invokes no Swift/iOS toolchain (§req:publishable-success-criteria — the
+  iOS code-asset build still works; §spec:ios-code-asset-build-hook;
+  §spec:pure-dart-preserved — the pure-Dart gate is unchanged).
+- The gate stays an independently unit-testable pure function: its test
+  runs under `dart test` on Linux with no iOS SDK and no live network, as
+  it does today; relocating the helper does not cost the package its
+  offline gate test (§req:publishable-success-criteria — gate stays
+  offline unit-testable; §spec:ci-develop; §spec:ios-tests).
+- The published package behaves identically to the pre-fix build for every
+  consumer and every target — the public API and the code-asset output are
+  unchanged (§req:publishable-quality-attributes — compatibility).
+
+**Why relocate the helper rather than hide it from the archive:** adding
+`hook/gating.dart` to `.pubignore` so it never reaches the published
+archive is rejected — the file is not test-only scaffolding but a
+build-time dependency of `hook/build.dart`, which imports it. Omitting it
+from the archive would leave the consumer's iOS code-asset build unable to
+resolve the import at build time, trading a publish-time failure for a
+worse consume-time one. The file must ship; it just must not ship inside
+`hook/` (§req:publishable-constraints).
+
+**Why a file under `lib/` rather than inlining the gate back into the
+hook:** folding `shouldBuildIosAsset` back into `hook/build.dart` would
+satisfy the `hook/`-layout rule but forfeit the offline gate test —
+`build.dart` pulls in `package:hooks` and a `main`, and the load-bearing
+guarantee (a non-iOS or no-code-assets build never reaches the native
+toolchain) would no longer be pinned by a plain `dart test` case
+(§req:publishable-success-criteria — gate stays offline unit-testable;
+§req:publishable-quality-attributes — maintainability/testability). A
+`package:`-resolvable file under `lib/` is the natural home: the hook
+already depends on `package:code_assets` (a regular, not dev, dependency),
+which the helper imports for the `OS` type, so the relocation pulls in no
+new dependency and changes nothing for pure-Dart consumers
+(§req:publishable-open-decisions; §spec:pure-dart-preserved).
+
+## Publishability is a checkable property §spec:publish-dry-run-check
+*Status: implemented — `.github/workflows/ci.yml` adds a `publish-dry-run` job
+that runs `dart pub publish --dry-run` on the Linux host (credential-free, no
+upload, no iOS SDK) and fails on any error the dry run reports. It is gated to
+the release path via `if: github.base_ref == 'main'`, so it runs on
+`develop`→`main` PRs but not on feature PRs into `develop` (§spec:ci-develop is
+unchanged). One workflow file, gated by target branch — single source of truth.
+Making it a required, merge-gating check is a GitHub branch-protection setting
+on `main` (outside the workflow file), the same pattern §spec:ci-develop used.
+Caveat: on the current toolchain (Dart 3.12.x, installed by `setup-dart@v1`) the
+client-side dry run no longer rejects a disallowed non-entrypoint file in
+`hook/` — it lists the file and exits 0, noting "the server may enforce
+additional checks" — so that specific restriction is now enforced server-side at
+`dart pub publish`. The dry run still catches archive/pubspec/structural publish
+errors before tagging; a deterministic `hook/`-contents guard was left out of
+scope (§spec is "run the dry run").*
+
+Publishability is verifiable on demand rather than resting on tribal
+knowledge of an experimental pub restriction: the maintainer can run
+`dart pub publish --dry-run` on any release candidate and get an
+unambiguous pass/fail, and that check runs in CI on the release path so a
+non-publishable layout is caught before tagging instead of at the moment
+of release (§req:publishable-success-criteria — future releases stay
+publishable; §req:publishable-priorities — high; §req:publishable-user-stories
+— confirm publishable before tagging).
+
+- The CI workflow runs `dart pub publish --dry-run` against the package
+  and fails the check when the dry run reports any error — including the
+  disallowed-hook-file error — so a regression that puts a non-entrypoint
+  file back into `hook/`, or otherwise breaks the archive, surfaces as a
+  failed required check rather than a surprise at `dart pub publish`
+  (§req:publishable-success-criteria — future releases stay publishable;
+  §spec:ci, §spec:ci-develop).
+- The dry-run check is informational about *contents* but gating about
+  *publishability*: it does not upload anything and needs no pub.dev
+  credentials, so it runs deterministically on the existing Linux CI host
+  with no iOS SDK and no network publish step
+  (§req:publishable-quality-attributes — reliability of the release
+  process).
+
+**Why gate in CI on the release path rather than leave it a documented
+step (§req:publishable-open-decisions):** the original failure cost the
+maintainer a full green build before the wall appeared at publish time. A
+documented "remember to dry-run" step has the same failure mode as the
+manual `develop`-merge gap §spec:ci-develop closed — it depends on a human
+remembering. Running the dry run as a required check on PRs into `main`
+(the `develop`→`main` release path, §spec:ci-develop) makes "green on the
+release PR" already mean "publishable," consistent with the existing CI
+philosophy of catching failures on the PR that introduced them rather than
+at the next manual milestone (§req:publishable-priorities). Gating the
+release path specifically — not every feature PR — keeps the check where a
+publishability regression actually matters while leaving the per-feature
+gate unchanged (§spec:ci-develop).
