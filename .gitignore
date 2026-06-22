@@ -8,6 +8,8 @@ pubspec.lock
 
 # Conventional directory for build outputs
 build/
+# ...but lib/src/build/ holds the build-hook gating helper (source, not output).
+!lib/src/build/
 
 # Directory created by dartdoc
 doc/api/
