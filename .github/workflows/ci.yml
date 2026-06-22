@@ -43,11 +43,12 @@ jobs:
   # --dry-run` validates the package archive without uploading anything and
   # without pub.dev credentials, so it runs deterministically on the Linux host
   # with no iOS SDK and no network publish step. It exits non-zero on any
-  # publish error — including pub's experimental "Hook files are experimental
-  # and <file> is not allowed yet" complaint — so a regression that puts a
-  # non-entrypoint file back into hook/, or otherwise breaks the archive, turns
-  # this check red on the PR that introduced it instead of surfacing at
-  # `dart pub publish`.
+  # publish error the client reports, so an archive/pubspec/structural break
+  # turns this check red on the PR that introduced it instead of surfacing at
+  # `dart pub publish`. (Note: on Dart 3.12.x the experimental
+  # "Hook files are experimental and <file> is not allowed yet" restriction is
+  # enforced server-side at publish, not by the client dry run — so a stray
+  # non-entrypoint file in hook/ is caught at `dart pub publish`, not here.)
   #
   # `if: github.base_ref == 'main'` scopes this to the develop->main release
   # path (§spec:ci-develop) — it does NOT run on feature PRs into develop, so
