@@ -2194,3 +2194,141 @@ mechanism and feasibility are decided:
   which characters/shapes are refused and how that rule stays correct
   across platforms without rejecting any legitimate hostname or IP
   literal.
+
+## Publishability — problem statement §req:publishable-problem-statement
+
+The target users are the package maintainers, who need to ship each
+release of `dart_ping` to pub.dev so that every developer who depends on
+the package can actually get it. A release that builds and tests cleanly
+but cannot be published is, from a consumer's point of view, no release
+at all.
+
+Publishing 10.0.0 is blocked. Running the publish command fails before
+the archive is ever uploaded, with:
+
+> Hook files are experimental and `hook/gating.dart` is not allowed yet.
+
+The cause is a collision between two things the package does. First,
+10.0.0 ships a native-asset *build hook* (`hook/build.dart`) that
+compiles the iOS ICMP engine into a code asset only for iOS targets
+(`§req:consolidation-problem-statement`,
+`§req:ipfamily-problem-statement`). Native-asset hooks are still an
+*experimental* pub feature, and while experimental, pub only permits the
+known hook entrypoint(s) — `hook/build.dart` — to live in the `hook/`
+directory; any other Dart file there is refused outright, and the refusal
+aborts the entire publish.
+
+Second, to keep the non-negotiable pure-Dart gate honest, the maintainers
+factored the "should this build emit the iOS code asset?" decision out of
+the hook into a small pure function in `hook/gating.dart`, so the gate is
+unit-testable offline on the Linux CI host where the Swift/iOS
+cross-compile itself cannot run (`§req:ci-develop-problem-statement`).
+That helper is good engineering, but it is a *non-entrypoint* file sitting
+inside `hook/`, which is exactly what the experimental-hooks rule forbids.
+
+The result: a release that passes analysis and the full offline test
+suite still cannot reach pub.dev. The maintainer hits the wall only at
+publish time — late, with a green build behind them — and has no way to
+ship without first understanding an opaque, experimental-feature
+restriction. As the package leans further on native-asset hooks, the
+risk of tripping this same class of wall again grows, so the need is not
+only to unblock 10.0.0 but to keep the package reliably publishable.
+
+## Publishability — success criteria §req:publishable-success-criteria
+
+Observable, verifiable outcomes a maintainer can demonstrate:
+
+- **The package passes a publish dry run.** Running
+  `dart pub publish --dry-run` from the package root reports no errors and,
+  specifically, no "Hook files are experimental and … is not allowed yet"
+  complaint. The maintainer can then publish manually. *(must-have)*
+- **`hook/` contains only permitted entrypoints.** The published `hook/`
+  directory holds only the hook file(s) pub allows under the experimental
+  rule (`hook/build.dart`); no helper, support, or test-only Dart file
+  remains in `hook/`. *(must-have)*
+- **The iOS code-asset build still works.** After the change, an iOS
+  target build still produces the `dart_ping_ffi` code asset, and every
+  non-iOS target (desktop/server, Android, the analyzer / `dart pub get`
+  path) still emits no code asset and invokes no native toolchain — the
+  pure-Dart gate is unchanged (`§req:consolidation-success-criteria`).
+  *(must-have)*
+- **The gate stays independently unit-testable offline.** The
+  target-gating decision remains a pure function with its own test that
+  runs under `dart test` on Linux, with no iOS SDK and no live network —
+  exactly as it does today (`§req:ci-develop-success-criteria`). Moving
+  the helper out of `hook/` does not cost the package its offline gate
+  test. *(must-have)*
+- **Future releases stay publishable.** A publish dry run is something the
+  maintainer can run (and ideally have CI run) on every release candidate,
+  so a non-publishable layout is caught before tagging rather than at the
+  moment of release. *(high)*
+
+## Publishability — user stories §req:publishable-user-stories
+
+- As a maintainer cutting a release, I want `dart pub publish` to succeed
+  on a build that already passed analysis and tests so that a green build
+  actually means "shippable."
+- As a maintainer, I want the offline target-gating test to keep running
+  unchanged after the fix so that relocating a file to satisfy pub does
+  not weaken the guarantee that non-iOS builds touch no native toolchain.
+- As a maintainer preparing a release candidate, I want to confirm the
+  package is publishable *before* tagging so that I never again discover a
+  publish blocker only after the release work is done.
+- As a developer depending on `dart_ping`, I want each released version to
+  actually be available on pub.dev so that I can upgrade.
+
+## Publishability — quality attributes §req:publishable-quality-attributes
+
+- **Maintainability / testability:** the gating decision stays a pure,
+  separately-testable function; the relocation keeps both the build hook
+  and the existing gate test importing it. No loss of offline coverage.
+- **Compatibility:** the published package behaves identically to the
+  pre-fix build for every consumer and every target — the change is a
+  source-layout move, not a behavior change. The public API and the
+  code-asset output are unchanged.
+- **Reliability (release process):** publishability is verifiable on
+  demand (dry run) and does not depend on tribal knowledge of an
+  experimental pub restriction.
+
+## Publishability — constraints §req:publishable-constraints
+
+- Native-asset hooks are an **experimental** pub feature; while
+  experimental, pub permits only recognized hook entrypoints in `hook/`
+  (today, `hook/build.dart`). Non-entrypoint Dart files must live
+  elsewhere in the package. This is a pub-tooling rule the package must
+  conform to, not change.
+- The relocated helper must remain importable by both the build hook and
+  its test. A `package:`-resolvable location (e.g. under `lib/`) is the
+  natural fit; the exact destination is a design decision deferred to
+  `/symphonize:plan`.
+- The fix must not alter the build hook's behavior or the pure-Dart gate
+  (`§req:consolidation-constraints`) and must not require the iOS
+  toolchain to run on the Linux CI host (`§req:ci-develop-constraints`).
+- This unblocks the 10.0.0 release and is release-blocking; surfaced at
+  publish time for `dart_ping` 10.0.0.
+
+## Publishability — priorities §req:publishable-priorities
+
+- **Must-have:** `dart pub publish --dry-run` passes with no disallowed-hook
+  error; `hook/` holds only permitted entrypoints; the iOS code-asset build
+  and the pure-Dart gate are unchanged; the gate stays offline
+  unit-testable.
+- **High priority:** a repeatable publish-dry-run check (ideally in CI) so
+  future releases catch a non-publishable layout before tagging.
+- **Nice-to-have:** none beyond the above — this is a focused
+  release-unblocking change.
+
+## Publishability — open decisions §req:publishable-open-decisions
+
+Surfaced during discovery and deferred to `/symphonize:plan`, where
+mechanism and feasibility are decided:
+
+- **Where the gating helper lives.** The required outcome is fixed (out of
+  `hook/`, still importable by `hook/build.dart` and its test, still
+  offline-testable); the exact destination — e.g. a file under `lib/src/`
+  imported via `package:dart_ping/…` — is a design choice. Whichever
+  location is chosen, the existing test import (`test/build_hook_gating_test.dart`)
+  is updated to match.
+- **Whether to enforce publishability in CI.** Whether the repeatable
+  publish dry run becomes a CI gate (and on which branches) or stays a
+  documented pre-release step.
