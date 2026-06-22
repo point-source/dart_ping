@@ -3048,7 +3048,21 @@ new dependency and changes nothing for pure-Dart consumers
 (§req:publishable-open-decisions; §spec:pure-dart-preserved).
 
 ## Publishability is a checkable property §spec:publish-dry-run-check
-*Status: not started*
+*Status: implemented — `.github/workflows/ci.yml` adds a `publish-dry-run` job
+that runs `dart pub publish --dry-run` on the Linux host (credential-free, no
+upload, no iOS SDK) and fails on any error the dry run reports. It is gated to
+the release path via `if: github.base_ref == 'main'`, so it runs on
+`develop`→`main` PRs but not on feature PRs into `develop` (§spec:ci-develop is
+unchanged). One workflow file, gated by target branch — single source of truth.
+Making it a required, merge-gating check is a GitHub branch-protection setting
+on `main` (outside the workflow file), the same pattern §spec:ci-develop used.
+Caveat: on the current toolchain (Dart 3.12.x, installed by `setup-dart@v1`) the
+client-side dry run no longer rejects a disallowed non-entrypoint file in
+`hook/` — it lists the file and exits 0, noting "the server may enforce
+additional checks" — so that specific restriction is now enforced server-side at
+`dart pub publish`. The dry run still catches archive/pubspec/structural publish
+errors before tagging; a deterministic `hook/`-contents guard was left out of
+scope (§spec is "run the dry run").*
 
 Publishability is verifiable on demand rather than resting on tribal
 knowledge of an experimental pub restriction: the maintainer can run
