@@ -2985,7 +2985,7 @@ makes publishability a checkable property so this class of wall is caught
 before tagging, not at release time.
 
 ## Only permitted entrypoints live in `hook/` §spec:publishable-hook-layout
-*Status: not started*
+*Status: implemented — the gating helper was moved out of `hook/`: `shouldBuildIosAsset` now lives in `lib/src/build/gating.dart`, importable as `package:dart_ping/src/build/gating.dart`, and both `hook/build.dart` and `test/build_hook_gating_test.dart` import it from that single location (`hook/gating.dart` deleted). `hook/` now contains only the permitted entrypoint `hook/build.dart`. The helper keeps its `package:code_assets` import (already a regular dependency), so no new dependency is added and pure-Dart consumers are unaffected. A `!lib/src/build/` negation was added to `.gitignore` so the relocated source is tracked (the generic `build/` output-ignore rule was masking it). `dart pub publish --dry-run` from the package root now reports **0 warnings** and no "Hook files are experimental … is not allowed yet" complaint; `dart analyze --fatal-infos` is clean and the offline gate test (`test/build_hook_gating_test.dart`) still passes under `dart test` on Linux with no iOS SDK / no network. Build-hook behavior and the pure-Dart gate (§spec:pure-dart-preserved) are unchanged.*
 
 The published `dart_ping` package passes a publish dry run: from the
 package root, `dart pub publish --dry-run` reports no errors and, in
