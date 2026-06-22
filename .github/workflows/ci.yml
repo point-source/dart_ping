@@ -38,6 +38,34 @@ jobs:
       - run: dart analyze --fatal-infos
       - run: dart test -x live
 
+  # ---- Required on the RELEASE PATH only --------------------------------
+  # Publishability gate (§spec:publish-dry-run-check). `dart pub publish
+  # --dry-run` validates the package archive without uploading anything and
+  # without pub.dev credentials, so it runs deterministically on the Linux host
+  # with no iOS SDK and no network publish step. It exits non-zero on any
+  # publish error — including pub's experimental "Hook files are experimental
+  # and <file> is not allowed yet" complaint — so a regression that puts a
+  # non-entrypoint file back into hook/, or otherwise breaks the archive, turns
+  # this check red on the PR that introduced it instead of surfacing at
+  # `dart pub publish`.
+  #
+  # `if: github.base_ref == 'main'` scopes this to the develop->main release
+  # path (§spec:ci-develop) — it does NOT run on feature PRs into develop, so
+  # the per-feature gate is unchanged. One workflow file, gated by target
+  # branch, keeps a single source of truth.
+  publish-dry-run:
+    name: publish dry-run (release gate)
+    if: github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+      # --no-example mirrors the `core` job: the Flutter example/ is not
+      # resolvable on a Flutter-less runner, and the dry run validates the root
+      # dart_ping package archive, not the example subpackage.
+      - run: dart pub get --no-example
+      - run: dart pub publish --dry-run
+
   # The Swift ICMP framing/parse suite. Requires a macOS runner with Xcode and
   # an iOS simulator (#74). Building the example first generates the Flutter
   # artifacts the Runner target links against.
