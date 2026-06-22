@@ -20,7 +20,7 @@ import 'dart:io';
 import 'package:code_assets/code_assets.dart';
 import 'package:hooks/hooks.dart';
 
-import 'gating.dart';
+import 'package:dart_ping/src/build/gating.dart';
 
 /// The code-asset name. The Dart FFI binding (#28-2) opens this asset as
 /// `package:dart_ping/dart_ping_ffi` (i.e. `@Native(assetId: ...)` /
