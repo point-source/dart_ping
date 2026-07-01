@@ -5,6 +5,13 @@ import 'package:dart_ping/dart_ping.dart';
 import 'package:dart_ping/src/ping/base_ping.dart';
 
 class PingLinux extends BasePing implements Ping {
+  /// Base unknown-host phrasings shared by both the iputils [defaultParser] and
+  /// the toybox [androidParser]. Android extends this with `bad address` (its
+  /// name-resolution failure), so keeping the base in one place makes that
+  /// "base + Android extension" relationship explicit and drift-free.
+  static const String _unknownHostPattern =
+      r'unknown host|service not known|failure in name';
+
   static PingParser get defaultParser => .new(
     responseRgx: RegExp(
       r'bytes from (?:.*)(?<ip>\b(?:\d{1,3}\.){3}\d{1,3}\b)\)?: icmp_seq=(?<seq>\d+) ttl=(?<ttl>\d+) time=(?<time>(\d+).?(\d+))',
@@ -16,7 +23,7 @@ class PingLinux extends BasePing implements Ping {
     timeToLiveRgx: RegExp(
       r'From (?<ip>.*)(?:.*) icmp_seq=(?<seq>\d+) Time to live exceeded',
     ),
-    unknownHostStr: RegExp(r'unknown host|service not known|failure in name'),
+    unknownHostStr: RegExp(_unknownHostPattern),
     noRouteStrs: [
       RegExp(r'[Nn]etwork is unreachable'),
       RegExp(r'[Dd]estination [Hh]ost [Uu]nreachable'),
@@ -56,9 +63,7 @@ class PingLinux extends BasePing implements Ping {
       ),
       timeoutRgx: iputils.timeoutRgx,
       timeToLiveRgx: iputils.timeToLiveRgx,
-      unknownHostStr: RegExp(
-        r'unknown host|service not known|failure in name|bad address',
-      ),
+      unknownHostStr: RegExp('$_unknownHostPattern|bad address'),
       noRouteStrs: iputils.noRouteStrs,
     );
   }
