@@ -110,6 +110,65 @@ void main() {
     });
   });
 
+  // §spec:android-toybox-flags — Android runs the same subprocess path but must
+  // send only flags stock toybox `ping` accepts. The `isAndroid` seam is injected
+  // explicitly so these run on any host (the suite never runs on Android).
+  group('PingLinux (Android / toybox)', () {
+    test('params drop the iputils-only -O and -n', () {
+      final android = PingLinux('host', 3, 1, 2, 64, .ipv4, isAndroid: true);
+      expect(android.params, isNot(contains('-O')));
+      expect(android.params, isNot(contains('-n')));
+    });
+
+    test('params still force the family and carry the toybox-accepted flags', () {
+      final android = PingLinux('host', 3, 1, 2, 64, .ipv4, isAndroid: true);
+      // Exactly the iputils list minus -O/-n: family + wait/interval/ttl/count.
+      expect(android.params, ['-4', '-W 2', '-i 1', '-t 64', '-c 3']);
+    });
+
+    test('params force IPv6 with -6 and still omit -O/-n', () {
+      final v6 = PingLinux('host', 3, 1, 2, 64, .ipv6, isAndroid: true);
+      expect(v6.params, ['-6', '-W 2', '-i 1', '-t 64', '-c 3']);
+    });
+
+    test('params omit -c when count is null', () {
+      final unbounded = PingLinux('host', null, 1, 2, 64, .ipv4, isAndroid: true);
+      expect(unbounded.params, ['-4', '-W 2', '-i 1', '-t 64']);
+    });
+
+    test('interface binding still appends -I as separate argv tokens', () {
+      final named = PingLinux(
+        'host',
+        3,
+        1,
+        2,
+        64,
+        .ipv4,
+        interface: 'eth0',
+        isAndroid: true,
+      );
+      expect(named.params, ['-4', '-W 2', '-i 1', '-t 64', '-c 3', '-I', 'eth0']);
+    });
+
+    test('desktop Linux params are byte-for-byte unchanged (regression guard)', () {
+      // The must-have "desktop Linux is unchanged" guard: the non-Android list
+      // still includes -O and -n in the original order.
+      final desktop = PingLinux('host', 3, 1, 2, 64, .ipv4, isAndroid: false);
+      expect(desktop.params, ['-4', '-O', '-n', '-W 2', '-i 1', '-t 64', '-c 3']);
+    });
+
+    test('exit-code interpretation is unchanged from desktop Linux', () {
+      // The fix removes the CAUSE of the reported exit 2 (a rejected flag); it
+      // does not remap exit codes. A genuinely unmapped non-zero Android exit
+      // still surfaces a catchable error via throwExit
+      // (§spec:stream-lifecycle-robustness regression guard).
+      final android = PingLinux('host', 3, 1, 2, 64, .ipv4, isAndroid: true);
+      expect(android.interpretExitCode(1)?.error, ErrorType.noReply);
+      expect(android.interpretExitCode(2), isNull);
+      expect(android.throwExit(2), isA<Exception>());
+    });
+  });
+
   group('PingMac', () {
     final ping = PingMac('host', 3, 1, 2, 64, .ipv4);
 

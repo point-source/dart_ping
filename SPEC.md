@@ -3146,7 +3146,7 @@ under a deterministic CI gate. Desktop Linux behavior is unchanged
 throughout (§req:android-ping-constraints).
 
 ## Android sends only toybox-accepted flags §spec:android-toybox-flags
-*Status: not started*
+*Status: implemented (Batch 1) — `PingLinux` gained an injectable `isAndroid` seam (defaulting to `Platform.isAndroid`); on Android `params` drops the iputils-only `-O`/`-n` while keeping `-4`/`-6`, `-W`, `-i`, `-t`, `-c`, and `-I` (all confirmed against toybox's optstr in `toys/net/ping.c`), so the default `Ping('google.com')` is no longer rejected at argument parsing with exit 2. Desktop Linux's list is byte-for-byte unchanged (still `-O`/`-n`). Exit-code interpretation is untouched, so a genuinely unmapped non-zero Android exit still surfaces a catchable error and closes the stream. Covered by `test/platform_test.dart` (Android/desktop param lists) and `test/stream_lifecycle_test.dart` (end-to-end + unmapped-exit guard); no live network. The CI flag-acceptance gate against a real toybox binary is Batch 2 (§spec:android-ci-gate).*
 
 On Android, the `ping` process is launched with only flags that stock
 toybox `ping` accepts, so the default `Ping('google.com')` run is never
@@ -3206,7 +3206,7 @@ subprocess path (`lib/src/ping/linux_ping.dart`, selected via
 the change small and the public API untouched (§req:android-ping-constraints).
 
 ## Android output parses to the same events as desktop Linux §spec:android-output-parity
-*Status: not started*
+*Status: implemented (Batch 1) — `PingLinux.androidParser` reuses the iputils `defaultParser` for every pattern except the two toybox phrases differently: the statistics line `N packets transmitted, M received, X% packet loss` (no trailing `time <n>ms`, so the summary's `time` is null and its transmitted/received/loss come authoritatively from this line — a lost probe surfaces as lower `received` + non-zero loss, never a mid-run `requestTimedOut`), and the name-resolution failure `<host>: bad address` (added to `unknownHostStr`). toybox's reply line matches the existing `responseRgx` verbatim (numeric IP, integer ms), and its routing errors surface via `recvmsg: <strerror>` (`Network is unreachable` / `No route to host`) which the existing `noRouteStrs` already map to `noRoute`. Verified against toybox `toys/net/ping.c` + `lib/net.c`; covered by fixture-driven `test/parse_test.dart` cases and the end-to-end `test/stream_lifecycle_test.dart` run (no live network). NOTE (pending Batch 2 on-device fixture capture): stock toybox emits no dedicated TTL-exceeded line — an intermediate hop's ICMP Time Exceeded is delivered as a kernel errno (`EHOSTUNREACH` → `No route to host`) and therefore maps to `noRoute` on Android rather than `timeToLiveExceeded`; the iputils `timeToLiveRgx` is retained in `androidParser` so any build that does print such a line is still mapped.*
 
 An Android run maps the same logical outcomes to the same events as a
 desktop-Linux run: a successful reply, an unknown host, a no-route /
