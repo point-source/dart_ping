@@ -91,16 +91,28 @@ class PingLinux extends BasePing implements Ping {
       // (§spec:android-toybox-flags).
       if (!isAndroid) '-O',
       if (!isAndroid) '-n',
-      '-W $timeout',
-      '-i $interval',
-      '-t $ttl',
+      // Each valued flag and its value are pushed as SEPARATE argv tokens, never
+      // a glued `'-W $timeout'`. Process launch uses `Process.start` with no
+      // shell, so a glued token reaches `ping` as ONE argument whose value
+      // carries a leading space (e.g. `-W`'s value " 2"). iputils' `strtol`
+      // tolerates that leading space, but Android's toybox `ping` does NOT for
+      // its fractional `-i` argument — it rejects a glued `'-i 1'` with
+      // `Not a number ' 1'` and aborts at argument parsing, so the default
+      // Android run would STILL fail even after dropping `-O`/`-n`. Splitting
+      // matches how `-I` (below) is already passed and is byte-identical for
+      // iputils: the `command` string (params joined on spaces) is unchanged
+      // (§spec:android-toybox-flags, verified against real toybox by
+      // §spec:android-ci-gate).
+      '-W', '$timeout',
+      '-i', '$interval',
+      '-t', '$ttl',
     ];
-    if (count != null) args.add('-c $count');
+    if (count != null) args.addAll(['-c', '$count']);
     // Linux/Android `ping -I` binds either an interface name or a source
-    // address. The flag and value are pushed as SEPARATE argv tokens: process
-    // launch uses `Process.start` with no shell, so a glued `'-I $interface'`
-    // token would reach ping as one argument whose value carries a leading
-    // space (e.g. interface " eth0"), and the bind would fail.
+    // address. The flag and value are pushed as SEPARATE argv tokens for the
+    // same reason as the valued flags above: a glued `'-I $interface'` token
+    // would reach ping as one argument whose value carries a leading space
+    // (e.g. interface " eth0"), and the bind would fail.
     final interface = this.interface;
     if (interface != null && interface.isNotEmpty) {
       args.add('-I');

@@ -1,0 +1,23 @@
+# Captured / source-verified stock-toybox `ping` diagnostic lines and the
+# ErrorType each must map to through PingLinux.androidParser. One line per case;
+# `#` comments and blank lines are ignored by the loader. Formats verified
+# against toybox `toys/net/ping.c` and `lib/net.c` (see android_output_parity_test.dart).
+#
+# Name-resolution failure. toybox resolves via xgetaddrinfo (lib/net.c), which
+# on failure prints `<host>: <gai_strerror(rc)>` — e.g. glibc/bionic
+# "Name or service not known" (matched by the shared `service not known`
+# alternative). The `bad address` phrasing recorded in Batch 1 is also pinned so
+# either wording a given toybox build emits maps to unknownHost.
+unknownHost | invalid.example: Name or service not known
+unknownHost | google.invalid: bad address
+#
+# Kernel ICMP errors surfaced via `perror_exit("recvmsg")` -> `ping: recvmsg: <strerror(errno)>`.
+noRoute | ping: recvmsg: Network is unreachable
+noRoute | ping: recvmsg: No route to host
+#
+# TTL/hop-limit expiry. Stock toybox emits NO dedicated line for this (an
+# intermediate hop's ICMP Time Exceeded is delivered as a kernel errno and shows
+# up as a recvmsg no-route above). androidParser retains the iputils-format
+# `timeToLiveRgx` so any build that DOES print such a line still maps it; this
+# line pins that retained path.
+timeToLiveExceeded | From 192.168.1.1 icmp_seq=1 Time to live exceeded
