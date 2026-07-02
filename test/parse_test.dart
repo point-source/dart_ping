@@ -24,6 +24,16 @@ void main() {
       expect(res.ttl, 37);
     });
 
+    test('Response with a single-digit millisecond time (#100 regression)', () {
+      // Same fast-reply regression as the Linux parser: an integer sub-10ms
+      // `time=1 ms` must parse into a PingResponse rather than being dropped.
+      final res = parser.parse(
+        '64 bytes from 8.8.8.8: icmp_seq=0 ttl=37 time=1 ms',
+      );
+      expect(res, isA<PingResponse>());
+      expect((res as PingResponse).time, const Duration(milliseconds: 1));
+    });
+
     test('Summary', () async {
       final res = parser.parse(strings.summary);
       expect(res, isA<PingSummary>());
@@ -92,6 +102,18 @@ void main() {
       expect((res as PingResponse).seq, 1);
       expect(res.ip, '8.8.8.8');
       expect(res.ttl, 37);
+    });
+
+    test('Response with a single-digit millisecond time (#100 regression)', () {
+      // A fast LAN/loopback reply reports an integer sub-10ms time (e.g.
+      // `time=1 ms`). The response regex must still capture it — the previous
+      // `(\d+).?(\d+)` pattern required two digit runs and silently dropped
+      // such a reply, so no PingResponse reached the consumer.
+      final res = parser.parse(
+        '64 bytes from myhostname.net (8.8.8.8): icmp_seq=1 ttl=37 time=1 ms',
+      );
+      expect(res, isA<PingResponse>());
+      expect((res as PingResponse).time, const Duration(milliseconds: 1));
     });
 
     test('Summary', () async {

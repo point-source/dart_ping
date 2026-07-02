@@ -14,7 +14,7 @@ class PingLinux extends BasePing implements Ping {
 
   static PingParser get defaultParser => .new(
     responseRgx: RegExp(
-      r'bytes from (?:.*)(?<ip>\b(?:\d{1,3}\.){3}\d{1,3}\b)\)?: icmp_seq=(?<seq>\d+) ttl=(?<ttl>\d+) time=(?<time>(\d+).?(\d+))',
+      r'bytes from (?:.*)(?<ip>\b(?:\d{1,3}\.){3}\d{1,3}\b)\)?: icmp_seq=(?<seq>\d+) ttl=(?<ttl>\d+) time=(?<time>\d+(?:\.\d+)?)',
     ),
     summaryRgx: RegExp(
       r'(?<tx>\d+) packets transmitted, (?<rx>\d+) received,.*time (?<time>\d+)ms',
@@ -53,7 +53,13 @@ class PingLinux extends BasePing implements Ping {
   ///  - **Name-resolution failure.** toybox reports it as `<host>: bad address`
   ///    (via `xgetaddrinfo`), which the iputils [unknownHostStr] would miss, so
   ///    `bad address` is added to the unknown-host alternatives.
-  static PingParser get androidParser {
+  /// Built once and shared across every Android [PingLinux]: [PingParser.parse]
+  /// is stateless (it only reads its patterns and returns a fresh event), so a
+  /// single instance is safe to reuse concurrently and avoids rebuilding the
+  /// regexes on each construction.
+  static final PingParser androidParser = _buildAndroidParser();
+
+  static PingParser _buildAndroidParser() {
     final iputils = defaultParser;
 
     return PingParser(
@@ -134,8 +140,36 @@ class PingLinux extends BasePing implements Ping {
     String? interface,
     bool nat64Synthesis = true,
     bool? isAndroid,
-  }) : isAndroid = isAndroid ?? Platform.isAndroid,
-       super(
+  }) : this._(
+         host,
+         count,
+         interval,
+         timeout,
+         ttl,
+         ipVersion,
+         // Resolve the platform ONCE here; the private constructor reuses the
+         // result for both the `isAndroid` field and the default parser choice,
+         // so `Platform.isAndroid` is never read twice.
+         isAndroid ?? Platform.isAndroid,
+         parser: parser,
+         encoding: encoding,
+         interface: interface,
+         nat64Synthesis: nat64Synthesis,
+       );
+
+  PingLinux._(
+    String host,
+    int? count,
+    int interval,
+    int timeout,
+    int ttl,
+    IpVersion ipVersion,
+    this.isAndroid, {
+    PingParser? parser,
+    Encoding encoding = const Utf8Codec(),
+    String? interface,
+    bool nat64Synthesis = true,
+  }) : super(
          host,
          count,
          interval,
@@ -143,12 +177,8 @@ class PingLinux extends BasePing implements Ping {
          ttl,
          ipVersion,
          // Select the toybox parser on Android and the iputils parser on desktop
-         // Linux, unless the caller supplied a custom one. Resolved from the
-         // parameter (the field is not yet assigned in the initializer list).
-         parser ??
-             ((isAndroid ?? Platform.isAndroid)
-                 ? androidParser
-                 : defaultParser),
+         // Linux, unless the caller supplied a custom one.
+         parser ?? (isAndroid ? androidParser : defaultParser),
          encoding,
          false,
          interface,

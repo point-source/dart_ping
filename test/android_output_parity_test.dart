@@ -73,6 +73,18 @@ void main() {
     });
   });
 
+  test('a single-digit-ms reply still parses (#100 regression)', () {
+    // toybox on a fast LAN/loopback prints an integer sub-10ms time. Because the
+    // Android parser reuses the shared response regex, it must capture such a
+    // reply — the previous `(\d+).?(\d+)` pattern required two digit runs and
+    // silently dropped it, so a fast Android reply produced no PingResponse.
+    final event = parser.parse(
+      '64 bytes from 142.250.80.46: icmp_seq=1 ttl=115 time=1 ms',
+    );
+    expect(event, isA<PingResponse>());
+    expect((event as PingResponse).time, const Duration(milliseconds: 1));
+  });
+
   group('§spec:android-output-parity — error lines map to the right kind', () {
     // Each fixture line is `<expectedErrorType> | <exact toybox output line>`.
     final cases = const LineSplitter()

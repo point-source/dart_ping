@@ -63,10 +63,20 @@ jobs:
       - run: dart pub get --no-example
       - name: Install stock toybox ping
         run: sudo apt-get update && sudo apt-get install -y toybox
-      # Fail LOUD if toybox is missing rather than letting the tagged test be
-      # silently skipped — a green check must mean a real toybox parsed our args.
-      - name: Verify toybox is present
-        run: command -v toybox
+      # Fail LOUD if toybox — or specifically its `ping` applet — is missing,
+      # rather than letting the tagged test be silently skipped or pass falsely.
+      # toybox is a multicall binary: `command -v toybox` only proves the binary
+      # is on PATH, not that this build includes `ping`. A toybox compiled
+      # without `ping` would make `toybox ping ...` print `Unknown command`,
+      # which the flag-acceptance test's rejection regex does NOT match — a false
+      # green. Asserting `ping` is in the applet list closes that gap, so a green
+      # check means a real toybox `ping` parsed our args.
+      - name: Verify toybox and its ping applet are present
+        run: |
+          command -v toybox
+          toybox | grep -qw ping || {
+            echo "installed toybox has no 'ping' applet"; exit 1;
+          }
       - run: dart test -x live -t toybox
 
   # ---- Required on the RELEASE PATH only --------------------------------
