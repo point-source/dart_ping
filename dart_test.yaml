@@ -4,8 +4,17 @@
 # They are excluded from the deterministic gate with `dart test -x live` (hosted
 # CI runners block unprivileged ICMP) and run on demand with `dart test -t live`
 # as a local/manual acceptance path.
+#
+# `toybox` marks the Android flag-acceptance check, which shells out to an
+# installed stock toybox `ping` to prove it accepts every flag dart_ping sends
+# on Android (§spec:android-ci-gate). It needs a toybox binary on the host, so
+# it is excluded from the normal gate (`dart test -x live -x toybox`) and run in
+# the dedicated `android-toybox` CI job (`dart test -t toybox`) that installs
+# toybox first. It reaches loopback only to exercise toybox's argument parser —
+# no external-network ICMP round trip.
 tags:
   live:
     # Give live tests room for slow DNS / round trips without flaking on the
     # default per-test timeout.
     timeout: 2x
+  toybox:

@@ -36,7 +36,38 @@ jobs:
       # clean (the example is built by the macOS ios-swift job, not here).
       - run: dart pub get --no-example
       - run: dart analyze --fatal-infos
-      - run: dart test -x live
+      # `-x toybox` excludes the Android flag-acceptance check, which needs an
+      # installed stock toybox `ping` binary absent on these hosts; it runs in
+      # the dedicated `android-toybox` job instead (§spec:android-ci-gate). The
+      # fixture-driven Android output-parity assertions are untagged pure-Dart
+      # and DO run here.
+      - run: dart test -x live -x toybox
+
+  # ---- Required, deterministic gate: Android flag acceptance ------------
+  # §spec:android-ci-gate — proves a REAL stock toybox `ping` (Android's ping)
+  # accepts every flag dart_ping sends on Android, so the #100 exit-code
+  # regression (a flag toybox rejects at argument parsing) cannot silently
+  # return. The test sources the exact Android argument list from
+  # `PingLinux.params` and runs it against an installed toybox `ping` targeting
+  # LOOPBACK — it exercises toybox's argument PARSER only, with no
+  # external-network ICMP round trip, so it is deterministic on the hosted
+  # runner (consistent with the live suite staying out of CI). The paired
+  # output-parity fixtures run in the `core` job (untagged pure Dart). Runs on
+  # PRs to both `main` and `develop` by construction — same workflow triggers.
+  android-toybox:
+    name: android flags (toybox)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+      - run: dart pub get --no-example
+      - name: Install stock toybox ping
+        run: sudo apt-get update && sudo apt-get install -y toybox
+      # Fail LOUD if toybox is missing rather than letting the tagged test be
+      # silently skipped — a green check must mean a real toybox parsed our args.
+      - name: Verify toybox is present
+        run: command -v toybox
+      - run: dart test -x live -t toybox
 
   # ---- Required on the RELEASE PATH only --------------------------------
   # Publishability gate (§spec:publish-dry-run-check). `dart pub publish
@@ -123,7 +154,7 @@ jobs:
       - name: Core coverage
         run: |
           dart pub get --no-example
-          dart test -x live --coverage=coverage
+          dart test -x live -x toybox --coverage=coverage
           dart run coverage:format_coverage \
             --lcov --in=coverage --out=coverage/lcov.info --report-on=lib
       - name: Summarize
