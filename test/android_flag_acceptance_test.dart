@@ -46,44 +46,51 @@ void main() {
     r"Unknown option|Not a number|Needs argument",
   );
 
-  ProcessResult runToybox(List<String> params, {String host = loopback}) =>
-      Process.runSync(
-        toybox,
-        ['ping', ...params, host],
-        stdoutEncoding: systemEncoding,
-        stderrEncoding: systemEncoding,
-      );
+  ProcessResult runToybox(List<String> params, String host) => Process.runSync(
+    toybox,
+    ['ping', ...params, host],
+    stdoutEncoding: systemEncoding,
+    stderrEncoding: systemEncoding,
+  );
 
-  test('stock toybox ping accepts the full Android argument list', () {
-    // Sourced from the SAME assembly code Batch 1 introduced — not a copy.
-    final params =
-        PingLinux(loopback, 1, 1, 2, 64, .ipv4, isAndroid: true).params;
-
-    final result = runToybox(params);
+  /// Runs [params] against toybox `ping` on [host] (loopback) and asserts
+  /// toybox did NOT reject any flag at argument parsing.
+  void expectAccepted(List<String> params, {String host = loopback}) {
+    final result = runToybox(params, host);
     final stderr = result.stderr as String;
-
     expect(
       argParseRejection.hasMatch(stderr),
       isFalse,
       reason:
           'stock toybox rejected an Android flag at argument parsing.\n'
-          'argv: ping ${params.join(' ')} $loopback\n'
+          'argv: ping ${params.join(' ')} $host\n'
           'exit: ${result.exitCode}\n'
           'stderr: $stderr',
     );
+  }
+
+  // The argument lists are sourced from the SAME assembly code Batch 1
+  // introduced (PingLinux.params) — never a hand-copied parallel list.
+  test('stock toybox ping accepts the default IPv4 Android argument list', () {
+    expectAccepted(
+      PingLinux(loopback, 1, 1, 2, 64, .ipv4, isAndroid: true).params,
+    );
   });
 
-  test('the IPv6 and interface-bound Android lists are also accepted', () {
-    // The IPv6 list is built with a v6 host so the constructor's address-family
-    // guard is satisfied; it is run against the v6 loopback ::1. The
-    // interface-bound list splits `-I lo` into separate argv tokens (the same
-    // fix that gave the other valued flags their own tokens).
-    final v6 = (
-      params: PingLinux('::1', 1, 1, 2, 64, .ipv6, isAndroid: true).params,
+  test('stock toybox ping accepts the IPv6 Android argument list', () {
+    // Built with a v6 host so the constructor's address-family guard is
+    // satisfied, then run against the v6 loopback ::1.
+    expectAccepted(
+      PingLinux('::1', 1, 1, 2, 64, .ipv6, isAndroid: true).params,
       host: '::1',
     );
-    final iface = (
-      params: PingLinux(
+  });
+
+  test('stock toybox ping accepts the interface-bound Android list', () {
+    // `-I lo` is split into separate argv tokens (the same fix that gave the
+    // other valued flags their own tokens).
+    expectAccepted(
+      PingLinux(
         loopback,
         1,
         1,
@@ -93,21 +100,7 @@ void main() {
         isAndroid: true,
         interface: 'lo',
       ).params,
-      host: loopback,
     );
-
-    for (final variant in [v6, iface]) {
-      final result = runToybox(variant.params, host: variant.host);
-      final stderr = result.stderr as String;
-      expect(
-        argParseRejection.hasMatch(stderr),
-        isFalse,
-        reason:
-            'stock toybox rejected an Android flag at argument parsing.\n'
-            'argv: ping ${variant.params.join(' ')} ${variant.host}\n'
-            'stderr: $stderr',
-      );
-    }
   });
 
   test('reintroducing the iputils-only -O/-n WOULD fail the check (control)', () {
@@ -118,8 +111,7 @@ void main() {
     final desktopParams =
         PingLinux(loopback, 1, 1, 2, 64, .ipv4, isAndroid: false).params;
 
-    final result = runToybox(desktopParams);
-    final stderr = result.stderr as String;
+    final stderr = runToybox(desktopParams, loopback).stderr as String;
 
     expect(stderr, contains('Unknown option'));
     expect(argParseRejection.hasMatch(stderr), isTrue);
