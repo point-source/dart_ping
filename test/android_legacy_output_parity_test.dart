@@ -283,6 +283,35 @@ rtt min/avg/max/mdev = 10.900/11.533/12.100/0.492 ms''';
     );
   });
 
+  test('TTL-exceeded parsing is linear-time on crafted hop lines (ReDoS guard)', () {
+    // The TTL-exceeded `From <hop> … icmp_seq=… Time to live exceeded` pattern is
+    // reached by an attacker-influenced reverse-DNS hop name (Android resolves
+    // names — `-n` is absent). The earlier `From (?<ip>.*)(?:.*) icmp_seq=` form
+    // — two adjacent unbounded quantifiers over the same alphabet — backtracked
+    // quadratically on a long `From …` line that never reaches the tail (a
+    // spoofed/long-PTR hop returning ICMP unreachable/TTL), blocking the isolate.
+    // This pins that such lines are rejected effectively instantly; it also
+    // guards the shared desktop-Linux [PingLinux.defaultParser] (same regex).
+    final sw = Stopwatch()..start();
+    for (final payload in [
+      'From ${'a' * 40000}: No route to host', // starts `From `, never reaches the tail
+      'From ${'a' * 40000} icmp_seq=1 Destination Host Unreachable', // has icmp_seq, wrong tail
+      'From ${'aaaa:' * 8000} icmp_seq=1 Destination Host Unreachable',
+    ]) {
+      // These are NOT TTL-exceeded lines, so they must not yield that event —
+      // the first/last are noRoute, the middle is Destination-Host-Unreachable
+      // (noRoute); none should be timeToLiveExceeded.
+      final event = parser.parse(payload);
+      expect(event, isNot(isA<PingError>().having((e) => e.error, 'error', ErrorType.timeToLiveExceeded)));
+    }
+    sw.stop();
+    expect(
+      sw.elapsedMilliseconds,
+      lessThan(1000),
+      reason: 'TTL-exceeded parsing of crafted hop lines must stay near-linear',
+    );
+  });
+
   test('desktop-Linux (iputils) parser stays IPv4-only (regression guard)', () {
     // The superset IPv6 reply capture lives ONLY on the Android parser. The
     // desktop `defaultParser` must NOT gain IPv6 reply parsing — its `ip` group

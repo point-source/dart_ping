@@ -117,6 +117,13 @@ jobs:
           sudo apt-get install -y build-essential libssl-dev
           git clone --depth 1 --branch s20101006 \
             https://github.com/iputils/iputils /tmp/iputils-legacy
+          # Pin by commit SHA: a Git tag is mutable, so verify the shallow clone
+          # resolved to the exact expected commit before building it. A moved or
+          # compromised tag fails the job here instead of silently compiling
+          # attacker-controlled source (keeps the gate reproducible).
+          test "$(git -C /tmp/iputils-legacy rev-parse HEAD)" \
+            = "642417d5fe37a5da2dff2c88b9b3e7e18337211f" \
+            || { echo "iputils tag s20101006 no longer resolves to the pinned commit"; exit 1; }
           make -C /tmp/iputils-legacy ping ping6
           echo "LEGACY_PING_BIN=/tmp/iputils-legacy/ping" >> "$GITHUB_ENV"
           echo "LEGACY_PING6_BIN=/tmp/iputils-legacy/ping6" >> "$GITHUB_ENV"
