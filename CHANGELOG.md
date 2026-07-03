@@ -1,3 +1,41 @@
+## 10.0.1
+
+Bug-fix release: the default `Ping('google.com')` now works out of the box on
+Android across **both** mainstream `ping` dialects, instead of aborting with
+`Ping process exited with code: 2`. Non-breaking; the public API and the
+`PingResponse` / `PingError` / `PingSummary` shapes are unchanged, and desktop
+Linux / macOS / Windows behavior is byte-for-byte identical.
+
+### Fixed
+
+- **Android default ping on toybox images (#100).** Android's stock `ping` is
+  toybox, which rejects the iputils-only flags `dart_ping` was sending (`-O` /
+  `-n`) at argument parsing, and also rejects a valued flag glued into one argv
+  token (`'-i 1'` → `Not a number ' 1'`). On Android, `dart_ping` now sends only
+  toybox-accepted flags, each flag and its value as **separate** argv tokens, and
+  parses toybox's output — its statistics line has no trailing wall-clock total,
+  and a name-resolution failure reads `<host>: bad address` — into the same
+  `PingResponse` / `PingError` / `PingSummary` events as desktop Linux (a lost
+  probe surfaces as a lower `received` + non-zero loss, never a mid-run
+  `requestTimedOut`). Desktop Linux is byte-for-byte unchanged. A CI gate runs the
+  exact argv `dart_ping` produces against a real toybox `ping` on loopback, so the
+  regression cannot silently return.
+- **Android default ping on legacy AOSP `external/ping` images (#102).** On
+  images shipping the legacy AOSP `external/ping` (2008-vintage iputils: a split
+  IPv4-only `ping` plus a separate `ping6`) rather than toybox, the default run
+  still failed with exit 2 after the #100 fix, because that binary rejects the
+  `-4` / `-6` family flag. `dart_ping` now determines the dialect at runtime — a
+  network-free `ping -4` capability probe, resolved once per process — and adapts
+  the launched command: toybox keeps the flagged single `ping`; a legacy image
+  runs a **flagless** `ping` for IPv4 and the separate **`ping6`** binary for
+  IPv6, so the family stays exclusively pinned without sending a flag the binary
+  rejects. One superset parser handles both dialects — including IPv6 reply lines
+  and the ICMPv6 `Time exceeded: Hop limit` hop-limit wording — mapping them to
+  the same events as desktop Linux. A second CI gate builds a real legacy iputils
+  `ping` / `ping6` and proves the produced argv is accepted, with a control case
+  proving that reintroducing `-4` / `-6` would be rejected. Public API unchanged;
+  the change is confined to the Linux/Android subprocess path.
+
 ## 10.0.0
 
 ### Breaking changes & migration

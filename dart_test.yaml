@@ -12,9 +12,20 @@
 # the dedicated `android-toybox` CI job (`dart test -t toybox`) that installs
 # toybox first. It reaches loopback only to exercise toybox's argument parser —
 # no external-network ICMP round trip.
+#
+# `legacy` marks the sibling flag-acceptance check for the OTHER Android dialect —
+# the legacy AOSP `external/ping` / `ping6` (2008-vintage iputils)
+# (§spec:android-legacy-ci-gate). It shells out to a real legacy `ping`/`ping6`
+# (`LEGACY_PING_BIN`/`LEGACY_PING6_BIN`), so like `toybox` it needs that binary
+# on the host: it is excluded from the normal gate (`dart test -x live -x toybox
+# -x legacy`) and run in the dedicated `android-legacy` CI job (`dart test -t
+# legacy`) that builds the legacy binary first. It reaches loopback only to
+# exercise the legacy binary's argument parser — no external-network ICMP round
+# trip.
 tags:
   live:
     # Give live tests room for slow DNS / round trips without flaking on the
     # default per-test timeout.
     timeout: 2x
   toybox:
+  legacy:

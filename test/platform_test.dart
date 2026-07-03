@@ -115,17 +115,23 @@ void main() {
   });
 
   // §spec:android-toybox-flags — Android runs the same subprocess path but must
-  // send only flags stock toybox `ping` accepts. The `isAndroid` seam is injected
-  // explicitly so these run on any host (the suite never runs on Android).
+  // send only flags stock toybox `ping` accepts. Both the `isAndroid` and the
+  // `isLegacy` seams are injected explicitly so these run on any host (the suite
+  // never runs on Android) WITHOUT triggering the runtime dialect probe — a real
+  // subprocess whose result would depend on the CI host's own `ping`.
   group('PingLinux (Android / toybox)', () {
     test('params drop the iputils-only -O and -n', () {
-      final android = PingLinux('host', 3, 1, 2, 64, .ipv4, isAndroid: true);
+      final android = PingLinux(
+        'host', 3, 1, 2, 64, .ipv4, isAndroid: true, isLegacy: false,
+      );
       expect(android.params, isNot(contains('-O')));
       expect(android.params, isNot(contains('-n')));
     });
 
     test('params still force the family and carry the toybox-accepted flags', () {
-      final android = PingLinux('host', 3, 1, 2, 64, .ipv4, isAndroid: true);
+      final android = PingLinux(
+        'host', 3, 1, 2, 64, .ipv4, isAndroid: true, isLegacy: false,
+      );
       // Exactly the iputils list minus -O/-n: family + wait/interval/ttl/count,
       // each valued flag SPLIT into two argv tokens so toybox's fractional `-i`
       // parser accepts it (a glued `'-i 1'` is rejected as `Not a number ' 1'` —
@@ -136,12 +142,26 @@ void main() {
     });
 
     test('params force IPv6 with -6 and still omit -O/-n', () {
-      final v6 = PingLinux('host', 3, 1, 2, 64, .ipv6, isAndroid: true);
+      final v6 = PingLinux(
+        'host', 3, 1, 2, 64, .ipv6, isAndroid: true, isLegacy: false,
+      );
       expect(v6.params, ['-6', '-W', '2', '-i', '1', '-t', '64', '-c', '3']);
     });
 
+    test('IPv6 stays on the single multicall ping (not ping6) on toybox', () {
+      // Toybox is one binary that family-pins via `-6`; the executable must stay
+      // `ping`, never the legacy split `ping6` (§spec:android-legacy-dialect —
+      // must-not-regress-toybox).
+      final v6 = PingLinux(
+        'host', 3, 1, 2, 64, .ipv6, isAndroid: true, isLegacy: false,
+      );
+      expect(v6.executable, 'ping');
+    });
+
     test('params omit -c when count is null', () {
-      final unbounded = PingLinux('host', null, 1, 2, 64, .ipv4, isAndroid: true);
+      final unbounded = PingLinux(
+        'host', null, 1, 2, 64, .ipv4, isAndroid: true, isLegacy: false,
+      );
       expect(unbounded.params, ['-4', '-W', '2', '-i', '1', '-t', '64']);
     });
 
@@ -155,6 +175,7 @@ void main() {
         .ipv4,
         interface: 'eth0',
         isAndroid: true,
+        isLegacy: false,
       );
       expect(named.params, [
         '-4', '-W', '2', '-i', '1', '-t', '64', '-c', '3', '-I', 'eth0',
@@ -178,10 +199,177 @@ void main() {
       // does not remap exit codes. A genuinely unmapped non-zero Android exit
       // still surfaces a catchable error via throwExit
       // (§spec:stream-lifecycle-robustness regression guard).
-      final android = PingLinux('host', 3, 1, 2, 64, .ipv4, isAndroid: true);
+      final android = PingLinux(
+        'host', 3, 1, 2, 64, .ipv4, isAndroid: true, isLegacy: false,
+      );
       expect(android.interpretExitCode(1)?.error, ErrorType.noReply);
       expect(android.interpretExitCode(2), isNull);
       expect(android.throwExit(2), isA<Exception>());
+    });
+  });
+
+  // §spec:android-legacy-dialect — a legacy AOSP `external/ping` image ships a
+  // SPLIT `ping` (IPv4-only, which REJECTS `-4`/`-6`) plus a separate `ping6`.
+  // The `isLegacy` seam is injected so these run on any host without the runtime
+  // dialect probe. The command must be one the legacy binary actually accepts:
+  // flagless `ping` for IPv4, the `ping6` executable for IPv6.
+  group('PingLinux (Android / legacy AOSP external/ping)', () {
+    test('IPv4 params carry NO family flag (legacy ping rejects -4)', () {
+      // The default `Ping('google.com')` on a legacy image: the `-4` iputils
+      // would send is dropped, so the binary no longer aborts at argument
+      // parsing with exit 2. Omitting it still pins the family to IPv4 — the
+      // legacy `ping` is physically IPv4-only.
+      final legacy = PingLinux(
+        'host', 3, 1, 2, 64, .ipv4, isAndroid: true, isLegacy: true,
+      );
+      expect(legacy.params, isNot(contains('-4')));
+      expect(legacy.params, isNot(contains('-6')));
+      expect(legacy.params, ['-W', '2', '-i', '1', '-t', '64', '-c', '3']);
+    });
+
+    test('IPv4 launches the unified ping executable', () {
+      final legacy = PingLinux(
+        'host', 3, 1, 2, 64, .ipv4, isAndroid: true, isLegacy: true,
+      );
+      expect(legacy.executable, 'ping');
+      expect(legacy.command, 'ping -W 2 -i 1 -t 64 -c 3 host');
+    });
+
+    test('IPv6 selects the ping6 executable with no family flag', () {
+      // IPv6 lives in a separate binary on legacy images, so the family choice
+      // becomes an executable choice (`ping` -> `ping6`) rather than an argument.
+      final legacy = PingLinux(
+        'host', 3, 1, 2, 64, .ipv6, isAndroid: true, isLegacy: true,
+      );
+      expect(legacy.executable, 'ping6');
+      expect(legacy.params, isNot(contains('-6')));
+      expect(legacy.params, ['-W', '2', '-i', '1', '-t', '64', '-c', '3']);
+      // `command` renders the real executable (base_ping derives its leading
+      // token from `executable`).
+      expect(legacy.command, 'ping6 -W 2 -i 1 -t 64 -c 3 host');
+    });
+
+    test('interface binding still appends -I as separate argv tokens', () {
+      final named = PingLinux(
+        'host', 3, 1, 2, 64, .ipv4,
+        interface: 'wlan0', isAndroid: true, isLegacy: true,
+      );
+      expect(named.params, [
+        '-W', '2', '-i', '1', '-t', '64', '-c', '3', '-I', 'wlan0',
+      ]);
+    });
+
+    test('params omit -c when count is null', () {
+      final unbounded = PingLinux(
+        'host', null, 1, 2, 64, .ipv4, isAndroid: true, isLegacy: true,
+      );
+      expect(unbounded.params, ['-W', '2', '-i', '1', '-t', '64']);
+    });
+
+    test('exit-code interpretation matches every other dialect', () {
+      // A genuinely unmapped non-zero exit on a legacy image still surfaces a
+      // catchable error (§spec:stream-lifecycle-robustness).
+      final legacy = PingLinux(
+        'host', 3, 1, 2, 64, .ipv4, isAndroid: true, isLegacy: true,
+      );
+      expect(legacy.interpretExitCode(1)?.error, ErrorType.noReply);
+      expect(legacy.interpretExitCode(2), isNull);
+      expect(legacy.throwExit(2), isA<Exception>());
+    });
+  });
+
+  // §spec:android-legacy-dialect — the classification itself: given a "toybox"
+  // seam the flagged single-`ping` command is produced; given a "legacy" seam
+  // the flagless / `ping6` command is produced. This is the runtime selection
+  // exercised deterministically without an emulator or the live probe.
+  group('PingLinux dialect classification drives command selection', () {
+    for (final v in IpVersion.values) {
+      test('toybox seam -> flagged ${v.label} command on ping', () {
+        final toybox = PingLinux(
+          'host', 3, 1, 2, 64, v, isAndroid: true, isLegacy: false,
+        );
+        expect(toybox.params.first, v.flag);
+        expect(toybox.executable, 'ping');
+      });
+
+      test('legacy seam -> flagless ${v.label} command, ping6 for IPv6', () {
+        final legacy = PingLinux(
+          'host', 3, 1, 2, 64, v, isAndroid: true, isLegacy: true,
+        );
+        expect(legacy.params, isNot(anyElement(startsWith('-4'))));
+        expect(legacy.params, isNot(anyElement(startsWith('-6'))));
+        expect(legacy.executable, v == .ipv6 ? 'ping6' : 'ping');
+      });
+    }
+
+    test('resolved dialect drives a self-consistent, stable command', () {
+      // The command is a pure function of the resolved dialect, so two probes to
+      // the same host on the same resolved dialect must produce the identical
+      // executable + params — a per-probe re-detection that disagreed would
+      // break this. Compare TWO separate instances (not a getter to itself) so
+      // the assertion actually has content.
+      final a = PingLinux(
+        'host', 3, 1, 2, 64, .ipv6, isAndroid: true, isLegacy: true,
+      );
+      final b = PingLinux(
+        'host', 3, 1, 2, 64, .ipv6, isAndroid: true, isLegacy: true,
+      );
+      expect(a.executable, 'ping6');
+      expect(a.executable, b.executable);
+      expect(a.params, b.params);
+      // A legacy IPv6 command never carries a family flag on any probe.
+      expect(a.params, isNot(anyElement(startsWith('-6'))));
+    });
+  });
+
+  // The runtime probe classifier — the branch that turns a `ping -4` probe into
+  // the legacy/toybox verdict — exercised directly against real captured output,
+  // so the discriminator is covered without spawning `ping` or an emulator. The
+  // real-binary side (that a legacy `external/ping` actually emits this
+  // signature) is pinned by the §spec:android-legacy-ci-gate control case.
+  group('PingLinux.classifyLegacyFromProbeOutput', () {
+    test('legacy `ping -4` output (family flag rejected) -> legacy', () {
+      // Exactly what the 2008-vintage AOSP `external/ping` prints for `-4`.
+      expect(
+        PingLinux.classifyLegacyFromProbeOutput("ping: invalid option -- '4'"),
+        isTrue,
+      );
+    });
+
+    test('the alternate "unrecognized option" phrasing -> legacy', () {
+      expect(
+        PingLinux.classifyLegacyFromProbeOutput('ping: unrecognized option: 4'),
+        isTrue,
+      );
+    });
+
+    test('classification is case-insensitive', () {
+      expect(
+        PingLinux.classifyLegacyFromProbeOutput('Ping: Invalid Option -- 4'),
+        isTrue,
+      );
+    });
+
+    test('toybox `ping -4` output (flag accepted, missing operand) -> toybox', () {
+      // toybox accepts `-4` and instead complains about the absent target, so
+      // the option-rejection signature is absent — must NOT classify as legacy.
+      expect(
+        PingLinux.classifyLegacyFromProbeOutput('ping: Need an argument'),
+        isFalse,
+      );
+    });
+
+    test('a modern-iputils usage error (no rejected flag) -> toybox', () {
+      expect(
+        PingLinux.classifyLegacyFromProbeOutput(
+          'ping: usage error: Destination address required',
+        ),
+        isFalse,
+      );
+    });
+
+    test('empty output (probe produced nothing) -> toybox (safe default)', () {
+      expect(PingLinux.classifyLegacyFromProbeOutput(''), isFalse);
     });
   });
 

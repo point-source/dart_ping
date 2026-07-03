@@ -1,0 +1,32 @@
+# Captured / source-verified LEGACY AOSP `external/ping` / `ping6` diagnostic
+# lines and the ErrorType each must map to through PingLinux.androidParser. One
+# line per case; `#` comments and blank lines are ignored by the loader. Legacy
+# output is 2008-vintage iputils, so these phrasings are the iputils forms —
+# verified against iputils `ping.c` / `ping6.c` (tag s20101006, the same lineage
+# the §spec:android-legacy-ci-gate flag-acceptance job builds). See
+# android_legacy_output_parity_test.dart.
+#
+# Name-resolution failure. Legacy iputils prints `ping: unknown host` (v4) and
+# `ping6: unknown host <name>` (v6); both are matched by the shared
+# `unknown host` alternative in androidParser's unknownHostStr.
+unknownHost | ping: unknown host
+unknownHost | ping6: unknown host www.example.invalid
+#
+# Routing failures. The legacy IPv4 `ping` surfaces an unreachable network from
+# the connect() probe (`connect: Network is unreachable`) and an intermediate
+# router's ICMP unreachable as `From <hop>: No route to host`. Both map to
+# noRoute via androidParser's noRouteStrs.
+noRoute | connect: Network is unreachable
+noRoute | From 192.168.1.1: No route to host
+#
+# TTL/hop-limit expiry. Unlike toybox (which surfaces this as a kernel errno),
+# the legacy iputils binary prints a dedicated hop line. The wording is
+# family-specific (verified against iputils `ping.c` / `ping6.c` pr_icmph, tag
+# s20101006): IPv4 `ping` prints `Time to live exceeded`, while `ping6` prints
+# the ICMPv6 form `Time exceeded: Hop limit`. The hop prefix is `From <hop>
+# icmp_seq=` (error-queue path) or `From <hop>: icmp_seq=` (inline recvmsg
+# path) — both forms are covered. androidParser's timeToLiveRgx captures the hop
+# `ip` (IPv4 dotted quad OR IPv6 address) and the probe `seq` in every form.
+timeToLiveExceeded | From 10.0.0.1 icmp_seq=1 Time to live exceeded
+timeToLiveExceeded | From 2001:db8::1 icmp_seq=2 Time exceeded: Hop limit
+timeToLiveExceeded | From 2001:db8::1: icmp_seq=3 Time exceeded: Hop limit

@@ -127,15 +127,21 @@ abstract class BasePing {
   /// Params and flags that should be applied to the ping command
   List<String> get params;
 
-  /// The command that will be run on the host OS
-  String get command => 'ping ${params.join(' ')} $host';
+  /// The command that will be run on the host OS. The leading token is the
+  /// selected [executable], so a platform that dispatches to a non-`ping`
+  /// binary (the legacy Android IPv6 path launches `ping6`,
+  /// §spec:android-legacy-dialect) renders faithfully. Every other platform's
+  /// executable is `ping`, so this is byte-for-byte unchanged for them.
+  String get command => '$executable ${params.join(' ')} $host';
 
-  /// The executable used to launch the ping process. Every supported core
-  /// platform uses the unified `ping` binary: Linux/Android and Windows force
-  /// the family with an explicit `-4`/`-6` in [params], while the macOS
-  /// subprocess path runs `ping` for IPv4 and rejects IPv6 in [params] before
-  /// launch. No platform dispatches to the legacy `ping6` binary. Kept as a
-  /// getter so a platform can still override the executable if needed.
+  /// The executable used to launch the ping process. Most supported core
+  /// platforms use the unified `ping` binary: desktop Linux, toybox Android,
+  /// and Windows force the family with an explicit `-4`/`-6` in [params], while
+  /// the macOS subprocess path runs `ping` for IPv4 and rejects IPv6 in
+  /// [params] before launch. The sole exception is the **legacy** Android
+  /// dialect, whose IPv6 run dispatches to the separate `ping6` binary
+  /// ([PingLinux] overrides this — §spec:android-legacy-dialect). Kept as a
+  /// getter so a platform can override the executable when needed.
   String get executable => 'ping';
 
   /// Starts a ping process on the host OS
