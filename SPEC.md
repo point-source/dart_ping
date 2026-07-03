@@ -3310,3 +3310,236 @@ covers the second failure mode (output that no longer maps to the right
 events) without a non-deterministic round-trip, mirroring how the live
 suite is kept out of CI (§req:android-ping-open-decisions,
 §req:android-ping-quality-attributes — testability).
+
+## Android selects a `ping` dialect for flags and executable §spec:android-legacy-dialect
+*Status: not started*
+
+Android has two mutually exclusive mainstream `ping` dialects, and the
+launched command — its family flag and its executable — is chosen to be
+one the shipped binary actually accepts, so the default `Ping('google.com')`
+run reaches the network on both instead of aborting at argument parsing
+with exit `2`. The #100 fix (§spec:android-toybox-flags) made the default
+run succeed on **toybox** images; on images shipping the legacy AOSP
+`external/ping` binary the same run still fails, because `dart_ping` emits
+`-4`/`-6` unconditionally and the legacy binary rejects it
+(`invalid option -- 4`) (§req:android-legacy-ping-problem-statement,
+§req:android-legacy-ping-success-criteria — the default IPv4 run succeeds
+on a legacy-binary image, no exit `2`).
+
+The two dialects diverge on three coupled axes, so one universal command
+cannot serve both:
+
+- **toybox** — a single multicall `ping` that accepts `-4`/`-6` and selects
+  IPv6 with `-6` on the same binary.
+- **legacy AOSP `external/ping`** — a split `ping` (IPv4-only) plus a
+  separate `ping6` (IPv6) binary; the `ping` binary rejects `-4`/`-6` and
+  cannot reach an IPv6 target at all (`unknown host ::1`).
+
+- On a toybox image, the launched command is unchanged from #100: the
+  `ping` binary carries the `-4`/`-6` family flag (which toybox accepts),
+  so IPv4 and IPv6 are each pinned exclusively on the one binary
+  (§req:android-legacy-ping-success-criteria — the toybox image still
+  works; §req:android-legacy-ping-constraints — must not regress the
+  toybox slice).
+- On a legacy image, an IPv4 run launches the `ping` binary with **no**
+  family flag. The legacy `ping` is IPv4-only, so omitting the flag still
+  pins the family to IPv4 exclusively, and the `-4` the binary would reject
+  is never sent (§req:android-legacy-ping-success-criteria — the default
+  IPv4 run succeeds on a legacy-binary image; §spec:ipv6-address-family-selector
+  — exclusive family selection is preserved).
+- On a legacy image, an IPv6 run launches the separate `ping6` binary with
+  no family flag, because the legacy `ping` cannot reach an IPv6 host. So an
+  IPv6 run reaches the target on legacy images the same as on toybox and
+  desktop Linux, without the caller knowing the OS split IPv4 and IPv6 into
+  two binaries (§req:android-legacy-ping-success-criteria — IPv6 succeeds on
+  both dialects via the legacy image's separate IPv6 executable;
+  §req:android-legacy-ping-user-stories — consistent behavior regardless of
+  which `ping` the OS ships).
+- The dialect is determined at runtime — the two dialects are mutually
+  exclusive and fixed for a given OS image — by whether the image's `ping`
+  accepts the `-4`/`-6` family flag (toybox accepts it, legacy rejects it),
+  the axis the command must respect. The classification is network-free and
+  deterministic, and is reused within a run rather than recomputed per probe
+  (§req:android-legacy-ping-quality-attributes — reliability / determinism;
+  §req:android-legacy-ping-open-decisions — how the library determines which
+  dialect an image ships, and how family selection becomes dialect-aware).
+- A genuinely unmapped non-zero Android exit (neither a success nor a
+  recognized outcome, on either dialect) still surfaces a catchable error
+  and closes the stream, preserving §spec:stream-lifecycle-robustness
+  (§req:android-legacy-ping-success-criteria — genuinely unmapped Android
+  exits still surface an error; §req:android-legacy-ping-constraints).
+- The public API and the `PingData` / `PingResponse` / `PingSummary` /
+  `PingError` shapes are unchanged; the change is confined to the
+  Linux/Android subprocess path's flag, executable, and parser selection
+  (`lib/src/ping/linux_ping.dart`, lifecycle in `lib/src/ping/base_ping.dart`)
+  (§req:android-legacy-ping-quality-attributes — compatibility;
+  §req:android-legacy-ping-constraints — scoped to the subprocess/parsing
+  path, no public-API change).
+
+**Why per-dialect selection rather than one universal command
+(§req:android-legacy-ping-open-decisions):** no single argv both is accepted
+by the legacy binary and preserves toybox's exclusive-family guarantee.
+Dropping `-4` unconditionally — the tempting one-liner — was rejected because
+on toybox a flagless `ping` for a dual-stack host can resolve and ping over
+IPv6, silently serving the other family and breaking
+§spec:ipv6-address-family-selector's exclusive-`ipv4` contract; toybox is only
+family-pinned when `-4`/`-6` is present. Omitting the flag is safe on legacy
+*only* because its `ping` is physically IPv4-only. Keeping toybox on the
+flagged command #100 verified, and giving legacy its own flagless / `ping6`
+command, lets each binary run the command it actually understands, and keeps
+family selection exclusive on both.
+
+**Why select the IPv6 executable on legacy rather than pass `-6`:** the
+legacy `ping` has no IPv6 support to flag on — IPv6 lives in a separate
+`ping6` binary — so the family choice becomes an executable choice
+(`ping` → `ping6`) rather than an argument. The `executable` getter, a plain
+`'ping'` today, therefore becomes family- and dialect-aware on Android;
+desktop Linux, macOS, and Windows are untouched and still launch `ping`
+(§req:android-legacy-ping-constraints — selecting the IPv6 executable is a
+design decision confined to this path).
+
+**Why determine the dialect at runtime rather than hard-code or ship two
+packages:** the dialect is a property of the running device's image, not of
+the build, and the two dialects are mutually exclusive on any given image, so
+the correct command cannot be known until runtime and must be arrived at per
+image. The exact detection mechanism — a cached capability probe, a
+binary-identity check, or reacting to the legacy binary's own family-flag
+rejection — is an implementation detail confirmed against real toybox and
+legacy binaries and pinned deterministically by §spec:android-legacy-ci-gate;
+the spec fixes only that the classification keys off family-flag acceptance,
+is network-free, and is stable within a run.
+
+## Legacy Android output parses to the same events as desktop Linux §spec:android-legacy-output-parity
+*Status: not started*
+
+A run on a legacy Android image maps the same logical outcomes to the same
+events as a desktop-Linux run: a reply, an unknown host, a no-route /
+unreachable target, and a TTL-exceeded hop each produce the same
+`PingResponse` / `PingError` shapes their desktop-Linux equivalents produce,
+and the run terminates with a `PingSummary` whose transmitted / received /
+packet-loss figures are accurate — even when packets are lost
+(§req:android-legacy-ping-success-criteria — legacy output is parsed with
+full parity; §req:android-legacy-ping-quality-attributes — reliability /
+determinism).
+
+The legacy AOSP binary is iputils-derived (2008 vintage), so it prints the
+iputils grammar the desktop-Linux parser (§spec:android-output-parity's
+`defaultParser` lineage) already encodes: reply lines with `time=<n> ms`, a
+statistics line `N packets transmitted, M received, X% packet loss, time <n>ms`
+followed by `rtt min/avg/max/mdev`, an `unknown host` name-resolution failure,
+`Network is unreachable` / `No route to host`, and `Time to live exceeded`.
+toybox's phrasings differ only in the statistics line (no trailing wall-clock
+`time`) and its `bad address` name-resolution failure.
+
+- A legacy reply line parses into a `PingResponse` carrying the resolved IP,
+  `seq`, `ttl`, and round-trip `time`, matching the fields a desktop-Linux
+  reply produces (§req:android-legacy-ping-success-criteria — per-probe
+  events carry resolved IP, `seq`, `ttl`, and round-trip `time`;
+  §req:android-legacy-ping-user-stories — same fields as desktop Linux).
+- An IPv6 reply line — which carries an IPv6 address rather than a dotted
+  quad — parses into a `PingResponse` on the Android path just as an IPv4
+  reply does, so an IPv6 run yields per-probe replies and not merely a
+  summary, on both dialects and on the legacy image's separate IPv6 binary
+  (§req:android-legacy-ping-success-criteria — IPv6 yields replies and a
+  summary). Desktop Linux's existing IPv4 reply parsing is byte-for-byte
+  unchanged (§req:android-legacy-ping-constraints — desktop Linux unchanged).
+- Legacy unknown-host, network-unreachable / host-unreachable / no-route, and
+  TTL-exceeded output map to the same `PingError` kinds (`unknownHost`,
+  `noRoute`, `timeToLiveExceeded`) their desktop-Linux equivalents map to
+  (§req:android-legacy-ping-success-criteria — full parity of logical
+  conditions).
+- The terminal summary's `transmitted`, `received`, and packet-loss come from
+  the legacy statistics line, so loss is reported accurately even though a
+  timed-out probe (with `-O` deliberately absent on Android) surfaces only as
+  a lower `received` + non-zero loss, never a mid-run `requestTimedOut`,
+  exactly as on toybox (§spec:android-output-parity;
+  §req:android-legacy-ping-quality-attributes — determinism). The summary's
+  `stats` (rtt min/avg/max) is computed from the per-probe replies by
+  `base_ping` (§spec:stats-cross-platform), so the legacy `rtt
+  min/avg/max/mdev` line is not required to populate it.
+
+**Why one Android parser covers both dialects rather than routing per
+dialect (§req:android-legacy-ping-open-decisions — how the parser is
+routed):** legacy output *is* iputils output, and toybox output differs from
+it in only two patterns, so the Android parser's patterns are already the
+union of both — the shared iputils reply / timeout / TTL / no-route patterns,
+plus an unknown-host set covering `unknown host` and `bad address`, plus a
+statistics pattern matching both the toybox (no `time`) and legacy (with
+`time`) lines. A superset parser needs no separate legacy routing step and
+cannot pick the wrong parser for an image; the alternative — keying a parser
+choice off the same dialect detection as the command — would add a second
+place for that detection to be wrong. Desktop Linux keeps its existing parser
+unchanged (§req:android-legacy-ping-constraints — desktop Linux unchanged).
+
+**Why the legacy patterns are validated against real output, not assumed:**
+as with the toybox slice, the legacy reply, statistics, unknown-host,
+unreachable, and TTL-exceeded phrasings — and the IPv6 reply line — are
+validated against output captured from a real legacy `external/ping` /
+`ping6`, pinned as fixtures by §spec:android-legacy-ci-gate, rather than
+assumed to match the iputils patterns exactly.
+
+## Both Android dialects are gated in CI §spec:android-legacy-ci-gate
+*Status: not started*
+
+A deterministic, network-free CI check proves the Android command is accepted
+by **both** a toybox `ping` and a legacy iputils `ping`, and that each
+dialect's output parses into the expected events, so the exit-`2` regression
+cannot silently return for either dialect in a later release
+(§req:android-legacy-ping-success-criteria — both dialects are gated
+deterministically in CI; §req:android-legacy-ping-priorities — high;
+§req:android-legacy-ping-user-stories — a maintainer wants a check that runs
+the argv against both dialects so a future change cannot break one while the
+other stays green).
+
+This extends §spec:android-ci-gate, which already gates the toybox dialect
+against a real toybox binary.
+
+- The check proves the command `dart_ping` produces for a legacy image — the
+  flagless IPv4 `ping`, the `ping6` IPv6 invocation, and their interface-bound
+  variants — is accepted by a real legacy iputils `ping` without a flag being
+  rejected at argument parsing, alongside the existing toybox assertion, so a
+  future flag or executable change that either dialect would reject fails the
+  check (§req:android-legacy-ping-success-criteria — the flags are accepted by
+  both a toybox and a legacy iputils `ping`; §req:android-legacy-ping-quality-attributes
+  — testability).
+- A control case proves that reintroducing `-4` / `-6` **would** be rejected
+  by the legacy binary — mirroring the existing `-O` / `-n` control against
+  toybox — so the detection that keeps the family flag off the legacy command
+  is verified against the thing that actually parses it, not merely asserted
+  in code (§req:android-legacy-ping-success-criteria — a control case proving
+  reintroducing `-4` / `-6` would be rejected on the legacy binary).
+- The check proves captured legacy output — reply (IPv4 and IPv6), statistics,
+  unknown-host, unreachable, and TTL-exceeded samples — parses through the
+  Android path into the expected `PingResponse` / `PingError` / `PingSummary`
+  with accurate counts, guarding §spec:android-legacy-output-parity
+  (§req:android-legacy-ping-success-criteria — each dialect's output is parsed
+  into the expected responses and summary).
+- The dialect classification itself is exercised deterministically: given a
+  toybox binary the toybox command is produced, and given a legacy binary the
+  flagless / `ping6` command is produced, so the runtime selection is covered
+  without an emulator (§req:android-legacy-ping-quality-attributes —
+  testability).
+- Neither half depends on a live external-network ICMP round-trip or an
+  emulator: the check runs deterministically on the CI host against loopback
+  and fixtures, consistent with the live-network suite staying out of CI
+  (§spec:ci-develop, §req:android-legacy-ping-constraints — the CI gate is
+  deterministic, not a live round-trip and not an emulator).
+- An on-device / emulator smoke run (IPv4 and IPv6) on a legacy-binary image
+  (API 35 `sdk_gphone64_arm64`) is the highest-value confirmation on real
+  hardware but is **not** a gating criterion, because it cannot run in standard
+  CI; a broader device / binary matrix (older toolbox, rooted BusyBox) remains
+  out of scope (§req:android-legacy-ping-priorities — nice-to-have;
+  §req:android-legacy-ping-constraints — target the two mainstream dialects
+  only).
+
+**Why prove acceptance against a real legacy binary rather than assert an
+allow-list:** the failure being guarded is the legacy binary rejecting a flag
+`dart_ping` sends, exactly as for toybox. An in-code assertion that the legacy
+command omits `-4` / `-6` would restate the fix, not verify it against the
+parser that rejected it; only running the produced command against a real
+legacy `ping` / `ping6` makes "green" mean "the legacy binary parsed our
+command." Pairing it with fixture-driven parser assertions covers the second
+failure mode (output that no longer maps to the right events) without a
+non-deterministic round-trip, mirroring the toybox gate and how the live suite
+is kept out of CI (§req:android-legacy-ping-open-decisions;
+§req:android-legacy-ping-quality-attributes — testability).
