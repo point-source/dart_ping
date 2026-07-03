@@ -72,19 +72,23 @@ class PingLinux extends BasePing implements Ping {
     final iputils = defaultParser;
 
     return PingParser(
-      // Superset reply pattern: identical to the iputils IPv4 form
-      // (§spec:android-output-parity), but the `ip` group also captures an
-      // IPv6 address so a legacy `ping6` reply — or a toybox `-6` reply —
-      // yields a per-probe [PingResponse] instead of only a summary
-      // (§spec:android-legacy-output-parity). The IPv4 alternative is tried
-      // first so a dotted quad still captures byte-for-byte as before; the IPv6
-      // alternative requires at least one `:` so it never swallows a hostname.
-      // The leading `.*?` is lazy (not the iputils `.*`) so the `ip` group
-      // anchors to the FULL address rather than backtracking to its last
-      // colon-separated group on an IPv6 line. desktop Linux keeps the
-      // IPv4-only iputils [defaultParser], unchanged.
+      // Superset reply pattern: like the iputils form, but the `ip` group is a
+      // single hex/dot/colon class that captures an IPv4 dotted quad OR an IPv6
+      // address, so a legacy `ping6` reply — or a toybox `-6` reply — yields a
+      // per-probe [PingResponse] instead of only a summary
+      // (§spec:android-legacy-output-parity). An optional `(?:[^()]*\()?` skips
+      // a leading reverse-DNS `name (` when `ping` prints one (Android resolves
+      // names because `-n` is absent), so the group still binds to the real
+      // address inside the parentheses.
+      //
+      // ReDoS-safe by construction: a SINGLE unambiguous character class (no
+      // overlapping `:`-containing stars) and no lazy `.*?` prefix, so a crafted
+      // line — e.g. a long attacker-controlled reverse-DNS name full of hex/
+      // colons that never reaches the `: icmp_seq=… ttl=… time=…` tail — matches
+      // in linear time rather than backtracking catastrophically. desktop Linux
+      // keeps the IPv4-only iputils [defaultParser], unchanged.
       responseRgx: RegExp(
-        r'bytes from .*?(?<ip>\b(?:\d{1,3}\.){3}\d{1,3}\b|[0-9a-fA-F:]*:[0-9a-fA-F:]*)\)?: icmp_seq=(?<seq>\d+) ttl=(?<ttl>\d+) time=(?<time>\d+(?:\.\d+)?)',
+        r'bytes from (?:[^()]*\()?(?<ip>[0-9a-fA-F.:]+)\)?: icmp_seq=(?<seq>\d+) ttl=(?<ttl>\d+) time=(?<time>\d+(?:\.\d+)?)',
       ),
       // Superset statistics pattern matching BOTH dialects: the trailing
       // wall-clock `time <n>ms` is present on the legacy iputils line

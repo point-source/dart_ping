@@ -157,6 +157,29 @@ rtt min/avg/max/mdev = 10.900/11.533/12.100/0.492 ms''';
     });
   });
 
+  test('reply parsing is linear-time on crafted input (ReDoS guard)', () {
+    // The Android reply `ip` group captures IPv6, whose hex/colon alphabet
+    // overlaps the reverse-DNS names `ping` prints (Android resolves names —
+    // `-n` is absent). A naive IPv6 sub-pattern (overlapping `:`-stars + a lazy
+    // prefix) backtracks cubically on a long attacker-influenced line that never
+    // reaches the `: icmp_seq=…` tail, blocking the isolate. This pins that a
+    // large crafted line is rejected effectively instantly.
+    final sw = Stopwatch()..start();
+    for (final payload in [
+      'bytes from ${':' * 20000}',
+      'bytes from ${'a' * 20000}',
+      'bytes from ${'aaaa:' * 4000}',
+    ]) {
+      expect(parser.parse(payload), isNull);
+    }
+    sw.stop();
+    expect(
+      sw.elapsedMilliseconds,
+      lessThan(1000),
+      reason: 'parsing crafted lines must stay near-linear, not backtrack',
+    );
+  });
+
   test('desktop-Linux (iputils) parser stays IPv4-only (regression guard)', () {
     // The superset IPv6 reply capture lives ONLY on the Android parser. The
     // desktop `defaultParser` must NOT gain IPv6 reply parsing — its `ip` group
