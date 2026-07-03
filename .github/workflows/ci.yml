@@ -121,8 +121,14 @@ jobs:
           # resolved to the exact expected commit before building it. A moved or
           # compromised tag fails the job here instead of silently compiling
           # attacker-controlled source (keeps the gate reproducible).
+          #
+          # NB: `s20101006` is an ANNOTATED tag. `git ls-remote` reports the tag
+          # OBJECT sha (642417d5…), but `git clone --branch <tag>` leaves HEAD
+          # detached at the COMMIT the tag peels to — which is what `rev-parse
+          # HEAD` returns and what we must compare against. Pinning the tag-object
+          # sha here would make this guard fail on every run.
           test "$(git -C /tmp/iputils-legacy rev-parse HEAD)" \
-            = "642417d5fe37a5da2dff2c88b9b3e7e18337211f" \
+            = "2384927c0ac1bb3ad21966350644d08faadb7a76" \
             || { echo "iputils tag s20101006 no longer resolves to the pinned commit"; exit 1; }
           make -C /tmp/iputils-legacy ping ping6
           echo "LEGACY_PING_BIN=/tmp/iputils-legacy/ping" >> "$GITHUB_ENV"

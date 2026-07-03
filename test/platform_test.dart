@@ -302,15 +302,23 @@ void main() {
       });
     }
 
-    test('classification is stable across probes within a run (same instance)', () {
-      // The command is a pure function of the resolved dialect, so repeated
-      // reads never re-derive it — a per-probe re-detection could disagree.
-      final legacy = PingLinux(
+    test('resolved dialect drives a self-consistent, stable command', () {
+      // The command is a pure function of the resolved dialect, so two probes to
+      // the same host on the same resolved dialect must produce the identical
+      // executable + params — a per-probe re-detection that disagreed would
+      // break this. Compare TWO separate instances (not a getter to itself) so
+      // the assertion actually has content.
+      final a = PingLinux(
         'host', 3, 1, 2, 64, .ipv6, isAndroid: true, isLegacy: true,
       );
-      expect(legacy.executable, legacy.executable);
-      expect(legacy.params, legacy.params);
-      expect(legacy.isLegacy, isTrue);
+      final b = PingLinux(
+        'host', 3, 1, 2, 64, .ipv6, isAndroid: true, isLegacy: true,
+      );
+      expect(a.executable, 'ping6');
+      expect(a.executable, b.executable);
+      expect(a.params, b.params);
+      // A legacy IPv6 command never carries a family flag on any probe.
+      expect(a.params, isNot(anyElement(startsWith('-6'))));
     });
   });
 

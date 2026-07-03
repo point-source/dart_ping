@@ -20,8 +20,13 @@ noRoute | connect: Network is unreachable
 noRoute | From 192.168.1.1: No route to host
 #
 # TTL/hop-limit expiry. Unlike toybox (which surfaces this as a kernel errno),
-# the legacy iputils binary prints a dedicated `From <hop> icmp_seq=<n> Time to
-# live exceeded` line for both families; androidParser's timeToLiveRgx captures
-# the hop `ip` (IPv4 dotted quad OR IPv6 address) and the probe `seq`.
+# the legacy iputils binary prints a dedicated hop line. The wording is
+# family-specific (verified against iputils `ping.c` / `ping6.c` pr_icmph, tag
+# s20101006): IPv4 `ping` prints `Time to live exceeded`, while `ping6` prints
+# the ICMPv6 form `Time exceeded: Hop limit`. The hop prefix is `From <hop>
+# icmp_seq=` (error-queue path) or `From <hop>: icmp_seq=` (inline recvmsg
+# path) — both forms are covered. androidParser's timeToLiveRgx captures the hop
+# `ip` (IPv4 dotted quad OR IPv6 address) and the probe `seq` in every form.
 timeToLiveExceeded | From 10.0.0.1 icmp_seq=1 Time to live exceeded
-timeToLiveExceeded | From 2001:db8::1 icmp_seq=2 Time to live exceeded
+timeToLiveExceeded | From 2001:db8::1 icmp_seq=2 Time exceeded: Hop limit
+timeToLiveExceeded | From 2001:db8::1: icmp_seq=3 Time exceeded: Hop limit

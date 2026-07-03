@@ -111,10 +111,25 @@ class PingLinux extends BasePing implements Ping {
         r'(?<tx>\d+) packets transmitted, (?<rx>\d+) received(?:.*?\btime (?<time>\d+)ms)?',
       ),
       timeoutRgx: iputils.timeoutRgx,
-      // The iputils TTL-exceeded pattern's `ip` group is `(?<ip>.*)`, which
-      // already tolerates an IPv6 intermediate-hop address, so both dialects
-      // reuse it verbatim.
-      timeToLiveRgx: iputils.timeToLiveRgx,
+      // Superset TTL-exceeded pattern. The iputils IPv4 `ping` prints
+      // `From <hop> icmp_seq=<n> Time to live exceeded`, but a legacy `ping6`
+      // (and toybox `-6`) prints the ICMPv6 wording `Time exceeded: Hop limit`
+      // for a hop-limit expiry (verified against iputils `ping6.c` pr_icmph,
+      // tag s20101006), so the trailing literal is an alternation of both.
+      // The hop can be delivered with EITHER a `From <hop> icmp_seq=` prefix
+      // (error-queue path) or a `From <hop>: icmp_seq=` prefix (inline recvmsg
+      // path), so an optional `:` separator is tolerated and kept out of the
+      // captured `ip` (lazy `ip` + explicit `:?`). desktop Linux keeps the
+      // IPv4-only [defaultParser] TTL pattern, unchanged.
+      //
+      // ReDoS-safe: the lazy `ip` class is a single hex/dot/colon alphabet with
+      // no adjacent unbounded quantifier over the same alphabet, and the tail is
+      // a fixed literal, so a long crafted `From …` hop line that never reaches
+      // the `icmp_seq=… Time …` tail is rejected in linear time (guarded by
+      // android_legacy_output_parity_test.dart's TTL ReDoS case).
+      timeToLiveRgx: RegExp(
+        r'From (?<ip>[0-9a-fA-F.:]+?)(?: \([^)]*\))?:? icmp_seq=(?<seq>\d+) (?:Time to live exceeded|Time exceeded: Hop limit)',
+      ),
       // Unknown-host set is the union of both dialects' name-resolution
       // failures: the iputils phrasings (legacy: `unknown host`) plus toybox's
       // `bad address`.

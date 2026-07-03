@@ -113,13 +113,30 @@ void main() {
     }
 
     test('IPv6 TTL-exceeded -> timeToLiveExceeded carrying hop ip + seq', () {
+      // ping6 prints the ICMPv6 wording `Time exceeded: Hop limit` (NOT the IPv4
+      // `Time to live exceeded`), verified against iputils `ping6.c` pr_icmph.
       final e = parser.parse(
-        'From 2001:db8::1 icmp_seq=1 Time to live exceeded',
+        'From 2001:db8::1 icmp_seq=1 Time exceeded: Hop limit',
       );
       expect(e, isA<PingError>());
       final err = e! as PingError;
       expect(err.error, ErrorType.timeToLiveExceeded);
       expect(err.seq, 1);
+      expect(err.ip, '2001:db8::1');
+    });
+
+    test('IPv6 TTL-exceeded with a colon-prefixed hop (inline recvmsg form)', () {
+      // The kernel can deliver the ICMPv6 error inline (`From <hop>: icmp_seq=`,
+      // ping6.c line ~1403) rather than via the error queue (`From <hop>
+      // icmp_seq=`, line ~1062); the parser tolerates the optional `:` without
+      // capturing it into `ip`.
+      final e = parser.parse(
+        'From 2001:db8::1: icmp_seq=3 Time exceeded: Hop limit',
+      );
+      expect(e, isA<PingError>());
+      final err = e! as PingError;
+      expect(err.error, ErrorType.timeToLiveExceeded);
+      expect(err.seq, 3);
       expect(err.ip, '2001:db8::1');
     });
   });
@@ -253,7 +270,7 @@ rtt min/avg/max/mdev = 10.900/11.533/12.100/0.492 ms''';
       expect(v4.seq, 1);
 
       final v6 =
-          parser.parse('From 2001:db8::1 icmp_seq=2 Time to live exceeded')!
+          parser.parse('From 2001:db8::1 icmp_seq=2 Time exceeded: Hop limit')!
               as PingError;
       expect(v6.ip, '2001:db8::1');
       expect(v6.seq, 2);
@@ -284,14 +301,16 @@ rtt min/avg/max/mdev = 10.900/11.533/12.100/0.492 ms''';
   });
 
   test('TTL-exceeded parsing is linear-time on crafted hop lines (ReDoS guard)', () {
-    // The TTL-exceeded `From <hop> … icmp_seq=… Time to live exceeded` pattern is
-    // reached by an attacker-influenced reverse-DNS hop name (Android resolves
-    // names — `-n` is absent). The earlier `From (?<ip>.*)(?:.*) icmp_seq=` form
-    // — two adjacent unbounded quantifiers over the same alphabet — backtracked
-    // quadratically on a long `From …` line that never reaches the tail (a
-    // spoofed/long-PTR hop returning ICMP unreachable/TTL), blocking the isolate.
-    // This pins that such lines are rejected effectively instantly; it also
-    // guards the shared desktop-Linux [PingLinux.defaultParser] (same regex).
+    // The TTL-exceeded `From <hop> … icmp_seq=… Time (to live exceeded|exceeded:
+    // Hop limit)` pattern is reached by an attacker-influenced reverse-DNS hop
+    // name (Android resolves names — `-n` is absent). The earlier
+    // `From (?<ip>.*)(?:.*) icmp_seq=` form — two adjacent unbounded quantifiers
+    // over the same alphabet — backtracked quadratically on a long `From …` line
+    // that never reaches the tail (a spoofed/long-PTR hop returning ICMP
+    // unreachable/TTL), blocking the isolate. This pins that such lines are
+    // rejected effectively instantly. (The Android superset TTL pattern now
+    // diverges from the desktop-Linux [PingLinux.defaultParser] one, which is
+    // exercised separately; both are ReDoS-safe by the same reasoning.)
     final sw = Stopwatch()..start();
     for (final payload in [
       'From ${'a' * 40000}: No route to host', // starts `From `, never reaches the tail
