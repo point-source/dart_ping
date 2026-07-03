@@ -84,7 +84,7 @@ class PingLinux extends BasePing implements Ping {
       // colon-separated group on an IPv6 line. desktop Linux keeps the
       // IPv4-only iputils [defaultParser], unchanged.
       responseRgx: RegExp(
-        r'bytes from (?:.*?)(?<ip>\b(?:\d{1,3}\.){3}\d{1,3}\b|[0-9a-fA-F:]*:[0-9a-fA-F:]*)\)?: icmp_seq=(?<seq>\d+) ttl=(?<ttl>\d+) time=(?<time>\d+(?:\.\d+)?)',
+        r'bytes from .*?(?<ip>\b(?:\d{1,3}\.){3}\d{1,3}\b|[0-9a-fA-F:]*:[0-9a-fA-F:]*)\)?: icmp_seq=(?<seq>\d+) ttl=(?<ttl>\d+) time=(?<time>\d+(?:\.\d+)?)',
       ),
       // Superset statistics pattern matching BOTH dialects: the trailing
       // wall-clock `time <n>ms` is present on the legacy iputils line
@@ -157,22 +157,25 @@ class PingLinux extends BasePing implements Ping {
 
     var legacy = false;
     try {
-      final result = Process.runSync(
-        'ping',
-        ['-4'],
-        environment: {'LC_ALL': 'C'},
-      );
+      final result = Process.runSync('ping', ['-4'], environment: _cLocale);
       final out = '${result.stdout}${result.stderr}'.toLowerCase();
       legacy =
           out.contains('invalid option') || out.contains('unrecognized option');
     } on Object {
-      legacy = false;
+      // Probe couldn't run at all — leave `legacy` false, i.e. fall back to the
+      // toybox command (the #100 default), the safer assumption on a modern
+      // image.
     }
     return _cachedLegacy = legacy;
   }
 
+  /// The forced C locale, shared by [locale] (applied to every launched `ping`)
+  /// and the dialect [_detectLegacyDialect] probe so both parse `ping`'s output
+  /// under a stable, English locale from a single source of truth.
+  static const Map<String, String> _cLocale = {'LC_ALL': 'C'};
+
   @override
-  Map<String, String> get locale => {'LC_ALL': 'C'};
+  Map<String, String> get locale => _cLocale;
 
   /// The executable to launch. On the **legacy** Android dialect an IPv6 run
   /// must launch the separate `ping6` binary, because the legacy `ping` is
@@ -262,13 +265,11 @@ class PingLinux extends BasePing implements Ping {
          ipVersion,
          // Resolve the platform ONCE here; the private constructor reuses the
          // result for both the `isAndroid` field and the default parser choice,
-         // so `Platform.isAndroid` is never read twice.
+         // so `Platform.isAndroid` is never read twice. The dialect is resolved
+         // against that single value inside `PingLinux._`, so it is never read
+         // again there either.
          isAndroid ?? Platform.isAndroid,
-         // Resolve the dialect ONCE, only on Android (desktop Linux is never
-         // legacy and must never probe — the `&&` short-circuits). When the
-         // caller injects `isLegacy` (the unit-test seam) the probe is skipped
-         // entirely, keeping the classification off the live network.
-         isLegacy ?? ((isAndroid ?? Platform.isAndroid) && _detectLegacyDialect()),
+         isLegacy,
          parser: parser,
          encoding: encoding,
          interface: interface,
@@ -283,12 +284,18 @@ class PingLinux extends BasePing implements Ping {
     int ttl,
     IpVersion ipVersion,
     this.isAndroid,
-    this.isLegacy, {
+    bool? isLegacy, {
     PingParser? parser,
     Encoding encoding = const Utf8Codec(),
     String? interface,
     bool nat64Synthesis = true,
-  }) : super(
+  }) : // Resolve the dialect ONCE, against the already-resolved [isAndroid], and
+       // only on Android (desktop Linux is never legacy and must never probe —
+       // the `&&` short-circuits). When the caller injects `isLegacy` (the
+       // unit-test seam) the probe is skipped entirely, keeping the
+       // classification off the live network.
+       isLegacy = isLegacy ?? (isAndroid && _detectLegacyDialect()),
+       super(
          host,
          count,
          interval,
