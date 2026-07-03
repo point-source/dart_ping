@@ -1,0 +1,8 @@
+PING google.com(2607:f8b0:4005:809::200e) 56 data bytes
+64 bytes from 2607:f8b0:4005:809::200e: icmp_seq=1 ttl=57 time=11.6 ms
+64 bytes from 2607:f8b0:4005:809::200e: icmp_seq=2 ttl=57 time=12.1 ms
+64 bytes from 2607:f8b0:4005:809::200e: icmp_seq=4 ttl=57 time=10.9 ms
+
+--- google.com ping statistics ---
+4 packets transmitted, 3 received, 25% packet loss, time 3005ms
+rtt min/avg/max/mdev = 10.900/11.533/12.100/0.492 ms

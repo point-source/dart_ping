@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:dart_ping/dart_ping.dart';
 import 'package:dart_ping/src/ping/linux_ping.dart';
@@ -13,11 +14,24 @@ import 'package:test/test.dart';
 /// TTL-exceeded phrasings.
 ///
 /// Pure text-in / event-out — no legacy binary and no live network — so it runs
-/// in the normal `dart test -x live` gate on every host. The sample lines follow
-/// the grammar SPEC pins; real captured `external/ping` / `ping6` fixtures are
-/// pinned by §spec:android-legacy-ci-gate (Batch 2).
+/// in the normal `dart test -x live` gate on every host. The focused cases below
+/// pin individual patterns; the §spec:android-legacy-ci-gate half feeds whole
+/// captured `external/ping` / `ping6` sessions from `test/fixtures/android/`
+/// (the `legacy_*` files, alongside the toybox fixtures) through the same parser
+/// and asserts accurate transmitted / received / loss counts.
 void main() {
   final parser = PingLinux.androidParser;
+
+  // Fixtures are read relative to the package root, which is the working
+  // directory `dart test` runs from — the same convention as
+  // android_output_parity_test.dart (toybox fixtures).
+  String fixture(String name) =>
+      File('test/fixtures/android/$name').readAsStringSync();
+
+  List<PingEvent> parseSession(String name) => [
+    for (final line in const LineSplitter().convert(fixture(name)))
+      ?parser.parse(line),
+  ];
 
   group('§spec:android-legacy-output-parity — reply lines', () {
     test('IPv4 reply carries ip / seq / ttl / round-trip time', () {
@@ -157,6 +171,95 @@ rtt min/avg/max/mdev = 10.900/11.533/12.100/0.492 ms''';
     });
   });
 
+  group('§spec:android-legacy-ci-gate — captured legacy sessions parse', () {
+    // Full source-verified `external/ping` (IPv4) and `ping6` (IPv6) sessions,
+    // fed line-by-line through the SAME parser dart_ping uses on a legacy
+    // Android image, asserting accurate transmitted / received / loss.
+    test('legacy IPv4 session: 3 responses + summary with 40% loss', () {
+      final events = parseSession('legacy_session_ipv4.txt');
+      final responses = events.whereType<PingResponse>().toList();
+      final summary = events.whereType<PingSummary>().single;
+
+      // One PingResponse per reply line; the count equals `received`. The two
+      // lost probes (seq 3, 4) surface only as a lower `received` + non-zero
+      // loss — no `-O` on Android, so no mid-run requestTimedOut.
+      expect(responses.length, 3);
+      expect(responses.map((r) => r.seq), [1, 2, 5]);
+      expect(responses.first.ip, '142.250.80.46');
+      expect(responses.first.ttl, 115);
+      expect(responses.first.time, const Duration(microseconds: 9300));
+
+      expect(summary.transmitted, 5);
+      expect(summary.received, 3);
+      expect(responses.length, summary.received);
+      // The legacy iputils statistics line carries the trailing wall-clock
+      // total (unlike toybox, where it is absent and `time` is null).
+      expect(summary.time, const Duration(milliseconds: 4003));
+    });
+
+    test('legacy IPv6 (ping6) session: 3 responses + summary with 25% loss', () {
+      final events = parseSession('legacy_session_ipv6.txt');
+      final responses = events.whereType<PingResponse>().toList();
+      final summary = events.whereType<PingSummary>().single;
+
+      expect(responses.length, 3);
+      expect(responses.map((r) => r.seq), [1, 2, 4]);
+      // The superset `ip` group captures the WHOLE IPv6 address, so an IPv6 run
+      // yields per-probe replies, not merely a summary.
+      expect(
+        responses.every((r) => r.ip == '2607:f8b0:4005:809::200e'),
+        isTrue,
+      );
+      expect(responses.first.ttl, 57);
+      expect(responses.first.time, const Duration(microseconds: 11600));
+
+      expect(summary.transmitted, 4);
+      expect(summary.received, 3);
+      expect(responses.length, summary.received);
+      expect(summary.time, const Duration(milliseconds: 3005));
+    });
+  });
+
+  group('§spec:android-legacy-ci-gate — captured legacy error lines', () {
+    // Each fixture line is `<expectedErrorType> | <exact legacy output line>`,
+    // covering unknown-host (v4 + v6), unreachable / no-route, and TTL-exceeded
+    // (v4 + v6) — the same loader shape as the toybox errors.txt.
+    final cases = const LineSplitter()
+        .convert(fixture('legacy_errors.txt'))
+        .map((l) => l.trim())
+        .where((l) => l.isNotEmpty && !l.startsWith('#'))
+        .map((l) {
+          final i = l.indexOf('|');
+          return (
+            name: l.substring(0, i).trim(),
+            line: l.substring(i + 1).trim(),
+          );
+        });
+
+    for (final c in cases) {
+      test('${c.name}: "${c.line}"', () {
+        final event = parser.parse(c.line);
+        expect(event, isA<PingError>());
+        expect((event! as PingError).error.name, c.name);
+      });
+    }
+
+    test('legacy TTL-exceeded lines carry the hop ip + probe seq', () {
+      // Beyond the bare kind, the v4 and v6 hop lines recover the hop `ip` and
+      // the original probe `seq` (traceroute-style diagnostics parity).
+      final v4 = parser.parse('From 10.0.0.1 icmp_seq=1 Time to live exceeded')!
+          as PingError;
+      expect(v4.ip, '10.0.0.1');
+      expect(v4.seq, 1);
+
+      final v6 =
+          parser.parse('From 2001:db8::1 icmp_seq=2 Time to live exceeded')!
+              as PingError;
+      expect(v6.ip, '2001:db8::1');
+      expect(v6.seq, 2);
+    });
+  });
+
   test('reply parsing is linear-time on crafted input (ReDoS guard)', () {
     // The Android reply `ip` group captures IPv6, whose hex/colon alphabet
     // overlaps the reverse-DNS names `ping` prints (Android resolves names —
@@ -177,6 +280,35 @@ rtt min/avg/max/mdev = 10.900/11.533/12.100/0.492 ms''';
       sw.elapsedMilliseconds,
       lessThan(1000),
       reason: 'parsing crafted lines must stay near-linear, not backtrack',
+    );
+  });
+
+  test('TTL-exceeded parsing is linear-time on crafted hop lines (ReDoS guard)', () {
+    // The TTL-exceeded `From <hop> … icmp_seq=… Time to live exceeded` pattern is
+    // reached by an attacker-influenced reverse-DNS hop name (Android resolves
+    // names — `-n` is absent). The earlier `From (?<ip>.*)(?:.*) icmp_seq=` form
+    // — two adjacent unbounded quantifiers over the same alphabet — backtracked
+    // quadratically on a long `From …` line that never reaches the tail (a
+    // spoofed/long-PTR hop returning ICMP unreachable/TTL), blocking the isolate.
+    // This pins that such lines are rejected effectively instantly; it also
+    // guards the shared desktop-Linux [PingLinux.defaultParser] (same regex).
+    final sw = Stopwatch()..start();
+    for (final payload in [
+      'From ${'a' * 40000}: No route to host', // starts `From `, never reaches the tail
+      'From ${'a' * 40000} icmp_seq=1 Destination Host Unreachable', // has icmp_seq, wrong tail
+      'From ${'aaaa:' * 8000} icmp_seq=1 Destination Host Unreachable',
+    ]) {
+      // These are NOT TTL-exceeded lines, so they must not yield that event —
+      // the first/last are noRoute, the middle is Destination-Host-Unreachable
+      // (noRoute); none should be timeToLiveExceeded.
+      final event = parser.parse(payload);
+      expect(event, isNot(isA<PingError>().having((e) => e.error, 'error', ErrorType.timeToLiveExceeded)));
+    }
+    sw.stop();
+    expect(
+      sw.elapsedMilliseconds,
+      lessThan(1000),
+      reason: 'TTL-exceeded parsing of crafted hop lines must stay near-linear',
     );
   });
 

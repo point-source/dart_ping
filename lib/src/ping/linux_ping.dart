@@ -20,8 +20,17 @@ class PingLinux extends BasePing implements Ping {
       r'(?<tx>\d+) packets transmitted, (?<rx>\d+) received,.*time (?<time>\d+)ms',
     ),
     timeoutRgx: RegExp(r'no answer yet for icmp_seq=(?<seq>\d+)'),
+    // ReDoS-safe: the `ip` group is a SINGLE hex/dot/colon class (an IPv4 dotted
+    // quad OR an IPv6 hop address) that stops at the first space, and the
+    // optional ` (name)` reverse-DNS suffix is bounded by its own parens — so
+    // there is no pair of adjacent unbounded quantifiers over the same alphabet
+    // to backtrack on. The previous `(?<ip>.*)(?:.*)` form was quadratic on a
+    // long `From <hop>…` line whose reverse-DNS hop name never reached the
+    // ` icmp_seq=… Time to live exceeded` tail — attacker-reachable because
+    // Android resolves hop names (`-n` is absent), the same class hardened for
+    // the reply regex above.
     timeToLiveRgx: RegExp(
-      r'From (?<ip>.*)(?:.*) icmp_seq=(?<seq>\d+) Time to live exceeded',
+      r'From (?<ip>[0-9a-fA-F.:]+)(?: \([^)]*\))? icmp_seq=(?<seq>\d+) Time to live exceeded',
     ),
     unknownHostStr: RegExp(_unknownHostPattern),
     noRouteStrs: [
