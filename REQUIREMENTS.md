@@ -2332,3 +2332,181 @@ mechanism and feasibility are decided:
 - **Whether to enforce publishability in CI.** Whether the repeatable
   publish dry run becomes a CI gate (and on which branches) or stays a
   documented pre-release step.
+
+---
+
+# Android default ping (#100)
+
+On Android, the default example — `Ping('google.com')` with no extra
+options — does not ping. It throws
+`Exception: Ping process exited with code: 2` before a single probe
+leaves the device. Android is a primary Flutter target for `dart_ping`,
+so the library's most basic call is broken out of the box on it. The
+driver is GitHub issue #100, filed by a consumer running the shipped
+example app.
+
+## Android default ping — problem statement §req:android-ping-problem-statement
+
+The target users are Flutter developers consuming `dart_ping`'s `Ping`
+stream on Android — most of them via the very first thing they try, the
+example app's `Ping('google.com')` — who expect a run to yield reply and
+summary events, exactly as it does on desktop Linux.
+
+On Android, the run fails immediately with a generic
+`Exception: Ping process exited with code: 2` and no responses. The
+underlying cause is environment-dependent: `dart_ping` runs its
+desktop-Linux subprocess path on Android and passes that path's full
+flag set — including `-O` (report outstanding replies) and `-n` — but
+Android ships a **toybox** `ping`, a different implementation that
+rejects one or more of those flags as unknown options. Stock desktop
+Linux (iputils `ping`) accepts them; Android's toybox `ping` does not,
+so on Android the process aborts with exit `2` at argument parsing,
+before any ICMP is sent. The reported command was:
+
+```text
+ping -4 -O -n -W 2 -i 1 -t 255 -c 5 google.com
+→ Ping process exited with code: 2
+```
+
+Current behavior fails these users because pinging from an Android app
+is the library's headline use case, and the failure is total and
+immediate — not a timeout or a lost packet a consumer could reason
+about, but a crash on the default call before any diagnostic result
+exists. The same `Ping('host')` that returns replies and a summary on
+desktop Linux returns nothing usable on Android, purely because of which
+`ping` binary the OS happens to ship.
+
+This is analogous to, but distinct from, the macOS exit-`2` case
+(`§req:mac-all-timeout-problem-statement`): there, exit `2` is a
+*runtime* "no reply" outcome that should map to a summary; here, exit
+`2` is an *up-front argument-parsing rejection* that should never occur
+because the flags dart_ping sends on Android must be ones Android's
+`ping` accepts. It also refines the stream-lifecycle robustness work
+(`§req:robustness-success-criteria`): that guarantee — an unmapped
+non-zero exit surfaces a catchable error and closes the stream — still
+holds for genuinely unknown Android exit codes; this requirement removes
+the *cause* of the exit `2` seen here rather than remapping it.
+
+## Android default ping — success criteria §req:android-ping-success-criteria
+
+Observable, end-to-end outcomes a tester can demonstrate against the
+`Ping` stream on Android:
+
+- **The default Android run succeeds with replies and a summary.** A run
+  of `Ping('google.com')` (no extra options) on a stock Android device
+  or emulator with connectivity emits per-probe `PingResponse` events
+  carrying the same fields as desktop Linux — resolved IP, `seq`, `ttl`,
+  and round-trip `time` — and terminates with a `PingSummary` reporting
+  transmitted / received counts, packet loss, and rtt min/avg/max. It
+  does not throw. *(must-have)*
+- **Full parity with desktop Linux outcomes.** The Android path maps the
+  same logical results to the same events as the Linux path: successful
+  replies, per-probe timeouts, unknown host, no route / unreachable, and
+  TTL-exceeded all produce the same `PingResponse` / `PingError` shapes a
+  desktop-Linux run produces for the equivalent condition. *(must-have)*
+- **No exit `2` from a rejected flag.** Every flag `dart_ping` passes to
+  `ping` on Android is accepted by Android's stock toybox `ping`; the run
+  is never aborted at argument parsing with exit `2` for an unknown
+  option. *(must-have — regression guard for the reported bug)*
+- **Desktop Linux is unchanged.** A non-Android Linux run delivers the
+  same params, per-probe responses, summary, and error list as before
+  this change. *(must-have — regression guard)*
+- **Genuinely unmapped Android exits still surface an error.** An Android
+  `ping` exit code that is neither a success nor a recognized outcome
+  still surfaces a catchable error and closes the stream, preserving
+  `§req:robustness-success-criteria`. *(must-have — regression guard)*
+- **The flag set is gated deterministically in CI.** An automated check
+  proves the flags `dart_ping` sends on Android are accepted by a stock
+  toybox `ping` (the run is not rejected with exit `2` for an unknown
+  option), and Android `ping` output is parsed into the expected
+  responses and summary — without depending on a live-network round-trip.
+  *(high)*
+
+## Android default ping — user stories §req:android-ping-user-stories
+
+- As a Flutter developer running the `dart_ping` example on Android, I
+  want the default `Ping('google.com')` to return replies and a summary
+  so that the library works out of the box on my primary platform
+  instead of crashing on the first call.
+- As a developer writing cross-platform ping code, I want an Android run
+  to produce the same responses, summary, and error mapping as a desktop
+  Linux run so that my code behaves consistently regardless of which
+  `ping` binary the OS ships.
+- As a maintainer, I want a deterministic CI check that Android's `ping`
+  accepts the flags we send so that this exit-`2` regression cannot
+  silently return in a later release.
+- As an existing `dart_ping` user, I want genuinely unrecognized Android
+  exit codes to keep surfacing a catchable error, and desktop Linux runs
+  to stay exactly as they are, so that this fix does not weaken behavior
+  I already rely on.
+
+## Android default ping — quality attributes §req:android-ping-quality-attributes
+
+- **Compatibility:** the default run works on stock Android (toybox
+  `ping`, Android 6+) without root. The public API is unchanged — the
+  `Ping` interface and the `PingData` / `PingResponse` / `PingSummary` /
+  `PingError` shapes stay the same, and Android's response / summary /
+  error events match the desktop-Linux shapes a cross-platform consumer
+  already handles.
+- **Reliability / determinism:** the same logical outcome (a reply, a
+  timeout, an unreachable host) yields the same event on Android as on
+  desktop Linux — the observable result does not depend on which `ping`
+  implementation the OS ships.
+- **Testability:** flag acceptance and Android output parsing are
+  verifiable deterministically — the CI gate proves the flags are
+  accepted and the output parses, without relying on a non-deterministic
+  live-network round-trip (consistent with how the live suite is handled
+  in `§req:ci-develop-success-criteria`).
+
+## Android default ping — constraints §req:android-ping-constraints
+
+- The change is scoped to the platform-selection and Linux/Android
+  subprocess path (`lib/src/ping/linux_ping.dart`, with lifecycle in
+  `lib/src/ping/base_ping.dart`); no change to the public API.
+- **Target: stock toybox `ping` on modern Android (6+).** Older
+  toolbox / mksh `ping` and rooted / BusyBox variants are explicitly out
+  of scope; the flags and parsing target the `ping` a standard modern
+  Android device or emulator ships.
+- Must not change desktop-Linux behavior: iputils `ping` on desktop
+  Linux keeps the same params, responses, summary, and errors it has
+  today (regression guard).
+- Must preserve `§req:robustness-success-criteria`: an unmapped non-zero
+  Android exit still surfaces a catchable error and closes the stream.
+- The CI gate must be **deterministic** — it asserts flag acceptance and
+  output parsing, not a live ICMP round-trip, consistent with the
+  live-network suite staying out of CI (`§req:ci-develop-constraints`).
+- This is a **non-breaking, patch-level** change to `dart_ping`.
+
+## Android default ping — priorities §req:android-ping-priorities
+
+- **Must-have:** the default `Ping('host')` on stock Android returns
+  per-probe replies and a terminal summary with full desktop-Linux
+  parity, never aborting with exit `2` for a rejected flag; desktop Linux
+  is unchanged; genuinely unmapped Android exits still surface a
+  catchable error.
+- **High priority:** a deterministic Android CI gate proving the flags
+  `dart_ping` sends are accepted by stock toybox `ping` and that Android
+  `ping` output parses into the expected responses and summary, without a
+  live-network dependency.
+- **Nice-to-have:** none beyond the above; a broader Android device /
+  binary matrix (older toolbox, rooted BusyBox) is explicitly out of
+  scope for this fix.
+
+## Android default ping — open decisions §req:android-ping-open-decisions
+
+Surfaced during discovery and deferred to `/symphonize:plan`, where
+mechanism and feasibility are decided:
+
+- **How Android gets an accepted flag set.** The required outcome is
+  fixed (default Android ping succeeds with Linux parity, no exit `2`);
+  whether that is achieved by making the shared Linux param set
+  toybox-safe for all Linux, by detecting Android and adjusting flags, or
+  by a dedicated Android `ping` path is a design choice.
+- **Whether toybox-unsupported flags (e.g. `-O`, `-n`) are dropped on
+  desktop Linux too or only on Android.** If a flag is dropped to satisfy
+  toybox, `/plan` decides whether desktop Linux keeps it — a
+  behavior-equivalence question about what those flags actually buy the
+  parsed output.
+- **Toybox output-format parity.** Whether the existing Linux response
+  and summary parsers match toybox `ping` output as-is, or need
+  adjustment, is confirmed against real toybox output during `/plan`.

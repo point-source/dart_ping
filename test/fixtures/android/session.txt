@@ -1,0 +1,8 @@
+Ping google.com (142.250.80.46): 56(84) bytes.
+64 bytes from 142.250.80.46: icmp_seq=1 ttl=115 time=10 ms
+64 bytes from 142.250.80.46: icmp_seq=2 ttl=115 time=12 ms
+64 bytes from 142.250.80.46: icmp_seq=5 ttl=115 time=15 ms
+
+--- 142.250.80.46 ping statistics ---
+5 packets transmitted, 3 received, 40% packet loss
+round-trip min/avg/max = 10/12/15 ms

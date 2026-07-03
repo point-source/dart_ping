@@ -71,10 +71,10 @@ class TestPing extends PingLinux {
     return _process!;
   }
 
-  TestPing({FakeProcess? process, Object? launchError})
+  TestPing({FakeProcess? process, Object? launchError, bool isAndroid = false})
     : _process = process,
       _launchError = launchError,
-      super('1.1.1.1', 5, 1000, 1000, 255, .ipv4);
+      super('1.1.1.1', 5, 1000, 1000, 255, .ipv4, isAndroid: isAndroid);
 }
 
 /// [PingMac] subclass that replaces the OS process launch with a configured
@@ -695,5 +695,79 @@ void main() {
         expect(result.doneCount, 1);
       },
     );
+  });
+
+  // §spec:android-toybox-flags + §spec:android-output-parity — the integration
+  // surface: a full toybox session flows through the SAME base_ping stream
+  // lifecycle as desktop Linux, with NO network and NO subprocess. These pin the
+  // end-to-end behavior the #100 fix delivers.
+  group('Android default-ping end-to-end (§spec:android-output-parity)', () {
+    test('lossy toybox run yields responses + a summary with accurate loss', () async {
+      // A real toybox transcript: 5 sent, 3 replies, 2 lost. toybox emits NO
+      // per-lost-probe line, so the terminal summary's loss comes solely from the
+      // statistics line — not reconstructed from events (which would report 0%).
+      final ping = TestPing(
+        isAndroid: true,
+        process: FakeProcess(
+          stdoutLines: const [
+            'PING google.com (142.250.80.46): 56 data bytes',
+            '64 bytes from 142.250.80.46: icmp_seq=1 ttl=115 time=10 ms',
+            '64 bytes from 142.250.80.46: icmp_seq=2 ttl=115 time=12 ms',
+            '64 bytes from 142.250.80.46: icmp_seq=5 ttl=115 time=11 ms',
+            '',
+            '--- google.com ping statistics ---',
+            '5 packets transmitted, 3 received, 40% packet loss',
+          ],
+          exit: 0,
+        ),
+      );
+
+      final result = await _drain(ping);
+
+      // Never aborts with an exit-2 exception — the #100 regression.
+      expect(result.errors, isEmpty, reason: 'no exit-2 / unmapped error');
+      expect(result.doneCount, 1, reason: 'stream must close exactly once');
+
+      // Per-probe responses carry the same fields as a desktop-Linux reply.
+      final responses = result.data.whereType<PingResponse>().toList();
+      expect(responses, hasLength(3));
+      expect(responses.first.ip, '142.250.80.46');
+      expect(responses.first.seq, 1);
+      expect(responses.first.ttl, 115);
+      expect(responses.first.time, const Duration(milliseconds: 10));
+
+      // toybox emits no mid-run timeout event for the two lost probes.
+      expect(result.data.whereType<PingError>(), isEmpty);
+
+      // Terminal summary: counts from toybox's statistics line, honest loss,
+      // null wall-clock time, every other field populated.
+      final summary = result.data.whereType<PingSummary>().single;
+      expect(summary.transmitted, 5);
+      expect(summary.received, 3);
+      expect(summary.packetLoss, closeTo(40.0, 0.001));
+      expect(summary.time, isNull);
+      expect(summary.stats?.sampleCount, 3);
+      expect(summary.errors, isEmpty);
+    });
+
+    test('genuinely unmapped non-zero Android exit surfaces an error and closes', () async {
+      // The fix removes the CAUSE of the reported exit 2 (a rejected flag). An
+      // exit code toybox produces for a genuinely unmapped condition must still
+      // surface a catchable error and close the stream
+      // (§spec:stream-lifecycle-robustness regression guard).
+      final ping = TestPing(
+        isAndroid: true,
+        process: FakeProcess(stdoutLines: const [], exit: 2),
+      );
+
+      final result = await _drain(ping);
+
+      expect(
+        result.errors,
+        isNotEmpty,
+        reason: 'an unmapped non-zero exit must surface a catchable error',
+      );
+      expect(result.doneCount, 1, reason: 'stream must close exactly once');
+    });
   });
 }

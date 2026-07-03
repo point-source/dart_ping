@@ -1,12 +1,20 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:dart_ping/dart_ping.dart';
 import 'package:dart_ping/src/ping/base_ping.dart';
 
 class PingLinux extends BasePing implements Ping {
+  /// Base unknown-host phrasings shared by both the iputils [defaultParser] and
+  /// the toybox [androidParser]. Android extends this with `bad address` (its
+  /// name-resolution failure), so keeping the base in one place makes that
+  /// "base + Android extension" relationship explicit and drift-free.
+  static const String _unknownHostPattern =
+      r'unknown host|service not known|failure in name';
+
   static PingParser get defaultParser => .new(
     responseRgx: RegExp(
-      r'bytes from (?:.*)(?<ip>\b(?:\d{1,3}\.){3}\d{1,3}\b)\)?: icmp_seq=(?<seq>\d+) ttl=(?<ttl>\d+) time=(?<time>(\d+).?(\d+))',
+      r'bytes from (?:.*)(?<ip>\b(?:\d{1,3}\.){3}\d{1,3}\b)\)?: icmp_seq=(?<seq>\d+) ttl=(?<ttl>\d+) time=(?<time>\d+(?:\.\d+)?)',
     ),
     summaryRgx: RegExp(
       r'(?<tx>\d+) packets transmitted, (?<rx>\d+) received,.*time (?<time>\d+)ms',
@@ -15,7 +23,7 @@ class PingLinux extends BasePing implements Ping {
     timeToLiveRgx: RegExp(
       r'From (?<ip>.*)(?:.*) icmp_seq=(?<seq>\d+) Time to live exceeded',
     ),
-    unknownHostStr: RegExp(r'unknown host|service not known|failure in name'),
+    unknownHostStr: RegExp(_unknownHostPattern),
     noRouteStrs: [
       RegExp(r'[Nn]etwork is unreachable'),
       RegExp(r'[Dd]estination [Hh]ost [Uu]nreachable'),
@@ -24,6 +32,54 @@ class PingLinux extends BasePing implements Ping {
     ],
   );
 
+  /// Parser for Android's stock toybox `ping` (§spec:android-output-parity).
+  ///
+  /// Android ships toybox rather than iputils `ping`. Its reply-line grammar,
+  /// timeout handling, and routing-error phrasings are byte-compatible with the
+  /// iputils patterns, so this parser reuses [defaultParser]'s [responseRgx],
+  /// [timeoutRgx], [timeToLiveRgx], and [noRouteStrs] verbatim. Only the two
+  /// patterns toybox actually phrases differently are overridden:
+  ///
+  ///  - **Statistics line.** toybox prints
+  ///    `N packets transmitted, M received, X% packet loss` with NO trailing
+  ///    `time <n>ms` (iputils appends the wall-clock total; toybox does not), so
+  ///    [summaryRgx] omits the `time` group. The terminal summary's `time` is
+  ///    therefore null on Android — every other field is populated, and the
+  ///    field is already nullable, so cross-platform consumers are unaffected.
+  ///    These transmitted/received counts are authoritative: toybox emits no
+  ///    per-lost-probe line, so a timed-out probe surfaces only as a lower
+  ///    `received` + non-zero loss in this line, never as a mid-run
+  ///    `requestTimedOut` event (§spec:android-output-parity).
+  ///  - **Name-resolution failure.** toybox reports it as `<host>: bad address`
+  ///    (via `xgetaddrinfo`), which the iputils [unknownHostStr] would miss, so
+  ///    `bad address` is added to the unknown-host alternatives.
+  /// Built once and shared across every Android [PingLinux]: [PingParser.parse]
+  /// is stateless (it only reads its patterns and returns a fresh event), so a
+  /// single instance is safe to reuse concurrently and avoids rebuilding the
+  /// regexes on each construction.
+  static final PingParser androidParser = _buildAndroidParser();
+
+  static PingParser _buildAndroidParser() {
+    final iputils = defaultParser;
+
+    return PingParser(
+      responseRgx: iputils.responseRgx,
+      summaryRgx: RegExp(
+        r'(?<tx>\d+) packets transmitted, (?<rx>\d+) received',
+      ),
+      timeoutRgx: iputils.timeoutRgx,
+      timeToLiveRgx: iputils.timeToLiveRgx,
+      unknownHostStr: RegExp('$_unknownHostPattern|bad address'),
+      noRouteStrs: iputils.noRouteStrs,
+    );
+  }
+
+  /// Whether this instance targets Android's toybox `ping` rather than desktop
+  /// iputils `ping`. Injected as an explicit seam (defaulting to
+  /// [Platform.isAndroid]) so both [params] and the default parser selection are
+  /// unit-testable off-device.
+  final bool isAndroid;
+
   @override
   Map<String, String> get locale => {'LC_ALL': 'C'};
 
@@ -31,18 +87,38 @@ class PingLinux extends BasePing implements Ping {
   List<String> get params {
     final args = [
       ipVersion.flag,
-      '-O',
-      '-n',
-      '-W $timeout',
-      '-i $interval',
-      '-t $ttl',
+      // `-O` (report outstanding/overdue replies) and `-n` (numeric output, no
+      // reverse DNS) are iputils-only. Android's toybox `ping` rejects them as
+      // unknown options and aborts at argument parsing with exit 2 — the #100
+      // bug — before any ICMP is sent. toybox needs neither: it emits no
+      // overdue-reply line and prints numeric addresses by default. Desktop
+      // Linux keeps them byte-for-byte to preserve its live per-probe timeout
+      // events (`timeoutRgx`) and reverse-DNS suppression
+      // (§spec:android-toybox-flags).
+      if (!isAndroid) '-O',
+      if (!isAndroid) '-n',
+      // Each valued flag and its value are pushed as SEPARATE argv tokens, never
+      // a glued `'-W $timeout'`. Process launch uses `Process.start` with no
+      // shell, so a glued token reaches `ping` as ONE argument whose value
+      // carries a leading space (e.g. `-W`'s value " 2"). iputils' `strtol`
+      // tolerates that leading space, but Android's toybox `ping` does NOT for
+      // its fractional `-i` argument — it rejects a glued `'-i 1'` with
+      // `Not a number ' 1'` and aborts at argument parsing, so the default
+      // Android run would STILL fail even after dropping `-O`/`-n`. Splitting
+      // matches how `-I` (below) is already passed and is byte-identical for
+      // iputils: the `command` string (params joined on spaces) is unchanged
+      // (§spec:android-toybox-flags, verified against real toybox by
+      // §spec:android-ci-gate).
+      '-W', '$timeout',
+      '-i', '$interval',
+      '-t', '$ttl',
     ];
-    if (count != null) args.add('-c $count');
+    if (count != null) args.addAll(['-c', '$count']);
     // Linux/Android `ping -I` binds either an interface name or a source
-    // address. The flag and value are pushed as SEPARATE argv tokens: process
-    // launch uses `Process.start` with no shell, so a glued `'-I $interface'`
-    // token would reach ping as one argument whose value carries a leading
-    // space (e.g. interface " eth0"), and the bind would fail.
+    // address. The flag and value are pushed as SEPARATE argv tokens for the
+    // same reason as the valued flags above: a glued `'-I $interface'` token
+    // would reach ping as one argument whose value carries a leading space
+    // (e.g. interface " eth0"), and the bind would fail.
     final interface = this.interface;
     if (interface != null && interface.isNotEmpty) {
       args.add('-I');
@@ -63,6 +139,36 @@ class PingLinux extends BasePing implements Ping {
     Encoding encoding = const Utf8Codec(),
     String? interface,
     bool nat64Synthesis = true,
+    bool? isAndroid,
+  }) : this._(
+         host,
+         count,
+         interval,
+         timeout,
+         ttl,
+         ipVersion,
+         // Resolve the platform ONCE here; the private constructor reuses the
+         // result for both the `isAndroid` field and the default parser choice,
+         // so `Platform.isAndroid` is never read twice.
+         isAndroid ?? Platform.isAndroid,
+         parser: parser,
+         encoding: encoding,
+         interface: interface,
+         nat64Synthesis: nat64Synthesis,
+       );
+
+  PingLinux._(
+    String host,
+    int? count,
+    int interval,
+    int timeout,
+    int ttl,
+    IpVersion ipVersion,
+    this.isAndroid, {
+    PingParser? parser,
+    Encoding encoding = const Utf8Codec(),
+    String? interface,
+    bool nat64Synthesis = true,
   }) : super(
          host,
          count,
@@ -70,7 +176,9 @@ class PingLinux extends BasePing implements Ping {
          timeout,
          ttl,
          ipVersion,
-         parser ?? defaultParser,
+         // Select the toybox parser on Android and the iputils parser on desktop
+         // Linux, unless the caller supplied a custom one.
+         parser ?? (isAndroid ? androidParser : defaultParser),
          encoding,
          false,
          interface,

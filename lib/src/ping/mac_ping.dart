@@ -6,7 +6,7 @@ import 'package:dart_ping/src/ping/base_ping.dart';
 class PingMac extends BasePing implements Ping {
   static PingParser get defaultParser => .new(
     responseRgx: RegExp(
-      r'bytes from (?<ip>.*): icmp_seq=(?<seq>\d+) ttl=(?<ttl>\d+) time=(?<time>(\d+).?(\d+))',
+      r'bytes from (?<ip>.*): icmp_seq=(?<seq>\d+) ttl=(?<ttl>\d+) time=(?<time>\d+(?:\.\d+)?)',
     ),
     summaryRgx: RegExp(
       r'(?<tx>\d+) packets transmitted, (?<rx>\d+) packets received',
