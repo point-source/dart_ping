@@ -36,12 +36,13 @@ jobs:
       # clean (the example is built by the macOS ios-swift job, not here).
       - run: dart pub get --no-example
       - run: dart analyze --fatal-infos
-      # `-x toybox` excludes the Android flag-acceptance check, which needs an
-      # installed stock toybox `ping` binary absent on these hosts; it runs in
-      # the dedicated `android-toybox` job instead (§spec:android-ci-gate). The
-      # fixture-driven Android output-parity assertions are untagged pure-Dart
-      # and DO run here.
-      - run: dart test -x live -x toybox
+      # `-x toybox -x legacy` excludes the Android flag-acceptance checks, which
+      # need an installed toybox `ping` / a built legacy iputils `ping`/`ping6`
+      # absent on these hosts; they run in the dedicated `android-toybox` /
+      # `android-legacy` jobs instead (§spec:android-ci-gate,
+      # §spec:android-legacy-ci-gate). The fixture-driven Android output-parity
+      # assertions for BOTH dialects are untagged pure-Dart and DO run here.
+      - run: dart test -x live -x toybox -x legacy
 
   # ---- Required, deterministic gate: Android flag acceptance ------------
   # §spec:android-ci-gate — proves a REAL stock toybox `ping` (Android's ping)
@@ -78,6 +79,71 @@ jobs:
             echo "installed toybox has no 'ping' applet"; exit 1;
           }
       - run: dart test -x live -t toybox
+
+  # ---- Required, deterministic gate: Android flag acceptance (legacy) ----
+  # §spec:android-legacy-ci-gate — the sibling of `android-toybox` for the OTHER
+  # mainstream Android dialect: the legacy AOSP `external/ping` / `ping6`
+  # (2008-vintage iputils, a SPLIT `ping` (IPv4-only) + separate `ping6`). It
+  # proves a REAL legacy binary accepts the flagless IPv4 / `ping6` IPv6 /
+  # interface-bound argv dart_ping produces for a legacy image, and — the control
+  # — that reintroducing the `-4`/`-6` family flag WOULD be rejected (mirroring
+  # the `-O`/`-n` toybox control), so Batch 1's dialect selection is verified
+  # against the parser that rejects it, not merely asserted in code. Like the
+  # toybox job it targets LOOPBACK — argument PARSER only, no external-network
+  # ICMP round trip — and runs on PRs to both `main` and `develop` by
+  # construction. The paired output-parity fixtures (`legacy_*` under
+  # test/fixtures/android/) run in the `core` job (untagged pure Dart).
+  #
+  # There is no apt package that both accepts iputils flags (`-W`/`-i`/`-t`/`-c`)
+  # AND rejects `-4`/`-6`: modern iputils accepts `-4`, and GNU inetutils uses a
+  # different flag grammar. So the job BUILDS the exact legacy lineage from
+  # source — iputils tag `s20101006`, whose option string
+  # (`…c:…i:…t:…W:…`, no `4`/`6`) matches the AOSP `external/ping` — and a guard
+  # step fails LOUD if the built binary is not genuinely legacy, so a wrong
+  # tag/build turns the job red instead of falsely green.
+  android-legacy:
+    name: android flags (legacy external/ping)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+      - run: dart pub get --no-example
+      - name: Build legacy iputils ping/ping6 from source (tag s20101006)
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          # libssl-dev provides openssl/md5.h, which this vintage's ping6 needs
+          # for its ICMP node-information query (-N) support.
+          sudo apt-get install -y build-essential libssl-dev
+          git clone --depth 1 --branch s20101006 \
+            https://github.com/iputils/iputils /tmp/iputils-legacy
+          make -C /tmp/iputils-legacy ping ping6
+          echo "LEGACY_PING_BIN=/tmp/iputils-legacy/ping" >> "$GITHUB_ENV"
+          echo "LEGACY_PING6_BIN=/tmp/iputils-legacy/ping6" >> "$GITHUB_ENV"
+      - name: Verify the built binaries are genuinely legacy
+        run: |
+          set -u
+          # A legacy binary REJECTS the family flag it predates. If it does not,
+          # it is not the legacy dialect and the flag-acceptance gate below would
+          # be a false green — so fail loud here instead.
+          v4="$("$LEGACY_PING_BIN" -4 2>&1 || true)"
+          case "$v4" in
+            *"invalid option"*) : ;;
+            *) echo "built ping does not reject -4 — not the legacy dialect: $v4"; exit 1 ;;
+          esac
+          v6="$("$LEGACY_PING6_BIN" -6 2>&1 || true)"
+          case "$v6" in
+            *"invalid option"*) : ;;
+            *) echo "built ping6 does not reject -6 — not the legacy dialect: $v6"; exit 1 ;;
+          esac
+          # ...and it must ACCEPT the flagless Android argv at argument parsing (a
+          # socket-permission error at the network stage is expected and fine).
+          ok="$("$LEGACY_PING_BIN" -W 2 -i 1 -t 64 -c 1 127.0.0.1 2>&1 || true)"
+          case "$ok" in
+            *"invalid option"*|*"option requires an argument"*)
+              echo "built ping rejected the flagless Android argv: $ok"; exit 1 ;;
+          esac
+      - run: dart test -x live -t legacy
 
   # ---- Required on the RELEASE PATH only --------------------------------
   # Publishability gate (§spec:publish-dry-run-check). `dart pub publish
@@ -164,7 +230,7 @@ jobs:
       - name: Core coverage
         run: |
           dart pub get --no-example
-          dart test -x live -x toybox --coverage=coverage
+          dart test -x live -x toybox -x legacy --coverage=coverage
           dart run coverage:format_coverage \
             --lcov --in=coverage --out=coverage/lcov.info --report-on=lib
       - name: Summarize
