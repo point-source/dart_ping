@@ -71,10 +71,29 @@ class TestPing extends PingLinux {
     return _process!;
   }
 
-  TestPing({FakeProcess? process, Object? launchError, bool isAndroid = false})
-    : _process = process,
-      _launchError = launchError,
-      super('1.1.1.1', 5, 1000, 1000, 255, .ipv4, isAndroid: isAndroid);
+  TestPing({
+    FakeProcess? process,
+    Object? launchError,
+    bool isAndroid = false,
+    // Injected explicitly so an Android test never triggers the runtime dialect
+    // probe (a real `ping -4` subprocess whose result depends on the CI host).
+    bool isLegacy = false,
+    IpVersion ipVersion = .ipv4,
+    // Defaults to an IPv4 literal; an IPv6 run must pass a compatible host so
+    // the literal/family guard does not reject it.
+    String host = '1.1.1.1',
+  }) : _process = process,
+       _launchError = launchError,
+       super(
+         host,
+         5,
+         1000,
+         1000,
+         255,
+         ipVersion,
+         isAndroid: isAndroid,
+         isLegacy: isLegacy,
+       );
 }
 
 /// [PingMac] subclass that replaces the OS process launch with a configured
@@ -757,6 +776,82 @@ void main() {
       // (§spec:stream-lifecycle-robustness regression guard).
       final ping = TestPing(
         isAndroid: true,
+        process: FakeProcess(stdoutLines: const [], exit: 2),
+      );
+
+      final result = await _drain(ping);
+
+      expect(
+        result.errors,
+        isNotEmpty,
+        reason: 'an unmapped non-zero exit must surface a catchable error',
+      );
+      expect(result.doneCount, 1, reason: 'stream must close exactly once');
+    });
+  });
+
+  // §spec:android-legacy-dialect + §spec:android-legacy-output-parity — a legacy
+  // AOSP `external/ping` / `ping6` session flows through the SAME base_ping
+  // stream lifecycle, mapping the same logical outcomes to the same events as
+  // desktop Linux, with NO network and NO subprocess.
+  group('Android legacy-dialect end-to-end (§spec:android-legacy-output-parity)', () {
+    test('legacy IPv6 run yields per-probe responses + a summary with loss', () async {
+      // The legacy `ping6` binary prints IPv6 replies and a statistics line that
+      // DOES carry a wall-clock total. 4 sent, 3 replies, one lost -> the loss
+      // comes solely from the statistics line, exactly as on toybox.
+      final ping = TestPing(
+        host: 'example.com',
+        ipVersion: .ipv6,
+        isAndroid: true,
+        isLegacy: true,
+        process: FakeProcess(
+          stdoutLines: const [
+            'PING example.com(2607:f8b0:4005:809::200e) 56 data bytes',
+            '64 bytes from 2607:f8b0:4005:809::200e: icmp_seq=1 ttl=57 time=11.6 ms',
+            '64 bytes from 2607:f8b0:4005:809::200e: icmp_seq=2 ttl=57 time=12.1 ms',
+            '64 bytes from 2607:f8b0:4005:809::200e: icmp_seq=4 ttl=57 time=10.9 ms',
+            '',
+            '--- example.com ping statistics ---',
+            '4 packets transmitted, 3 received, 25% packet loss, time 3005ms',
+            'rtt min/avg/max/mdev = 10.900/11.533/12.100/0.492 ms',
+          ],
+          exit: 0,
+        ),
+      );
+
+      final result = await _drain(ping);
+
+      // The legacy IPv6 executable is `ping6` with no family flag.
+      expect(ping.executable, 'ping6');
+      expect(ping.params, isNot(anyElement(startsWith('-6'))));
+
+      expect(result.errors, isEmpty, reason: 'no exit-2 / unmapped error');
+      expect(result.doneCount, 1, reason: 'stream must close exactly once');
+
+      final responses = result.data.whereType<PingResponse>().toList();
+      expect(responses, hasLength(3));
+      expect(responses.first.ip, '2607:f8b0:4005:809::200e');
+      expect(responses.first.seq, 1);
+      expect(responses.first.ttl, 57);
+      expect(responses.first.time, const Duration(microseconds: 11600));
+
+      // No mid-run timeout event for the lost probe (no `-O` on Android).
+      expect(result.data.whereType<PingError>(), isEmpty);
+
+      final summary = result.data.whereType<PingSummary>().single;
+      expect(summary.transmitted, 4);
+      expect(summary.received, 3);
+      expect(summary.packetLoss, closeTo(25.0, 0.001));
+      // The legacy stats line carries the wall-clock total (unlike toybox).
+      expect(summary.time, const Duration(milliseconds: 3005));
+      expect(summary.stats?.sampleCount, 3);
+      expect(summary.errors, isEmpty);
+    });
+
+    test('genuinely unmapped non-zero legacy exit surfaces an error and closes', () async {
+      final ping = TestPing(
+        isAndroid: true,
+        isLegacy: true,
         process: FakeProcess(stdoutLines: const [], exit: 2),
       );
 

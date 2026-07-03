@@ -71,9 +71,14 @@ void main() {
 
   // The argument lists are sourced from the SAME assembly code Batch 1
   // introduced (PingLinux.params) — never a hand-copied parallel list.
+  // `isLegacy: false` is pinned so these assert the TOYBOX argument list
+  // without triggering the runtime dialect probe (a real `ping -4` subprocess
+  // whose result would depend on the CI runner's own `ping`).
   test('stock toybox ping accepts the default IPv4 Android argument list', () {
     expectAccepted(
-      PingLinux(loopback, 1, 1, 2, 64, .ipv4, isAndroid: true).params,
+      PingLinux(
+        loopback, 1, 1, 2, 64, .ipv4, isAndroid: true, isLegacy: false,
+      ).params,
     );
   });
 
@@ -81,7 +86,9 @@ void main() {
     // Built with a v6 host so the constructor's address-family guard is
     // satisfied, then run against the v6 loopback ::1.
     expectAccepted(
-      PingLinux('::1', 1, 1, 2, 64, .ipv6, isAndroid: true).params,
+      PingLinux(
+        '::1', 1, 1, 2, 64, .ipv6, isAndroid: true, isLegacy: false,
+      ).params,
       host: '::1',
     );
   });
@@ -98,6 +105,7 @@ void main() {
         64,
         .ipv4,
         isAndroid: true,
+        isLegacy: false,
         interface: 'lo',
       ).params,
     );

@@ -32,27 +32,36 @@ class PingLinux extends BasePing implements Ping {
     ],
   );
 
-  /// Parser for Android's stock toybox `ping` (§spec:android-output-parity).
+  /// One superset parser for BOTH Android dialects — stock toybox and legacy
+  /// AOSP `external/ping` (§spec:android-output-parity,
+  /// §spec:android-legacy-output-parity).
   ///
-  /// Android ships toybox rather than iputils `ping`. Its reply-line grammar,
-  /// timeout handling, and routing-error phrasings are byte-compatible with the
-  /// iputils patterns, so this parser reuses [defaultParser]'s [responseRgx],
-  /// [timeoutRgx], [timeToLiveRgx], and [noRouteStrs] verbatim. Only the two
-  /// patterns toybox actually phrases differently are overridden:
+  /// Legacy output *is* iputils output, and toybox differs from it in only two
+  /// patterns, so rather than route per dialect (a second place the dialect
+  /// detection could be wrong) this parser's patterns are the UNION of both.
+  /// The timeout and routing-error patterns are byte-compatible across both and
+  /// the iputils [defaultParser], so those reuse [defaultParser]'s
+  /// [timeoutRgx], [timeToLiveRgx], and [noRouteStrs] verbatim. The patterns
+  /// that diverge are widened to cover both dialects:
   ///
-  ///  - **Statistics line.** toybox prints
+  ///  - **Reply line.** The `ip` group captures an IPv4 dotted quad (the shared
+  ///    iputils form) OR an IPv6 address, so a legacy `ping6` reply — or a
+  ///    toybox `-6` reply — yields a per-probe [PingResponse], not just a
+  ///    summary (§spec:android-legacy-output-parity). desktop Linux keeps the
+  ///    IPv4-only [defaultParser].
+  ///  - **Statistics line.** The legacy iputils line carries a trailing
+  ///    wall-clock `time <n>ms`; toybox prints
   ///    `N packets transmitted, M received, X% packet loss` with NO trailing
-  ///    `time <n>ms` (iputils appends the wall-clock total; toybox does not), so
-  ///    [summaryRgx] omits the `time` group. The terminal summary's `time` is
-  ///    therefore null on Android — every other field is populated, and the
-  ///    field is already nullable, so cross-platform consumers are unaffected.
-  ///    These transmitted/received counts are authoritative: toybox emits no
-  ///    per-lost-probe line, so a timed-out probe surfaces only as a lower
-  ///    `received` + non-zero loss in this line, never as a mid-run
-  ///    `requestTimedOut` event (§spec:android-output-parity).
-  ///  - **Name-resolution failure.** toybox reports it as `<host>: bad address`
-  ///    (via `xgetaddrinfo`), which the iputils [unknownHostStr] would miss, so
-  ///    `bad address` is added to the unknown-host alternatives.
+  ///    total. [summaryRgx] makes that `time` group optional, so the summary's
+  ///    `time` is populated on legacy and null on toybox (the field is already
+  ///    nullable, so cross-platform consumers are unaffected). These
+  ///    transmitted/received counts are authoritative on both dialects: neither
+  ///    emits a per-lost-probe line, so a timed-out probe surfaces only as a
+  ///    lower `received` + non-zero loss, never as a mid-run `requestTimedOut`
+  ///    event.
+  ///  - **Name-resolution failure.** The unknown-host set is the union of the
+  ///    iputils phrasings (legacy: `unknown host`) and toybox's
+  ///    `<host>: bad address` (via `xgetaddrinfo`).
   /// Built once and shared across every Android [PingLinux]: [PingParser.parse]
   /// is stateless (it only reads its patterns and returns a fresh event), so a
   /// single instance is safe to reuse concurrently and avoids rebuilding the
@@ -63,12 +72,43 @@ class PingLinux extends BasePing implements Ping {
     final iputils = defaultParser;
 
     return PingParser(
-      responseRgx: iputils.responseRgx,
+      // Superset reply pattern: like the iputils form, but the `ip` group is a
+      // single hex/dot/colon class that captures an IPv4 dotted quad OR an IPv6
+      // address, so a legacy `ping6` reply — or a toybox `-6` reply — yields a
+      // per-probe [PingResponse] instead of only a summary
+      // (§spec:android-legacy-output-parity). An optional `(?:[^()]*\()?` skips
+      // a leading reverse-DNS `name (` when `ping` prints one (Android resolves
+      // names because `-n` is absent), so the group still binds to the real
+      // address inside the parentheses.
+      //
+      // ReDoS-safe by construction: a SINGLE unambiguous character class (no
+      // overlapping `:`-containing stars) and no lazy `.*?` prefix, so a crafted
+      // line — e.g. a long attacker-controlled reverse-DNS name full of hex/
+      // colons that never reaches the `: icmp_seq=… ttl=… time=…` tail — matches
+      // in linear time rather than backtracking catastrophically. desktop Linux
+      // keeps the IPv4-only iputils [defaultParser], unchanged.
+      responseRgx: RegExp(
+        r'bytes from (?:[^()]*\()?(?<ip>[0-9a-fA-F.:]+)\)?: icmp_seq=(?<seq>\d+) ttl=(?<ttl>\d+) time=(?<time>\d+(?:\.\d+)?)',
+      ),
+      // Superset statistics pattern matching BOTH dialects: the trailing
+      // wall-clock `time <n>ms` is present on the legacy iputils line
+      // (`… X% packet loss, time 3026ms`) and ABSENT on toybox, so the `time`
+      // group is optional. On toybox it is null (already-nullable field), on
+      // legacy it is populated (§spec:android-legacy-output-parity). These
+      // transmitted/received counts are authoritative on both dialects: neither
+      // emits a per-lost-probe line (`-O` is deliberately absent on Android), so
+      // a timed-out probe surfaces only as a lower `received` + non-zero loss.
       summaryRgx: RegExp(
-        r'(?<tx>\d+) packets transmitted, (?<rx>\d+) received',
+        r'(?<tx>\d+) packets transmitted, (?<rx>\d+) received(?:.*?\btime (?<time>\d+)ms)?',
       ),
       timeoutRgx: iputils.timeoutRgx,
+      // The iputils TTL-exceeded pattern's `ip` group is `(?<ip>.*)`, which
+      // already tolerates an IPv6 intermediate-hop address, so both dialects
+      // reuse it verbatim.
       timeToLiveRgx: iputils.timeToLiveRgx,
+      // Unknown-host set is the union of both dialects' name-resolution
+      // failures: the iputils phrasings (legacy: `unknown host`) plus toybox's
+      // `bad address`.
       unknownHostStr: RegExp('$_unknownHostPattern|bad address'),
       noRouteStrs: iputils.noRouteStrs,
     );
@@ -80,13 +120,92 @@ class PingLinux extends BasePing implements Ping {
   /// unit-testable off-device.
   final bool isAndroid;
 
+  /// Whether this Android image ships the **legacy AOSP `external/ping`** dialect
+  /// rather than stock **toybox** (§spec:android-legacy-dialect). The two are
+  /// mutually exclusive and diverge on three coupled axes: toybox is a single
+  /// multicall `ping` that accepts `-4`/`-6`; legacy is a SPLIT `ping`
+  /// (IPv4-only, which *rejects* `-4`/`-6` with `invalid option -- 4`) plus a
+  /// separate `ping6` binary. So the launched command's family flag and its
+  /// [executable] must be chosen per dialect — see [params] / [executable].
+  ///
+  /// Injected as an explicit seam (like [isAndroid]) so command selection is
+  /// unit-testable off-device. When not injected it is resolved once, at
+  /// construction, by [_detectLegacyDialect] — but only on Android; desktop
+  /// Linux is never legacy and never probes.
+  final bool isLegacy;
+
+  /// Memoized result of the network-free dialect probe, so the classification is
+  /// computed at most once per process and reused within a run rather than
+  /// recomputed per probe (§spec:android-legacy-dialect — network-free,
+  /// deterministic, stable within a run).
+  static bool? _cachedLegacy;
+
+  /// Classifies the running image's `ping` as legacy vs toybox by whether it
+  /// **accepts the `-4`/`-6` family flag** — the axis the launched command must
+  /// respect. Network-free and deterministic: it runs `ping -4` with NO target,
+  /// so both dialects exit at argument validation before any ICMP is sent. A
+  /// legacy `external/ping` rejects the family flag itself
+  /// (`ping: invalid option -- '4'`); toybox accepts `-4` and instead complains
+  /// about the missing operand, so the "invalid/unrecognized option" signature
+  /// is what distinguishes them.
+  ///
+  /// The exact probe argv and its acceptance against real toybox / legacy
+  /// binaries are pinned deterministically by §spec:android-legacy-ci-gate;
+  /// here the contract is only that the classification keys off family-flag
+  /// acceptance, is network-free, and is stable within a run. If the probe
+  /// cannot run at all, it falls back to the toybox command (the #100 default),
+  /// the safer assumption on a modern image.
+  static bool _detectLegacyDialect() {
+    final cached = _cachedLegacy;
+    if (cached != null) return cached;
+
+    var legacy = false;
+    try {
+      final result = Process.runSync('ping', ['-4'], environment: _cLocale);
+      final out = '${result.stdout}${result.stderr}'.toLowerCase();
+      legacy =
+          out.contains('invalid option') || out.contains('unrecognized option');
+    } on Object {
+      // Probe couldn't run at all — leave `legacy` false, i.e. fall back to the
+      // toybox command (the #100 default), the safer assumption on a modern
+      // image.
+    }
+    return _cachedLegacy = legacy;
+  }
+
+  /// The forced C locale, shared by [locale] (applied to every launched `ping`)
+  /// and the dialect [_detectLegacyDialect] probe so both parse `ping`'s output
+  /// under a stable, English locale from a single source of truth.
+  static const Map<String, String> _cLocale = {'LC_ALL': 'C'};
+
   @override
-  Map<String, String> get locale => {'LC_ALL': 'C'};
+  Map<String, String> get locale => _cLocale;
+
+  /// The executable to launch. On the **legacy** Android dialect an IPv6 run
+  /// must launch the separate `ping6` binary, because the legacy `ping` is
+  /// IPv4-only and cannot reach an IPv6 target (§spec:android-legacy-dialect).
+  /// Every other case — toybox (single multicall `ping` family-pinned by
+  /// `-4`/`-6`), legacy IPv4, and desktop Linux/macOS/Windows — launches the
+  /// unified `ping`, so this override is byte-for-byte a no-op off the
+  /// legacy-IPv6 path.
+  @override
+  String get executable =>
+      isLegacy && ipVersion == .ipv6 ? 'ping6' : 'ping';
 
   @override
   List<String> get params {
     final args = [
-      ipVersion.flag,
+      // Family flag selection is dialect-aware (§spec:android-legacy-dialect):
+      //  - toybox / desktop Linux: keep the explicit `-4`/`-6` (#100), which
+      //    pins the family EXCLUSIVELY on the single multicall `ping`. Dropping
+      //    it would let a flagless toybox `ping` on a dual-stack host silently
+      //    resolve over the other family, breaking
+      //    §spec:ipv6-address-family-selector's exclusive-family contract.
+      //  - legacy: omit it. The legacy `ping` is physically IPv4-only (family
+      //    still exclusively pinned to IPv4 without the flag) and REJECTS the
+      //    `-4` it would otherwise receive (`invalid option -- 4`); a legacy
+      //    IPv6 run goes to the `ping6` [executable] instead, also flagless.
+      if (!isLegacy) ipVersion.flag,
       // `-O` (report outstanding/overdue replies) and `-n` (numeric output, no
       // reverse DNS) are iputils-only. Android's toybox `ping` rejects them as
       // unknown options and aborts at argument parsing with exit 2 — the #100
@@ -140,6 +259,7 @@ class PingLinux extends BasePing implements Ping {
     String? interface,
     bool nat64Synthesis = true,
     bool? isAndroid,
+    bool? isLegacy,
   }) : this._(
          host,
          count,
@@ -149,8 +269,11 @@ class PingLinux extends BasePing implements Ping {
          ipVersion,
          // Resolve the platform ONCE here; the private constructor reuses the
          // result for both the `isAndroid` field and the default parser choice,
-         // so `Platform.isAndroid` is never read twice.
+         // so `Platform.isAndroid` is never read twice. The dialect is resolved
+         // against that single value inside `PingLinux._`, so it is never read
+         // again there either.
          isAndroid ?? Platform.isAndroid,
+         isLegacy,
          parser: parser,
          encoding: encoding,
          interface: interface,
@@ -164,20 +287,29 @@ class PingLinux extends BasePing implements Ping {
     int timeout,
     int ttl,
     IpVersion ipVersion,
-    this.isAndroid, {
+    this.isAndroid,
+    bool? isLegacy, {
     PingParser? parser,
     Encoding encoding = const Utf8Codec(),
     String? interface,
     bool nat64Synthesis = true,
-  }) : super(
+  }) : // Resolve the dialect ONCE, against the already-resolved [isAndroid], and
+       // only on Android (desktop Linux is never legacy and must never probe —
+       // the `&&` short-circuits). When the caller injects `isLegacy` (the
+       // unit-test seam) the probe is skipped entirely, keeping the
+       // classification off the live network.
+       isLegacy = isLegacy ?? (isAndroid && _detectLegacyDialect()),
+       super(
          host,
          count,
          interval,
          timeout,
          ttl,
          ipVersion,
-         // Select the toybox parser on Android and the iputils parser on desktop
-         // Linux, unless the caller supplied a custom one.
+         // Select the superset Android parser on Android (it covers both the
+         // toybox and legacy dialects — §spec:android-legacy-output-parity) and
+         // the iputils parser on desktop Linux, unless the caller supplied a
+         // custom one.
          parser ?? (isAndroid ? androidParser : defaultParser),
          encoding,
          false,
