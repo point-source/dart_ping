@@ -186,15 +186,31 @@ class PingLinux extends BasePing implements Ping {
     var legacy = false;
     try {
       final result = Process.runSync('ping', ['-4'], environment: _cLocale);
-      final out = '${result.stdout}${result.stderr}'.toLowerCase();
-      legacy =
-          out.contains('invalid option') || out.contains('unrecognized option');
+      legacy = classifyLegacyFromProbeOutput('${result.stdout}${result.stderr}');
     } on Object {
       // Probe couldn't run at all — leave `legacy` false, i.e. fall back to the
       // toybox command (the #100 default), the safer assumption on a modern
       // image.
     }
     return _cachedLegacy = legacy;
+  }
+
+  /// Classifies a `ping -4` probe's combined stdout+stderr as the **legacy**
+  /// dialect (family flag rejected) vs **toybox** (family flag accepted): the
+  /// discriminator is the "invalid/unrecognized option" signature a legacy
+  /// `external/ping` emits for `-4` and toybox — which accepts `-4` and instead
+  /// complains about the missing operand — does not.
+  ///
+  /// Pulled out of [_detectLegacyDialect] as a pure, side-effect-free static so
+  /// the classification is unit-testable against real captured `ping -4` output
+  /// without spawning a process or touching the [_cachedLegacy] memo. The live
+  /// probe and its acceptance against real toybox / legacy binaries are pinned
+  /// by §spec:android-legacy-ci-gate.
+  static bool classifyLegacyFromProbeOutput(String out) {
+    final lower = out.toLowerCase();
+
+    return lower.contains('invalid option') ||
+        lower.contains('unrecognized option');
   }
 
   /// The forced C locale, shared by [locale] (applied to every launched `ping`)

@@ -322,6 +322,57 @@ void main() {
     });
   });
 
+  // The runtime probe classifier — the branch that turns a `ping -4` probe into
+  // the legacy/toybox verdict — exercised directly against real captured output,
+  // so the discriminator is covered without spawning `ping` or an emulator. The
+  // real-binary side (that a legacy `external/ping` actually emits this
+  // signature) is pinned by the §spec:android-legacy-ci-gate control case.
+  group('PingLinux.classifyLegacyFromProbeOutput', () {
+    test('legacy `ping -4` output (family flag rejected) -> legacy', () {
+      // Exactly what the 2008-vintage AOSP `external/ping` prints for `-4`.
+      expect(
+        PingLinux.classifyLegacyFromProbeOutput("ping: invalid option -- '4'"),
+        isTrue,
+      );
+    });
+
+    test('the alternate "unrecognized option" phrasing -> legacy', () {
+      expect(
+        PingLinux.classifyLegacyFromProbeOutput('ping: unrecognized option: 4'),
+        isTrue,
+      );
+    });
+
+    test('classification is case-insensitive', () {
+      expect(
+        PingLinux.classifyLegacyFromProbeOutput('Ping: Invalid Option -- 4'),
+        isTrue,
+      );
+    });
+
+    test('toybox `ping -4` output (flag accepted, missing operand) -> toybox', () {
+      // toybox accepts `-4` and instead complains about the absent target, so
+      // the option-rejection signature is absent — must NOT classify as legacy.
+      expect(
+        PingLinux.classifyLegacyFromProbeOutput('ping: Need an argument'),
+        isFalse,
+      );
+    });
+
+    test('a modern-iputils usage error (no rejected flag) -> toybox', () {
+      expect(
+        PingLinux.classifyLegacyFromProbeOutput(
+          'ping: usage error: Destination address required',
+        ),
+        isFalse,
+      );
+    });
+
+    test('empty output (probe produced nothing) -> toybox (safe default)', () {
+      expect(PingLinux.classifyLegacyFromProbeOutput(''), isFalse);
+    });
+  });
+
   group('PingMac', () {
     final ping = PingMac('host', 3, 1, 2, 64, .ipv4);
 
