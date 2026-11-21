@@ -104,11 +104,11 @@ public enum ICMPPacket {
     /// Construct an ICMP Echo Request datagram.
     ///
     /// - Parameters:
-    ///   - identifier: the echo identifier. On the Darwin `SOCK_DGRAM` ping
-    ///     socket the kernel may OVERWRITE this with its own port-derived id and
-    ///     recompute the checksum, so callers must not rely on it round-tripping.
-    ///     We still set a sensible value and compute a correct checksum so the
-    ///     packet is valid on a raw path too.
+    ///   - identifier: the echo identifier. Darwin's `SOCK_DGRAM` ping socket
+    ///     sends it unchanged and the reply echoes it back (unlike Linux, whose
+    ///     ping socket rewrites it to the socket's port), and the kernel hands
+    ///     every incoming echo reply to EVERY ICMP socket in the process, so the
+    ///     engine gives each run its own identifier and matches replies on it.
     ///   - sequence: the 16-bit sequence number used to match replies.
     ///   - sendTimeMicros: send timestamp (microseconds) embedded in the payload.
     /// - Returns: the complete ICMP message bytes (header + payload).
@@ -150,8 +150,8 @@ public enum ICMPPacket {
     ///
     /// - Parameters:
     ///   - identifier: the echo identifier. As with v4, the Darwin datagram
-    ///     socket may overwrite this with its own port-derived id, so callers
-    ///     must not rely on it round-tripping (we match by sequence only).
+    ///     socket keeps it, and the engine matches replies on it (see
+    ///     `echoRequest`).
     ///   - sequence: the 16-bit sequence number used to match replies.
     ///   - sendTimeMicros: send timestamp (microseconds) embedded in the payload.
     /// - Returns: the complete ICMPv6 message bytes (header + payload), checksum 0.
@@ -220,14 +220,21 @@ public enum ICMPPacket {
     ///   after that:   the ORIGINAL ICMP Echo header (8 bytes) — we read its
     ///                 sequence at `+ICMPHeader.sequenceOffset`.
     ///
-    /// We match by SEQUENCE only and ignore the identifier, consistent with
-    /// `parseEchoReply`: the kernel may have rewritten the identifier when our
-    /// probe was sent on the datagram socket.
+    /// This returns only the sequence; the engine uses
+    /// `parseTimeExceededOriginal` to match the identifier too.
     ///
     /// - Returns: the original probe's sequence number, or `nil` if the bytes
     ///   are not a Time Exceeded message or are too short to contain the quoted
     ///   original Echo header.
     public static func parseTimeExceededOriginalSequence(_ data: Data) -> UInt16? {
+        parseTimeExceededOriginal(data)?.sequence
+    }
+
+    /// Like `parseTimeExceededOriginalSequence`, but returns the quoted original
+    /// Echo's identifier as well as its sequence, so the engine can tell its own
+    /// expired probes from those of other ping runs in the same process (Darwin
+    /// delivers each ICMP error to every ICMP socket).
+    public static func parseTimeExceededOriginal(_ data: Data) -> EchoReply? {
         let base = data.startIndex
 
         // Need at least the 8-byte type-11 header before the quoted IP header.
@@ -250,7 +257,8 @@ public enum ICMPPacket {
         // We need the full 8-byte original Echo header to reach the sequence field.
         guard echoStart + ICMPHeader.length <= data.endIndex else { return nil }
 
-        return readUInt16BE(data, at: echoStart + ICMPHeader.sequenceOffset)
+        return EchoReply(identifier: readUInt16BE(data, at: echoStart + ICMPHeader.identifierOffset),
+                         sequence: readUInt16BE(data, at: echoStart + ICMPHeader.sequenceOffset))
     }
 
     /// Attempt to interpret received bytes as an ICMPv6 Echo Reply (type 129).
@@ -290,12 +298,18 @@ public enum ICMPPacket {
     ///   bytes 48..:    the quoted ORIGINAL ICMPv6 Echo header (8 bytes) — we read
     ///                  its sequence at `+ICMPHeader.sequenceOffset` (offset 48+6).
     ///
-    /// We match by SEQUENCE only and ignore the identifier, consistent with
-    /// `parseEchoReply`/`parseEchoReplyV6`.
+    /// This returns only the sequence; the engine uses
+    /// `parseTimeExceededOriginalV6` to match the identifier too.
     ///
     /// - Returns: the original probe's sequence number, or `nil` if the bytes are
     ///   not a Time Exceeded message or are too short to contain the quoted echo.
     public static func parseTimeExceededOriginalSequenceV6(_ data: Data) -> UInt16? {
+        parseTimeExceededOriginalV6(data)?.sequence
+    }
+
+    /// ICMPv6 counterpart of `parseTimeExceededOriginal`: the quoted original
+    /// Echo's identifier and sequence.
+    public static func parseTimeExceededOriginalV6(_ data: Data) -> EchoReply? {
         let base = data.startIndex
 
         // Need at least the 8-byte type-3 header before the quoted IPv6 header.
@@ -310,7 +324,8 @@ public enum ICMPPacket {
         // We need the full 8-byte original Echo header to reach the sequence field.
         guard echoStart + ICMPHeader.length <= data.endIndex else { return nil }
 
-        return readUInt16BE(data, at: echoStart + ICMPHeader.sequenceOffset)
+        return EchoReply(identifier: readUInt16BE(data, at: echoStart + ICMPHeader.identifierOffset),
+                         sequence: readUInt16BE(data, at: echoStart + ICMPHeader.sequenceOffset))
     }
 
     // MARK: - Receive framing (Darwin leading IPv4 header)

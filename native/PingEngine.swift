@@ -170,7 +170,29 @@ public final class PingEngine {
     /// `config.family` stays `.v4` (§spec:nat64-literal-synthesis). Set during
     /// start() after a successful resolve; touched only on stateQueue.
     private var transportFamily: IPFamily = .v4
-    private let identifier: UInt16 = UInt16(truncatingIfNeeded: getpid())
+    /// This run's ICMP echo identifier, unique among the engines alive in the
+    /// process. Darwin delivers every incoming echo reply and ICMP error to
+    /// EVERY ICMP socket the process has open, so concurrent runs (several
+    /// hosts, or the parallel probes of a traceroute) all see each other's
+    /// replies; with a shared identifier, matching by sequence alone let one
+    /// run claim another's reply (wrong RTT, wrong source address, and a
+    /// traceroute "reaching" its target via another host's echo). The kernel
+    /// sends the identifier unchanged and the reply echoes it, so it is a
+    /// reliable per-run correlator.
+    private let identifier: UInt16 = PingEngine.allocateIdentifier()
+
+    private static let identifierLock = NSLock()
+    private static var lastIdentifier = UInt16.random(in: 0 ... UInt16.max)
+
+    /// Hands out identifiers in sequence from a random start, so engines that
+    /// overlap in time never share one (until 65,536 runs later) and separate
+    /// processes are unlikely to collide.
+    static func allocateIdentifier() -> UInt16 {
+        identifierLock.lock()
+        defer { identifierLock.unlock() }
+        lastIdentifier = lastIdentifier &+ 1
+        return lastIdentifier
+    }
 
     private var nextSequence: UInt16 = 0        // next seq to send
     private var sentCount = 0                    // total probes transmitted
@@ -803,14 +825,16 @@ public final class PingEngine {
         let timeExceededType: UInt8 = (transportFamily == .v4) ? ICMPType.timeExceeded
                                                                : ICMPv6Type.timeExceeded
         if let first = packet.first, first == timeExceededType {
-            let parsedSeq: UInt16?
+            let original: ICMPPacket.EchoReply?
             switch transportFamily {
             case .v4:
-                parsedSeq = ICMPPacket.parseTimeExceededOriginalSequence(packet)
+                original = ICMPPacket.parseTimeExceededOriginal(packet)
             case .v6:
-                parsedSeq = ICMPPacket.parseTimeExceededOriginalSequenceV6(packet)
+                original = ICMPPacket.parseTimeExceededOriginalV6(packet)
             }
-            guard let seq = parsedSeq else { return }
+            // Another run's probe expired (see `identifier`): not ours.
+            guard let quoted = original, quoted.identifier == identifier else { return }
+            let seq = quoted.sequence
             guard pendingSendTimes[seq] != nil else {
                 // No pending probe for this seq (late/dup). Ignore, as with replies.
                 return
@@ -833,12 +857,12 @@ public final class PingEngine {
         case .v6:
             reply = ICMPPacket.parseEchoReplyV6(packet)
         }
-        guard let echo = reply else { return }
+        // Match by identifier and sequence. The identifier check is what keeps
+        // concurrent runs apart: every ICMP socket in the process receives
+        // every echo reply (see `identifier`).
+        guard let echo = reply, echo.identifier == identifier else { return }
         let seq = echo.sequence
 
-        // Match strictly by sequence. (Identifier is intentionally NOT checked:
-        // the kernel may rewrite it on the SOCK_DGRAM path, so the sequence
-        // number is the reliable correlator.)
         guard let sendMicros = pendingSendTimes[seq] else {
             // No pending probe for this seq: a duplicate, a late reply past its
             // timeout, or an echo for a stale run. Ignore.
