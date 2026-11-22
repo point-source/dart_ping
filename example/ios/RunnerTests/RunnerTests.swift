@@ -538,6 +538,103 @@ class RunnerTests: XCTestCase {
     }
   }
 
+  /// Each engine takes its own identifier when it is created. Fails if the
+  /// identifier goes back to a per-process value such as `getpid()`.
+  func testEnginesCreatedTogetherHaveDistinctIdentifiers() {
+    let config = PingEngine.Config(host: "127.0.0.1", count: 1, interval: 1, timeout: 1,
+                                   ttl: 64, family: .v4, nat64Synthesis: false)
+    let first = PingEngine(config: config) { _ in }
+    let second = PingEngine(config: config) { _ in }
+    XCTAssertNotEqual(first.identifier, second.identifier)
+  }
+
+  // MARK: matchedProbe(packet:family:identifier:) — reply matching
+  //
+  // The engine's whole defence against claiming another run's reply is this
+  // decision: accept an Echo Reply or a Time Exceeded quote only when it
+  // carries this run's identifier. These tests feed canned packets in the
+  // shape the receive loop hands over (v4: leading IPv4 header already
+  // stripped; v6: no IPv6 header), so they fail offline if either identifier
+  // check is removed.
+
+  private let ownIdentifier: UInt16 = 0xBEEF
+  private let foreignIdentifier: UInt16 = 0xBEF0
+
+  /// An Echo Reply (v4 type 0, v6 type 129): identifier big-endian at +4,
+  /// sequence at +6, then an 8-byte payload.
+  private func makeEchoReply(family: IPFamily, identifier: UInt16, sequence: UInt16) -> Data {
+    let type: UInt8 = (family == .v4) ? 0x00 : 0x81
+    var data = Data([type, 0x00, 0x00, 0x00,
+                     UInt8(truncatingIfNeeded: identifier >> 8),
+                     UInt8(truncatingIfNeeded: identifier),
+                     UInt8(truncatingIfNeeded: sequence >> 8),
+                     UInt8(truncatingIfNeeded: sequence)])
+    data.append(Data(count: 8))
+    return data
+  }
+
+  /// An ICMPv6 Time Exceeded (type 3): the 8-byte type-3 header, a fixed
+  /// 40-byte quoted IPv6 header, then the quoted Echo Request header with the
+  /// original identifier at +4 and sequence at +6.
+  private func makeTimeExceededV6(originalSequence: UInt16, originalIdentifier: UInt16) -> Data {
+    var data = Data([0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+    data.append(Data(repeating: 0xAA, count: 40))
+    data.append(contentsOf: [0x80, 0x00, 0x00, 0x00,
+                             UInt8(truncatingIfNeeded: originalIdentifier >> 8),
+                             UInt8(truncatingIfNeeded: originalIdentifier),
+                             UInt8(truncatingIfNeeded: originalSequence >> 8),
+                             UInt8(truncatingIfNeeded: originalSequence)])
+    return data
+  }
+
+  func testMatchedProbeEchoReplyV4AcceptsOnlyOwnIdentifier() {
+    let own = PingEngine.matchedProbe(
+      packet: makeEchoReply(family: .v4, identifier: ownIdentifier, sequence: 7),
+      family: .v4, identifier: ownIdentifier)
+    XCTAssertEqual(own?.seq, 7)
+    XCTAssertEqual(own?.isTimeExceeded, false)
+
+    XCTAssertNil(PingEngine.matchedProbe(
+      packet: makeEchoReply(family: .v4, identifier: foreignIdentifier, sequence: 7),
+      family: .v4, identifier: ownIdentifier))
+  }
+
+  func testMatchedProbeEchoReplyV6AcceptsOnlyOwnIdentifier() {
+    let own = PingEngine.matchedProbe(
+      packet: makeEchoReply(family: .v6, identifier: ownIdentifier, sequence: 7),
+      family: .v6, identifier: ownIdentifier)
+    XCTAssertEqual(own?.seq, 7)
+    XCTAssertEqual(own?.isTimeExceeded, false)
+
+    XCTAssertNil(PingEngine.matchedProbe(
+      packet: makeEchoReply(family: .v6, identifier: foreignIdentifier, sequence: 7),
+      family: .v6, identifier: ownIdentifier))
+  }
+
+  func testMatchedProbeTimeExceededV4AcceptsOnlyOwnIdentifier() {
+    let own = PingEngine.matchedProbe(
+      packet: makeTimeExceeded(ihl: 5, originalSequence: 3, originalIdentifier: ownIdentifier),
+      family: .v4, identifier: ownIdentifier)
+    XCTAssertEqual(own?.seq, 3)
+    XCTAssertEqual(own?.isTimeExceeded, true)
+
+    XCTAssertNil(PingEngine.matchedProbe(
+      packet: makeTimeExceeded(ihl: 5, originalSequence: 3, originalIdentifier: foreignIdentifier),
+      family: .v4, identifier: ownIdentifier))
+  }
+
+  func testMatchedProbeTimeExceededV6AcceptsOnlyOwnIdentifier() {
+    let own = PingEngine.matchedProbe(
+      packet: makeTimeExceededV6(originalSequence: 3, originalIdentifier: ownIdentifier),
+      family: .v6, identifier: ownIdentifier)
+    XCTAssertEqual(own?.seq, 3)
+    XCTAssertEqual(own?.isTimeExceeded, true)
+
+    XCTAssertNil(PingEngine.matchedProbe(
+      packet: makeTimeExceededV6(originalSequence: 3, originalIdentifier: foreignIdentifier),
+      family: .v6, identifier: ownIdentifier))
+  }
+
   /// Regression: a run must not claim another concurrent run's echo replies.
   /// One engine pings 1.1.1.1 while another pings 192.0.2.1 (TEST-NET-1,
   /// RFC 5737: never answers). Both start at sequence 0, and Darwin hands each
