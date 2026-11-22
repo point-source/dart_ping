@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:dart_ping/dart_ping.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 void main() {
   // iOS support is built into dart_ping and auto-wires — no second package and
