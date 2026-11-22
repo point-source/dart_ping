@@ -53,7 +53,10 @@ Future<void> _buildIosCodeAsset(
 ) async {
   final code = input.config.code;
   final iosConfig = code.iOS;
-  final minVersion = iosConfig.targetVersion; // minimum iOS deployment version
+  // Minimum iOS deployment version, major component only (e.g. `13`), so the
+  // target triple reads `arm64-apple-ios13`. The dylib's minimum OS therefore
+  // never exceeds the consuming app's deployment target.
+  final minVersion = iosConfig.deploymentVersion.major;
   final architecture = code.targetArchitecture;
 
   // Device vs simulator drives both the SDK name and the triple's environment
