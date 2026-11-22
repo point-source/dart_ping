@@ -13,10 +13,13 @@ import XCTest
 // the tests reach no C-ABI symbol, and it needs the bridging header the app
 // target supplies.)
 //
-// These tests exercise the deterministic, network-free logic only: checksum
-// computation, Echo Request/Reply parsing, Time Exceeded original-sequence
-// extraction, and the engine's getaddrinfo/errno/NAT64 classification
-// (§spec:ios-tests).
+// These tests are deterministic and need no outside network: checksum
+// computation, Echo Request/Reply parsing, Time Exceeded original-probe
+// extraction, reply matching on the per-run identifier, and the engine's
+// getaddrinfo/errno/NAT64 classification. Two tests run a real engine against
+// the loopback addresses 127.0.0.1 and ::1; that traffic never leaves the
+// machine. The one live test, which pings a public host, runs only when the
+// DART_PING_LIVE_TESTS environment variable is set (§spec:ios-tests).
 //
 // The wire format is the whole point of this code, so every test documents the
 // exact bytes/offsets/endianness it expects and (for the checksum) shows the
@@ -204,7 +207,7 @@ class RunnerTests: XCTestCase {
     XCTAssertEqual(reply?.sequence, 0x7788)
   }
 
-  // MARK: - parseTimeExceededOriginalSequence(_:)
+  // MARK: - parseTimeExceededOriginal(_:)
 
   /// Helper: build a synthetic Time Exceeded (type 11) message that quotes an
   /// original IPv4 packet whose ICMP Echo header carries `originalSequence`.
@@ -216,6 +219,7 @@ class RunnerTests: XCTestCase {
   ///                     sequence field (offset +6) holds `originalSequence`.
   private func makeTimeExceeded(ihl: UInt8,
                                 originalSequence: UInt16,
+                                originalIdentifier: UInt16 = 0,
                                 truncateQuotedEchoTo: Int? = nil) -> Data {
     var data = Data()
     // type-11 ICMP header: type=11, code=0, checksum=0x0000, 4 unused bytes.
@@ -230,9 +234,12 @@ class RunnerTests: XCTestCase {
     }
     data.append(ipHeader)
 
-    // Quoted original ICMP Echo header: type=8, code=0, csum=0, id=0x0000,
-    // sequence=originalSequence (big-endian at offset +6).
-    var quotedEcho = Data([0x08, 0x00, 0x00, 0x00, 0x00, 0x00,
+    // Quoted original ICMP Echo header: type=8, code=0, csum=0,
+    // id=originalIdentifier (offset +4), sequence=originalSequence (offset +6),
+    // both big-endian.
+    var quotedEcho = Data([0x08, 0x00, 0x00, 0x00,
+                           UInt8(truncatingIfNeeded: originalIdentifier >> 8),
+                           UInt8(truncatingIfNeeded: originalIdentifier),
                            UInt8(truncatingIfNeeded: originalSequence >> 8),
                            UInt8(truncatingIfNeeded: originalSequence)])
     if let limit = truncateQuotedEchoTo {
@@ -248,27 +255,44 @@ class RunnerTests: XCTestCase {
   /// recovered from offset 8 + 20 + 6.
   func testParseTimeExceededRecoversOriginalSequence() {
     let data = makeTimeExceeded(ihl: 5, originalSequence: 0x2A2B)
-    XCTAssertEqual(ICMPPacket.parseTimeExceededOriginalSequence(data), 0x2A2B)
+    XCTAssertEqual(ICMPPacket.parseTimeExceededOriginal(data)?.sequence, 0x2A2B)
+  }
+
+  /// The identifier-aware parser also returns the quoted Echo's identifier
+  /// (offset 8 + 20 + 4), which the engine matches against its own so it never
+  /// claims another run's expired probe.
+  func testParseTimeExceededOriginalRecoversIdentifierAndSequence() {
+    let data = makeTimeExceeded(ihl: 5, originalSequence: 0x2A2B, originalIdentifier: 0xBEEF)
+    let original = ICMPPacket.parseTimeExceededOriginal(data)
+    XCTAssertEqual(original?.identifier, 0xBEEF)
+    XCTAssertEqual(original?.sequence, 0x2A2B)
+
+    let withOptions = makeTimeExceeded(ihl: 6, originalSequence: 0x0102, originalIdentifier: 0x0304)
+    XCTAssertEqual(ICMPPacket.parseTimeExceededOriginal(withOptions)?.identifier, 0x0304)
+
+    // Truncated inside the quoted echo -> nil.
+    let truncated = makeTimeExceeded(ihl: 5, originalSequence: 1, originalIdentifier: 2, truncateQuotedEchoTo: 6)
+    XCTAssertNil(ICMPPacket.parseTimeExceededOriginal(truncated))
   }
 
   /// Non-standard IHL with IP options (IHL=6 → 24-byte IP header). The parser
   /// must honor the IHL field when locating the quoted Echo header.
   func testParseTimeExceededHandlesIPOptionsIHL6() {
     let data = makeTimeExceeded(ihl: 6, originalSequence: 0x7F80)
-    XCTAssertEqual(ICMPPacket.parseTimeExceededOriginalSequence(data), 0x7F80)
+    XCTAssertEqual(ICMPPacket.parseTimeExceededOriginal(data)?.sequence, 0x7F80)
   }
 
   /// Wrong outer type (here type 0, Echo Reply) is rejected.
   func testParseTimeExceededRejectsWrongType() {
     var data = makeTimeExceeded(ihl: 5, originalSequence: 0x0001)
     data[0] = 0x00 // flip type 11 -> 0
-    XCTAssertNil(ICMPPacket.parseTimeExceededOriginalSequence(data))
+    XCTAssertNil(ICMPPacket.parseTimeExceededOriginal(data))
   }
 
   /// Too short for even the 8-byte type-11 header is rejected.
   func testParseTimeExceededRejectsTooShortForHeader() {
     let data = Data([0x0B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]) // only 7 bytes
-    XCTAssertNil(ICMPPacket.parseTimeExceededOriginalSequence(data))
+    XCTAssertNil(ICMPPacket.parseTimeExceededOriginal(data))
   }
 
   /// An IHL implying fewer than 20 bytes (IHL=4 → 16 bytes) is rejected, since a
@@ -276,14 +300,14 @@ class RunnerTests: XCTestCase {
   func testParseTimeExceededRejectsIHLBelowMinimum() {
     // IHL=4 => a 16-byte quoted IP header, below the 20-byte IPv4 minimum.
     let data = makeTimeExceeded(ihl: 4, originalSequence: 0x1234)
-    XCTAssertNil(ICMPPacket.parseTimeExceededOriginalSequence(data))
+    XCTAssertNil(ICMPPacket.parseTimeExceededOriginal(data))
   }
 
   /// The type-11 header is present but there is no quoted IP header byte at all
   /// (exactly 8 bytes): rejected because there is nothing to read the IHL from.
   func testParseTimeExceededRejectsMissingIPHeaderByte() {
     let data = Data([0x0B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]) // exactly 8
-    XCTAssertNil(ICMPPacket.parseTimeExceededOriginalSequence(data))
+    XCTAssertNil(ICMPPacket.parseTimeExceededOriginal(data))
   }
 
   /// Truncation before the quoted Echo sequence field is reached: a valid IHL=5
@@ -291,7 +315,7 @@ class RunnerTests: XCTestCase {
   /// reaches the sequence at offset +6/+7), so the parser must return nil.
   func testParseTimeExceededRejectsTruncatedBeforeSequence() {
     let data = makeTimeExceeded(ihl: 5, originalSequence: 0x9999, truncateQuotedEchoTo: 6)
-    XCTAssertNil(ICMPPacket.parseTimeExceededOriginalSequence(data))
+    XCTAssertNil(ICMPPacket.parseTimeExceededOriginal(data))
   }
 
   /// Base-relative correctness for the Time Exceeded parser too: it must work on
@@ -301,7 +325,7 @@ class RunnerTests: XCTestCase {
     backing.append(makeTimeExceeded(ihl: 5, originalSequence: 0x4243))
     let slice = backing.suffix(from: 2)
     XCTAssertEqual(slice.startIndex, 2)
-    XCTAssertEqual(ICMPPacket.parseTimeExceededOriginalSequence(slice), 0x4243)
+    XCTAssertEqual(ICMPPacket.parseTimeExceededOriginal(slice)?.sequence, 0x4243)
   }
 
   // MARK: - stripIPv4Header(_:)
@@ -485,22 +509,240 @@ class RunnerTests: XCTestCase {
   }
 
   /// A type-3 ICMPv6 Time Exceeded message quotes a FIXED 40-byte IPv6 header
-  /// then the original echo; the original sequence lives at offset 8 + 40 + 6.
+  /// then the original echo; the original identifier lives at offset 8 + 40 + 4
+  /// and the sequence at 8 + 40 + 6.
   func testParseTimeExceededV6RecoversOriginalSequence() {
-    var data = Data()
-    // type-3 ICMPv6 header: type=3, code=0, checksum=0x0000, 4 unused bytes.
-    data.append(contentsOf: [0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
-    // Quoted original IPv6 header: a fixed 40 bytes (contents irrelevant here).
-    data.append(Data(repeating: 0xAA, count: 40))
-    // Quoted original ICMPv6 Echo header: type=128, code=0, csum=0, id=0,
-    // sequence=0x2A2B big-endian at offset +6.
-    data.append(contentsOf: [0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2A, 0x2B])
+    // The identifier is non-zero, so a parser reading the quoted echo's code
+    // or checksum field by mistake fails (see `makeTimeExceededV6` for bytes).
+    let data = makeTimeExceededV6(originalSequence: 0x2A2B, originalIdentifier: 0xBEEF)
 
-    XCTAssertEqual(ICMPPacket.parseTimeExceededOriginalSequenceV6(data), 0x2A2B)
+    XCTAssertEqual(ICMPPacket.parseTimeExceededOriginalV6(data)?.sequence, 0x2A2B)
+    XCTAssertEqual(ICMPPacket.parseTimeExceededOriginalV6(data)?.identifier, 0xBEEF)
 
     // Truncated before the quoted echo's sequence field -> nil.
     let truncated = data.prefix(8 + 40 + 6)
-    XCTAssertNil(ICMPPacket.parseTimeExceededOriginalSequenceV6(truncated))
+    XCTAssertNil(ICMPPacket.parseTimeExceededOriginalV6(truncated))
+  }
+
+  // MARK: - Per-run echo identifier (concurrent runs)
+
+  /// Engines alive at the same time must never share an identifier: Darwin
+  /// hands every echo reply to every ICMP socket in the process, and the
+  /// identifier is what tells the runs apart.
+  func testAllocateIdentifierNeverRepeatsForOverlappingRuns() {
+    var seen = Set<UInt16>()
+    for _ in 0 ..< 1000 {
+      XCTAssertTrue(seen.insert(PingEngine.allocateIdentifier()).inserted)
+    }
+  }
+
+  /// Each engine takes its own identifier when it is created. Fails if the
+  /// identifier goes back to a per-process value such as `getpid()`.
+  func testEnginesCreatedTogetherHaveDistinctIdentifiers() {
+    let config = PingEngine.Config(host: "127.0.0.1", count: 1, interval: 1, timeout: 1,
+                                   ttl: 64, family: .v4, nat64Synthesis: false)
+    let first = PingEngine(config: config) { _ in }
+    let second = PingEngine(config: config) { _ in }
+    XCTAssertNotEqual(first.identifier, second.identifier)
+  }
+
+  // MARK: matchedProbe(packet:family:identifier:) — reply matching
+  //
+  // The engine's whole defence against claiming another run's reply is this
+  // decision: accept an Echo Reply or a Time Exceeded quote only when it
+  // carries this run's identifier. These tests feed canned packets in the
+  // shape the receive loop hands over (v4: leading IPv4 header already
+  // stripped; v6: no IPv6 header), so they fail offline if either identifier
+  // check is removed.
+
+  private let ownIdentifier: UInt16 = 0xBEEF
+  private let foreignIdentifier: UInt16 = 0xBEF0
+
+  /// An Echo Reply (v4 type 0, v6 type 129): identifier big-endian at +4,
+  /// sequence at +6, then an 8-byte payload.
+  private func makeEchoReply(family: IPFamily, identifier: UInt16, sequence: UInt16) -> Data {
+    let type: UInt8 = (family == .v4) ? 0x00 : 0x81
+    var data = Data([type, 0x00, 0x00, 0x00,
+                     UInt8(truncatingIfNeeded: identifier >> 8),
+                     UInt8(truncatingIfNeeded: identifier),
+                     UInt8(truncatingIfNeeded: sequence >> 8),
+                     UInt8(truncatingIfNeeded: sequence)])
+    data.append(Data(count: 8))
+    return data
+  }
+
+  /// An ICMPv6 Time Exceeded (type 3): the 8-byte type-3 header, a fixed
+  /// 40-byte quoted IPv6 header, then the quoted Echo Request header with the
+  /// original identifier at +4 and sequence at +6.
+  private func makeTimeExceededV6(originalSequence: UInt16, originalIdentifier: UInt16) -> Data {
+    var data = Data([0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+    data.append(Data(repeating: 0xAA, count: 40))
+    data.append(contentsOf: [0x80, 0x00, 0x00, 0x00,
+                             UInt8(truncatingIfNeeded: originalIdentifier >> 8),
+                             UInt8(truncatingIfNeeded: originalIdentifier),
+                             UInt8(truncatingIfNeeded: originalSequence >> 8),
+                             UInt8(truncatingIfNeeded: originalSequence)])
+    return data
+  }
+
+  func testMatchedProbeEchoReplyV4AcceptsOnlyOwnIdentifier() {
+    let own = PingEngine.matchedProbe(
+      packet: makeEchoReply(family: .v4, identifier: ownIdentifier, sequence: 7),
+      family: .v4, identifier: ownIdentifier)
+    XCTAssertEqual(own?.seq, 7)
+    XCTAssertEqual(own?.isTimeExceeded, false)
+
+    XCTAssertNil(PingEngine.matchedProbe(
+      packet: makeEchoReply(family: .v4, identifier: foreignIdentifier, sequence: 7),
+      family: .v4, identifier: ownIdentifier))
+  }
+
+  func testMatchedProbeEchoReplyV6AcceptsOnlyOwnIdentifier() {
+    let own = PingEngine.matchedProbe(
+      packet: makeEchoReply(family: .v6, identifier: ownIdentifier, sequence: 7),
+      family: .v6, identifier: ownIdentifier)
+    XCTAssertEqual(own?.seq, 7)
+    XCTAssertEqual(own?.isTimeExceeded, false)
+
+    XCTAssertNil(PingEngine.matchedProbe(
+      packet: makeEchoReply(family: .v6, identifier: foreignIdentifier, sequence: 7),
+      family: .v6, identifier: ownIdentifier))
+  }
+
+  func testMatchedProbeTimeExceededV4AcceptsOnlyOwnIdentifier() {
+    let own = PingEngine.matchedProbe(
+      packet: makeTimeExceeded(ihl: 5, originalSequence: 3, originalIdentifier: ownIdentifier),
+      family: .v4, identifier: ownIdentifier)
+    XCTAssertEqual(own?.seq, 3)
+    XCTAssertEqual(own?.isTimeExceeded, true)
+
+    XCTAssertNil(PingEngine.matchedProbe(
+      packet: makeTimeExceeded(ihl: 5, originalSequence: 3, originalIdentifier: foreignIdentifier),
+      family: .v4, identifier: ownIdentifier))
+  }
+
+  func testMatchedProbeTimeExceededV6AcceptsOnlyOwnIdentifier() {
+    let own = PingEngine.matchedProbe(
+      packet: makeTimeExceededV6(originalSequence: 3, originalIdentifier: ownIdentifier),
+      family: .v6, identifier: ownIdentifier)
+    XCTAssertEqual(own?.seq, 3)
+    XCTAssertEqual(own?.isTimeExceeded, true)
+
+    XCTAssertNil(PingEngine.matchedProbe(
+      packet: makeTimeExceededV6(originalSequence: 3, originalIdentifier: foreignIdentifier),
+      family: .v6, identifier: ownIdentifier))
+  }
+
+  /// Regression: a run must not claim another concurrent run's echo replies.
+  /// One engine pings 1.1.1.1 while another pings 192.0.2.1 (TEST-NET-1,
+  /// RFC 5737: never answers). Both start at sequence 0, and Darwin hands each
+  /// echo reply from the network to every ICMP socket in the process, so
+  /// before the per-run identifier the silent run matched 1.1.1.1's replies by
+  /// sequence and reported them as its own. (Loopback can't stand in for
+  /// 1.1.1.1: Darwin delivers loopback replies only to the sending socket.)
+  ///
+  /// Live and opt-in: it needs an ICMP route to the internet, which the
+  /// required CI check must not depend on (§spec:ci). Set DART_PING_LIVE_TESTS
+  /// to run it; from xcodebuild, pass TEST_RUNNER_DART_PING_LIVE_TESTS=1. When
+  /// opted in, zero replies from 1.1.1.1 is a failure: it is what a kernel that
+  /// rewrote the identifier would produce.
+  func testConcurrentRunsDoNotClaimEachOthersReplies() throws {
+    try XCTSkipUnless(ProcessInfo.processInfo.environment["DART_PING_LIVE_TESTS"] != nil,
+                      "live test: set DART_PING_LIVE_TESTS to run it")
+    let responsiveDone = expectation(description: "responsive summary")
+    let silentDone = expectation(description: "silent summary")
+    var responsiveReplies = 0
+    var silentReplies: [String] = []
+    var silentTimeouts = 0
+    let lock = NSLock()
+
+    func config(_ host: String) -> PingEngine.Config {
+      PingEngine.Config(host: host, count: 3, interval: 0.2, timeout: 1,
+                        ttl: 64, family: .v4, nat64Synthesis: false)
+    }
+    let silent = PingEngine(config: config("192.0.2.1")) { event in
+      lock.lock(); defer { lock.unlock() }
+      switch event {
+      case .response(_, _, _, let ip): silentReplies.append(ip)
+      case .summary: silentDone.fulfill()
+      case .error(.requestTimedOut, _, _): silentTimeouts += 1
+      case .error: break
+      }
+    }
+    let responsive = PingEngine(config: config("1.1.1.1")) { event in
+      lock.lock(); defer { lock.unlock() }
+      switch event {
+      case .response: responsiveReplies += 1
+      case .summary: responsiveDone.fulfill()
+      case .error: break
+      }
+    }
+    // start() captures the engine weakly, so keep both alive until done.
+    withExtendedLifetime((silent, responsive)) {
+      silent.start()
+      responsive.start()
+      wait(for: [responsiveDone, silentDone], timeout: 10)
+    }
+
+    lock.lock(); defer { lock.unlock() }
+    XCTAssertGreaterThan(responsiveReplies, 0,
+                         "no replies from 1.1.1.1: no ICMP route, or the identifier did not round-trip")
+    // Each silent probe was sent and stayed pending until its timeout, so
+    // there was something to claim. (A failed send counts as transmitted.)
+    XCTAssertEqual(silentTimeouts, 3, "silent run did not have its probes pending")
+    XCTAssertEqual(silentReplies, [], "claimed another run's replies")
+  }
+
+  // MARK: Loopback runs — the identifier round-trips on both families
+  //
+  // Every run now drops replies that do not carry its identifier, so a kernel
+  // that rewrote the identifier would turn every run into 100% loss. These
+  // runs prove the identifier survives the round trip on IPv4 and IPv6
+  // without reaching an outside host.
+
+  private struct LoopbackRun {
+    var replySeqs: [Int] = []
+    var errors: [PingErrorKind] = []
+    var received: Int?
+  }
+
+  /// Runs one engine against `host` (3 probes) and waits for its summary.
+  private func pingLoopback(_ host: String, family: IPFamily) -> LoopbackRun {
+    let done = expectation(description: "\(host) summary")
+    let lock = NSLock()
+    var run = LoopbackRun()
+    let engine = PingEngine(config: PingEngine.Config(host: host, count: 3, interval: 0.2,
+                                                      timeout: 2, ttl: 64, family: family,
+                                                      nat64Synthesis: false)) { event in
+      lock.lock(); defer { lock.unlock() }
+      switch event {
+      case .response(let seq, _, _, _): run.replySeqs.append(seq)
+      case .error(let kind, _, _): run.errors.append(kind)
+      case .summary(_, let received, _, _):
+        run.received = received
+        done.fulfill()
+      }
+    }
+    withExtendedLifetime(engine) {
+      engine.start()
+      wait(for: [done], timeout: 10)
+    }
+    lock.lock(); defer { lock.unlock() }
+    return run
+  }
+
+  func testLoopbackIPv4RunReceivesEveryProbe() {
+    let run = pingLoopback("127.0.0.1", family: .v4)
+    XCTAssertEqual(run.replySeqs, [0, 1, 2])
+    XCTAssertEqual(run.errors, [])
+    XCTAssertEqual(run.received, 3)
+  }
+
+  func testLoopbackIPv6RunReceivesEveryProbe() {
+    let run = pingLoopback("::1", family: .v6)
+    XCTAssertEqual(run.replySeqs, [0, 1, 2])
+    XCTAssertEqual(run.errors, [])
+    XCTAssertEqual(run.received, 3)
   }
 
   // MARK: - §spec:nat64-tests — NAT64 synthesis decision + honest-error fallback

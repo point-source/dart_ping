@@ -170,7 +170,30 @@ public final class PingEngine {
     /// `config.family` stays `.v4` (§spec:nat64-literal-synthesis). Set during
     /// start() after a successful resolve; touched only on stateQueue.
     private var transportFamily: IPFamily = .v4
-    private let identifier: UInt16 = UInt16(truncatingIfNeeded: getpid())
+    /// This run's ICMP echo identifier, unique among the engines alive in the
+    /// process. Darwin delivers every incoming echo reply and ICMP error to
+    /// EVERY ICMP socket the process has open, so concurrent runs (several
+    /// hosts, or the parallel probes of a traceroute) all see each other's
+    /// replies; with a shared identifier, matching by sequence alone let one
+    /// run claim another's reply (wrong RTT, wrong source address, and a
+    /// traceroute "reaching" its target via another host's echo). The kernel
+    /// sends the identifier unchanged and the reply echoes it, so it is a
+    /// reliable per-run correlator. Internal rather than private so
+    /// RunnerTests can check that two engines never share one.
+    let identifier: UInt16 = PingEngine.allocateIdentifier()
+
+    private static let identifierLock = NSLock()
+    private static var lastIdentifier = UInt16.random(in: 0 ... UInt16.max)
+
+    /// Hands out identifiers in sequence from a random start, so engines that
+    /// overlap in time never share one (until 65,536 runs later) and separate
+    /// processes are unlikely to collide.
+    static func allocateIdentifier() -> UInt16 {
+        identifierLock.lock()
+        defer { identifierLock.unlock() }
+        lastIdentifier = lastIdentifier &+ 1
+        return lastIdentifier
+    }
 
     private var nextSequence: UInt16 = 0        // next seq to send
     private var sentCount = 0                    // total probes transmitted
@@ -779,7 +802,7 @@ public final class PingEngine {
 
             let sourceIP = Self.sourceIPString(from: &sourceAddr) ?? ""
 
-            // Hand off to the state queue for sequence matching & emission.
+            // Hand off to the state queue for identifier/sequence matching & emission.
             stateQueue.async { [weak self] in
                 self?.handleReceivedLocked(packet: packet, ttl: ttl, sourceIP: sourceIP)
             }
@@ -789,28 +812,69 @@ public final class PingEngine {
         // owned by completion/stop logic on the state queue.
     }
 
+    /// Decide whether a received ICMP(v6) message answers one of THIS run's
+    /// probes, and which one. Returns the probe's sequence and whether the
+    /// message is a Time Exceeded from an intermediate hop (rather than an Echo
+    /// Reply from the target), or nil when the message is not ours.
+    ///
+    /// Darwin hands every incoming echo reply and ICMP error to every ICMP
+    /// socket in the process, so concurrent runs see each other's traffic. A
+    /// message is ours only when it carries this run's `identifier`: an Echo
+    /// Reply echoes it at offset 4, and a Time Exceeded quotes our original
+    /// Echo Request, identifier included. Matching on the sequence alone would
+    /// let one run claim another's reply (see `identifier`).
+    ///
+    /// Pure/static so RunnerTests can exercise the accept/reject decision with
+    /// canned packets, without a socket. `packet` starts at the ICMP(v6) header
+    /// (the receive loop has already stripped the v4 IP header); `family` is
+    /// the transport family the run sends and parses for.
+    static func matchedProbe(packet: Data,
+                             family: IPFamily,
+                             identifier: UInt16) -> (seq: UInt16, isTimeExceeded: Bool)? {
+        // Time Exceeded: the outgoing hop limit reached zero before the
+        // destination. The type and quoted-packet layout differ by family.
+        let timeExceededType: UInt8 = (family == .v4) ? ICMPType.timeExceeded
+                                                      : ICMPv6Type.timeExceeded
+        if let first = packet.first, first == timeExceededType {
+            let quoted: ICMPPacket.EchoReply?
+            switch family {
+            case .v4:
+                quoted = ICMPPacket.parseTimeExceededOriginal(packet)
+            case .v6:
+                quoted = ICMPPacket.parseTimeExceededOriginalV6(packet)
+            }
+            guard let original = quoted, original.identifier == identifier else { return nil }
+            return (original.sequence, true)
+        }
+
+        let reply: ICMPPacket.EchoReply?
+        switch family {
+        case .v4:
+            reply = ICMPPacket.parseEchoReply(packet)
+        case .v6:
+            reply = ICMPPacket.parseEchoReplyV6(packet)
+        }
+        guard let echo = reply, echo.identifier == identifier else { return nil }
+        return (echo.sequence, false)
+    }
+
     /// Match a received ICMP(v6) message to a pending probe and emit a response.
     /// Runs on stateQueue. `ttl` is nil when the reply's hop limit could not be
     /// recovered (v6 with no IPV6_HOPLIMIT cmsg).
     private func handleReceivedLocked(packet: Data, ttl: Int?, sourceIP: String) {
         guard !summaryEmitted else { return }
 
-        // ICMP(v6) Time Exceeded from an intermediate hop: the outgoing hop limit
-        // reached zero before the destination. Match the QUOTED original probe by
-        // sequence and report it as a TTL-exceeded error for that seq; this is
-        // NOT a successful reply (no receivedCount / RTT contribution). The
-        // message type and quoted-packet layout differ by family.
-        let timeExceededType: UInt8 = (transportFamily == .v4) ? ICMPType.timeExceeded
-                                                               : ICMPv6Type.timeExceeded
-        if let first = packet.first, first == timeExceededType {
-            let parsedSeq: UInt16?
-            switch transportFamily {
-            case .v4:
-                parsedSeq = ICMPPacket.parseTimeExceededOriginalSequence(packet)
-            case .v6:
-                parsedSeq = ICMPPacket.parseTimeExceededOriginalSequenceV6(packet)
-            }
-            guard let seq = parsedSeq else { return }
+        // Ignore anything that is not an Echo Reply or Time Exceeded carrying
+        // this run's identifier: it belongs to another run in the process.
+        guard let probe = Self.matchedProbe(packet: packet,
+                                            family: transportFamily,
+                                            identifier: identifier) else { return }
+        let seq = probe.seq
+
+        // Time Exceeded from an intermediate hop: report it as a TTL-exceeded
+        // error for that seq. This is NOT a successful reply (no receivedCount /
+        // RTT contribution).
+        if probe.isTimeExceeded {
             guard pendingSendTimes[seq] != nil else {
                 // No pending probe for this seq (late/dup). Ignore, as with replies.
                 return
@@ -826,19 +890,6 @@ public final class PingEngine {
             return
         }
 
-        let reply: ICMPPacket.EchoReply?
-        switch transportFamily {
-        case .v4:
-            reply = ICMPPacket.parseEchoReply(packet)
-        case .v6:
-            reply = ICMPPacket.parseEchoReplyV6(packet)
-        }
-        guard let echo = reply else { return }
-        let seq = echo.sequence
-
-        // Match strictly by sequence. (Identifier is intentionally NOT checked:
-        // the kernel may rewrite it on the SOCK_DGRAM path, so the sequence
-        // number is the reliable correlator.)
         guard let sendMicros = pendingSendTimes[seq] else {
             // No pending probe for this seq: a duplicate, a late reply past its
             // timeout, or an echo for a stale run. Ignore.
