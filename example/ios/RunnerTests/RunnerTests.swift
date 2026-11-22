@@ -207,7 +207,7 @@ class RunnerTests: XCTestCase {
     XCTAssertEqual(reply?.sequence, 0x7788)
   }
 
-  // MARK: - parseTimeExceededOriginalSequence(_:)
+  // MARK: - parseTimeExceededOriginal(_:)
 
   /// Helper: build a synthetic Time Exceeded (type 11) message that quotes an
   /// original IPv4 packet whose ICMP Echo header carries `originalSequence`.
@@ -255,7 +255,7 @@ class RunnerTests: XCTestCase {
   /// recovered from offset 8 + 20 + 6.
   func testParseTimeExceededRecoversOriginalSequence() {
     let data = makeTimeExceeded(ihl: 5, originalSequence: 0x2A2B)
-    XCTAssertEqual(ICMPPacket.parseTimeExceededOriginalSequence(data), 0x2A2B)
+    XCTAssertEqual(ICMPPacket.parseTimeExceededOriginal(data)?.sequence, 0x2A2B)
   }
 
   /// The identifier-aware parser also returns the quoted Echo's identifier
@@ -270,7 +270,7 @@ class RunnerTests: XCTestCase {
     let withOptions = makeTimeExceeded(ihl: 6, originalSequence: 0x0102, originalIdentifier: 0x0304)
     XCTAssertEqual(ICMPPacket.parseTimeExceededOriginal(withOptions)?.identifier, 0x0304)
 
-    // Truncated inside the quoted echo -> nil, as for the sequence-only parser.
+    // Truncated inside the quoted echo -> nil.
     let truncated = makeTimeExceeded(ihl: 5, originalSequence: 1, originalIdentifier: 2, truncateQuotedEchoTo: 6)
     XCTAssertNil(ICMPPacket.parseTimeExceededOriginal(truncated))
   }
@@ -279,20 +279,20 @@ class RunnerTests: XCTestCase {
   /// must honor the IHL field when locating the quoted Echo header.
   func testParseTimeExceededHandlesIPOptionsIHL6() {
     let data = makeTimeExceeded(ihl: 6, originalSequence: 0x7F80)
-    XCTAssertEqual(ICMPPacket.parseTimeExceededOriginalSequence(data), 0x7F80)
+    XCTAssertEqual(ICMPPacket.parseTimeExceededOriginal(data)?.sequence, 0x7F80)
   }
 
   /// Wrong outer type (here type 0, Echo Reply) is rejected.
   func testParseTimeExceededRejectsWrongType() {
     var data = makeTimeExceeded(ihl: 5, originalSequence: 0x0001)
     data[0] = 0x00 // flip type 11 -> 0
-    XCTAssertNil(ICMPPacket.parseTimeExceededOriginalSequence(data))
+    XCTAssertNil(ICMPPacket.parseTimeExceededOriginal(data))
   }
 
   /// Too short for even the 8-byte type-11 header is rejected.
   func testParseTimeExceededRejectsTooShortForHeader() {
     let data = Data([0x0B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]) // only 7 bytes
-    XCTAssertNil(ICMPPacket.parseTimeExceededOriginalSequence(data))
+    XCTAssertNil(ICMPPacket.parseTimeExceededOriginal(data))
   }
 
   /// An IHL implying fewer than 20 bytes (IHL=4 → 16 bytes) is rejected, since a
@@ -300,14 +300,14 @@ class RunnerTests: XCTestCase {
   func testParseTimeExceededRejectsIHLBelowMinimum() {
     // IHL=4 => a 16-byte quoted IP header, below the 20-byte IPv4 minimum.
     let data = makeTimeExceeded(ihl: 4, originalSequence: 0x1234)
-    XCTAssertNil(ICMPPacket.parseTimeExceededOriginalSequence(data))
+    XCTAssertNil(ICMPPacket.parseTimeExceededOriginal(data))
   }
 
   /// The type-11 header is present but there is no quoted IP header byte at all
   /// (exactly 8 bytes): rejected because there is nothing to read the IHL from.
   func testParseTimeExceededRejectsMissingIPHeaderByte() {
     let data = Data([0x0B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]) // exactly 8
-    XCTAssertNil(ICMPPacket.parseTimeExceededOriginalSequence(data))
+    XCTAssertNil(ICMPPacket.parseTimeExceededOriginal(data))
   }
 
   /// Truncation before the quoted Echo sequence field is reached: a valid IHL=5
@@ -315,7 +315,7 @@ class RunnerTests: XCTestCase {
   /// reaches the sequence at offset +6/+7), so the parser must return nil.
   func testParseTimeExceededRejectsTruncatedBeforeSequence() {
     let data = makeTimeExceeded(ihl: 5, originalSequence: 0x9999, truncateQuotedEchoTo: 6)
-    XCTAssertNil(ICMPPacket.parseTimeExceededOriginalSequence(data))
+    XCTAssertNil(ICMPPacket.parseTimeExceededOriginal(data))
   }
 
   /// Base-relative correctness for the Time Exceeded parser too: it must work on
@@ -325,7 +325,7 @@ class RunnerTests: XCTestCase {
     backing.append(makeTimeExceeded(ihl: 5, originalSequence: 0x4243))
     let slice = backing.suffix(from: 2)
     XCTAssertEqual(slice.startIndex, 2)
-    XCTAssertEqual(ICMPPacket.parseTimeExceededOriginalSequence(slice), 0x4243)
+    XCTAssertEqual(ICMPPacket.parseTimeExceededOriginal(slice)?.sequence, 0x4243)
   }
 
   // MARK: - stripIPv4Header(_:)
@@ -522,13 +522,12 @@ class RunnerTests: XCTestCase {
     // or checksum field by mistake fails), sequence=0x2A2B at offset +6.
     data.append(contentsOf: [0x80, 0x00, 0x00, 0x00, 0xBE, 0xEF, 0x2A, 0x2B])
 
-    XCTAssertEqual(ICMPPacket.parseTimeExceededOriginalSequenceV6(data), 0x2A2B)
-    XCTAssertEqual(ICMPPacket.parseTimeExceededOriginalV6(data)?.identifier, 0xBEEF)
     XCTAssertEqual(ICMPPacket.parseTimeExceededOriginalV6(data)?.sequence, 0x2A2B)
+    XCTAssertEqual(ICMPPacket.parseTimeExceededOriginalV6(data)?.identifier, 0xBEEF)
 
     // Truncated before the quoted echo's sequence field -> nil.
     let truncated = data.prefix(8 + 40 + 6)
-    XCTAssertNil(ICMPPacket.parseTimeExceededOriginalSequenceV6(truncated))
+    XCTAssertNil(ICMPPacket.parseTimeExceededOriginalV6(truncated))
   }
 
   // MARK: - Per-run echo identifier (concurrent runs)

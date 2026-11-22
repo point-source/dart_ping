@@ -208,32 +208,28 @@ public enum ICMPPacket {
 
     /// Attempt to interpret received bytes as an ICMP Time Exceeded message
     /// (type 11, e.g. TTL/hop-limit reached zero in transit) and extract the
-    /// sequence number of the ORIGINAL Echo Request that triggered it.
+    /// identifier and sequence number of the ORIGINAL Echo Request that
+    /// triggered it.
     ///
-    /// On the `SOCK_DGRAM`/`IPPROTO_ICMP` path the kernel strips the OUTER IPv4
-    /// header (see the note on `ICMPType`), so a Time Exceeded message body is:
+    /// On the `SOCK_DGRAM`/`IPPROTO_ICMP` path the engine strips the OUTER IPv4
+    /// header before calling this (see the note on `ICMPType`), so a Time
+    /// Exceeded message body is:
     ///
     ///   bytes 0..7:   the type-11 ICMP header (type=11, code, checksum, 4 unused)
     ///   byte 8..:     the ORIGINAL IPv4 header (the packet that expired). Its
     ///                 length is `(firstByte & 0x0F) * 4` bytes (IHL in 32-bit
     ///                 words; normally 20).
     ///   after that:   the ORIGINAL ICMP Echo header (8 bytes) — we read its
+    ///                 identifier at `+ICMPHeader.identifierOffset` and its
     ///                 sequence at `+ICMPHeader.sequenceOffset`.
     ///
-    /// This returns only the sequence; the engine uses
-    /// `parseTimeExceededOriginal` to match the identifier too.
+    /// The engine matches both fields against its own: Darwin delivers each
+    /// ICMP error to every ICMP socket in the process, so the identifier is what
+    /// tells this run's expired probes from those of other runs.
     ///
-    /// - Returns: the original probe's sequence number, or `nil` if the bytes
-    ///   are not a Time Exceeded message or are too short to contain the quoted
-    ///   original Echo header.
-    public static func parseTimeExceededOriginalSequence(_ data: Data) -> UInt16? {
-        parseTimeExceededOriginal(data)?.sequence
-    }
-
-    /// Like `parseTimeExceededOriginalSequence`, but returns the quoted original
-    /// Echo's identifier as well as its sequence, so the engine can tell its own
-    /// expired probes from those of other ping runs in the same process (Darwin
-    /// delivers each ICMP error to every ICMP socket).
+    /// - Returns: the original probe's identifier and sequence, or `nil` if the
+    ///   bytes are not a Time Exceeded message or are too short to contain the
+    ///   quoted original Echo header.
     public static func parseTimeExceededOriginal(_ data: Data) -> EchoReply? {
         let base = data.startIndex
 
@@ -283,8 +279,9 @@ public enum ICMPPacket {
     }
 
     /// Attempt to interpret received bytes as an ICMPv6 Time Exceeded message
-    /// (type 3, e.g. hop limit reached zero in transit) and extract the sequence
-    /// number of the ORIGINAL Echo Request that triggered it.
+    /// (type 3, e.g. hop limit reached zero in transit) and extract the
+    /// identifier and sequence number of the ORIGINAL Echo Request that
+    /// triggered it.
     ///
     /// On the `SOCK_DGRAM`/`IPPROTO_ICMPV6` path there is NO outer IPv6 header on
     /// the received message, so the layout is:
@@ -296,19 +293,15 @@ public enum ICMPPacket {
     ///                  none, so the quoted original starts with the base header
     ///                  immediately followed by the original ICMPv6 echo.)
     ///   bytes 48..:    the quoted ORIGINAL ICMPv6 Echo header (8 bytes) — we read
-    ///                  its sequence at `+ICMPHeader.sequenceOffset` (offset 48+6).
+    ///                  its identifier at `+ICMPHeader.identifierOffset` (offset
+    ///                  48+4) and its sequence at `+ICMPHeader.sequenceOffset`
+    ///                  (offset 48+6).
     ///
-    /// This returns only the sequence; the engine uses
-    /// `parseTimeExceededOriginalV6` to match the identifier too.
+    /// As with v4, the engine matches both fields against its own.
     ///
-    /// - Returns: the original probe's sequence number, or `nil` if the bytes are
-    ///   not a Time Exceeded message or are too short to contain the quoted echo.
-    public static func parseTimeExceededOriginalSequenceV6(_ data: Data) -> UInt16? {
-        parseTimeExceededOriginalV6(data)?.sequence
-    }
-
-    /// ICMPv6 counterpart of `parseTimeExceededOriginal`: the quoted original
-    /// Echo's identifier and sequence.
+    /// - Returns: the original probe's identifier and sequence, or `nil` if the
+    ///   bytes are not a Time Exceeded message or are too short to contain the
+    ///   quoted echo.
     public static func parseTimeExceededOriginalV6(_ data: Data) -> EchoReply? {
         let base = data.startIndex
 
@@ -337,7 +330,7 @@ public enum ICMPPacket {
         /// reply's remaining hop count, the value the other platforms report.
         public let ttl: Int
         /// The ICMP message bytes, starting at the ICMP header (offset 0), ready
-        /// for `parseEchoReply` / `parseTimeExceededOriginalSequence`.
+        /// for `parseEchoReply` / `parseTimeExceededOriginal`.
         public let icmpMessage: Data
     }
 
