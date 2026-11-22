@@ -13,10 +13,13 @@ import XCTest
 // the tests reach no C-ABI symbol, and it needs the bridging header the app
 // target supplies.)
 //
-// These tests exercise the deterministic, network-free logic only: checksum
-// computation, Echo Request/Reply parsing, Time Exceeded original-sequence
-// extraction, and the engine's getaddrinfo/errno/NAT64 classification
-// (§spec:ios-tests).
+// These tests are deterministic and need no outside network: checksum
+// computation, Echo Request/Reply parsing, Time Exceeded original-probe
+// extraction, reply matching on the per-run identifier, and the engine's
+// getaddrinfo/errno/NAT64 classification. Two tests run a real engine against
+// the loopback addresses 127.0.0.1 and ::1; that traffic never leaves the
+// machine. The one live test, which pings a public host, runs only when the
+// DART_PING_LIVE_TESTS environment variable is set (§spec:ios-tests).
 //
 // The wire format is the whole point of this code, so every test documents the
 // exact bytes/offsets/endianness it expects and (for the checksum) shows the
@@ -642,8 +645,15 @@ class RunnerTests: XCTestCase {
   /// before the per-run identifier the silent run matched 1.1.1.1's replies by
   /// sequence and reported them as its own. (Loopback can't stand in for
   /// 1.1.1.1: Darwin delivers loopback replies only to the sending socket.)
-  /// Live: skipped when the machine has no ICMP route to the internet.
+  ///
+  /// Live and opt-in: it needs an ICMP route to the internet, which the
+  /// required CI check must not depend on (§spec:ci). Set DART_PING_LIVE_TESTS
+  /// to run it; from xcodebuild, pass TEST_RUNNER_DART_PING_LIVE_TESTS=1. When
+  /// opted in, zero replies from 1.1.1.1 is a failure: it is what a kernel that
+  /// rewrote the identifier would produce.
   func testConcurrentRunsDoNotClaimEachOthersReplies() throws {
+    try XCTSkipUnless(ProcessInfo.processInfo.environment["DART_PING_LIVE_TESTS"] != nil,
+                      "live test: set DART_PING_LIVE_TESTS to run it")
     let responsiveDone = expectation(description: "responsive summary")
     let silentDone = expectation(description: "silent summary")
     var responsiveReplies = 0
@@ -675,8 +685,61 @@ class RunnerTests: XCTestCase {
     wait(for: [responsiveDone, silentDone], timeout: 10)
 
     lock.lock(); defer { lock.unlock() }
-    try XCTSkipIf(responsiveReplies == 0, "no ICMP route to 1.1.1.1 from this machine")
+    XCTAssertGreaterThan(responsiveReplies, 0,
+                         "no replies from 1.1.1.1: no ICMP route, or the identifier did not round-trip")
     XCTAssertEqual(silentReplies, [], "claimed another run's replies")
+  }
+
+  // MARK: Loopback runs — the identifier round-trips on both families
+  //
+  // Every run now drops replies that do not carry its identifier, so a kernel
+  // that rewrote the identifier would turn every run into 100% loss. These
+  // runs prove the identifier survives the round trip on IPv4 and IPv6
+  // without reaching an outside host.
+
+  private struct LoopbackRun {
+    var replySeqs: [Int] = []
+    var errors: [PingErrorKind] = []
+    var received: Int?
+  }
+
+  /// Runs one engine against `host` (3 probes) and waits for its summary.
+  private func pingLoopback(_ host: String, family: IPFamily) -> LoopbackRun {
+    let done = expectation(description: "\(host) summary")
+    let lock = NSLock()
+    var run = LoopbackRun()
+    let engine = PingEngine(config: PingEngine.Config(host: host, count: 3, interval: 0.2,
+                                                      timeout: 2, ttl: 64, family: family,
+                                                      nat64Synthesis: false)) { event in
+      lock.lock(); defer { lock.unlock() }
+      switch event {
+      case .response(let seq, _, _, _): run.replySeqs.append(seq)
+      case .error(let kind, _, _): run.errors.append(kind)
+      case .summary(_, let received, _, _):
+        run.received = received
+        done.fulfill()
+      }
+    }
+    withExtendedLifetime(engine) {
+      engine.start()
+      wait(for: [done], timeout: 10)
+    }
+    lock.lock(); defer { lock.unlock() }
+    return run
+  }
+
+  func testLoopbackIPv4RunReceivesEveryProbe() {
+    let run = pingLoopback("127.0.0.1", family: .v4)
+    XCTAssertEqual(run.replySeqs, [0, 1, 2])
+    XCTAssertEqual(run.errors, [])
+    XCTAssertEqual(run.received, 3)
+  }
+
+  func testLoopbackIPv6RunReceivesEveryProbe() {
+    let run = pingLoopback("::1", family: .v6)
+    XCTAssertEqual(run.replySeqs, [0, 1, 2])
+    XCTAssertEqual(run.errors, [])
+    XCTAssertEqual(run.received, 3)
   }
 
   // MARK: - §spec:nat64-tests — NAT64 synthesis decision + honest-error fallback
