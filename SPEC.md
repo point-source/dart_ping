@@ -714,8 +714,8 @@ through a passing PR.
 - No coverage-threshold gate shall be introduced. Coverage is reported (a
   job summary), not enforced (decision carried over from §spec:test-coverage;
   the ask was reporting, not a gate).
-- Every third-party action shall be pinned by full commit SHA, with its
-  release version in a trailing comment. Dependabot (`.github/dependabot.yml`)
+- Every action shall be pinned by full commit SHA, with its release
+  version in a trailing comment. Dependabot (`.github/dependabot.yml`)
   keeps the action pins and the pub dependencies (root and `example`) current,
   opening weekly update PRs against `develop`; minor and patch bumps are
   grouped per ecosystem, majors arrive individually.
