@@ -509,19 +509,21 @@ class RunnerTests: XCTestCase {
   }
 
   /// A type-3 ICMPv6 Time Exceeded message quotes a FIXED 40-byte IPv6 header
-  /// then the original echo; the original sequence lives at offset 8 + 40 + 6.
+  /// then the original echo; the original identifier lives at offset 8 + 40 + 4
+  /// and the sequence at 8 + 40 + 6.
   func testParseTimeExceededV6RecoversOriginalSequence() {
     var data = Data()
     // type-3 ICMPv6 header: type=3, code=0, checksum=0x0000, 4 unused bytes.
     data.append(contentsOf: [0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
     // Quoted original IPv6 header: a fixed 40 bytes (contents irrelevant here).
     data.append(Data(repeating: 0xAA, count: 40))
-    // Quoted original ICMPv6 Echo header: type=128, code=0, csum=0, id=0,
-    // sequence=0x2A2B big-endian at offset +6.
-    data.append(contentsOf: [0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2A, 0x2B])
+    // Quoted original ICMPv6 Echo header: type=128, code=0, csum=0,
+    // id=0xBEEF big-endian at offset +4 (non-zero, so a parser reading the code
+    // or checksum field by mistake fails), sequence=0x2A2B at offset +6.
+    data.append(contentsOf: [0x80, 0x00, 0x00, 0x00, 0xBE, 0xEF, 0x2A, 0x2B])
 
     XCTAssertEqual(ICMPPacket.parseTimeExceededOriginalSequenceV6(data), 0x2A2B)
-    XCTAssertEqual(ICMPPacket.parseTimeExceededOriginalV6(data)?.identifier, 0)
+    XCTAssertEqual(ICMPPacket.parseTimeExceededOriginalV6(data)?.identifier, 0xBEEF)
     XCTAssertEqual(ICMPPacket.parseTimeExceededOriginalV6(data)?.sequence, 0x2A2B)
 
     // Truncated before the quoted echo's sequence field -> nil.
