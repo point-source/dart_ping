@@ -139,7 +139,8 @@ public enum ICMPPacket {
     /// The header layout is IDENTICAL to the IPv4 ICMP echo header — type, code,
     /// checksum, identifier, sequence at the same offsets — and we attach the
     /// same 8-byte big-endian send-timestamp payload, so the v6 parsers below
-    /// (and the engine's per-seq matching) can share `ICMPHeader`'s offsets.
+    /// (and the engine's identifier/sequence matching) can share
+    /// `ICMPHeader`'s offsets.
     ///
     /// CHECKSUM: unlike IPv4, the ICMPv6 checksum is computed over a pseudo-header
     /// that includes the IPv6 source and destination addresses, which we do NOT

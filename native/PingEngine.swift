@@ -802,7 +802,7 @@ public final class PingEngine {
 
             let sourceIP = Self.sourceIPString(from: &sourceAddr) ?? ""
 
-            // Hand off to the state queue for sequence matching & emission.
+            // Hand off to the state queue for identifier/sequence matching & emission.
             stateQueue.async { [weak self] in
                 self?.handleReceivedLocked(packet: packet, ttl: ttl, sourceIP: sourceIP)
             }
