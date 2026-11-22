@@ -117,8 +117,9 @@ on `flutter_icmp_ping` or any other CocoaPods-only package
 - The engine shall require no special iOS entitlements and no privileged
   (root) execution (see §spec:no-special-entitlements).
 - The engine shall accept only Echo Replies and Time Exceeded quotes that
-  carry its own run's identifier, and no two engines alive at the same
-  time shall share an identifier (§spec:concurrent-isolation).
+  carry its own run's identifier. Identifiers are handed out in sequence
+  from a random start, so a run shares its identifier with another only
+  after 65,536 later runs have started (§spec:concurrent-isolation).
 
 Observable behavior surfaces through the Dart stream
 (§spec:ios-ping-behavior); this section owns the native engine's
