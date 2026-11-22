@@ -653,6 +653,7 @@ class RunnerTests: XCTestCase {
     let silentDone = expectation(description: "silent summary")
     var responsiveReplies = 0
     var silentReplies: [String] = []
+    var silentTimeouts = 0
     let lock = NSLock()
 
     func config(_ host: String) -> PingEngine.Config {
@@ -664,6 +665,7 @@ class RunnerTests: XCTestCase {
       switch event {
       case .response(_, _, _, let ip): silentReplies.append(ip)
       case .summary: silentDone.fulfill()
+      case .error(.requestTimedOut, _, _): silentTimeouts += 1
       case .error: break
       }
     }
@@ -685,6 +687,9 @@ class RunnerTests: XCTestCase {
     lock.lock(); defer { lock.unlock() }
     XCTAssertGreaterThan(responsiveReplies, 0,
                          "no replies from 1.1.1.1: no ICMP route, or the identifier did not round-trip")
+    // Each silent probe was sent and stayed pending until its timeout, so
+    // there was something to claim. (A failed send counts as transmitted.)
+    XCTAssertEqual(silentTimeouts, 3, "silent run did not have its probes pending")
     XCTAssertEqual(silentReplies, [], "claimed another run's replies")
   }
 
