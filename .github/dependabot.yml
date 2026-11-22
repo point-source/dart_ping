@@ -1,0 +1,27 @@
+# Keeps the SHA-pinned CI actions and the pub dependencies current.
+# Update PRs target `develop`, where every change lands (§spec:ci-develop).
+# Minor and patch bumps are grouped into one PR per ecosystem per week; a
+# major bump gets its own PR, since it may need code changes.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: weekly
+    groups:
+      actions-minor-patch:
+        patterns: ['*']
+        update-types: [minor, patch]
+
+  - package-ecosystem: pub
+    directories:
+      - /
+      - /example
+    target-branch: develop
+    schedule:
+      interval: weekly
+    groups:
+      pub-minor-patch:
+        patterns: ['*']
+        update-types: [minor, patch]
