@@ -101,7 +101,8 @@ The native iOS ping logic lives in this repository as Swift. The engine
 opens an unprivileged ICMP datagram socket (`SOCK_DGRAM` /
 `IPPROTO_ICMP`), resolves the target host, and sends ICMP Echo Request
 probes on the schedule the caller requested (host, count, interval,
-timeout). For each Echo Reply it matches the reply to its request by
+timeout). Each run carries its own ICMP echo identifier. For each Echo
+Reply it matches the reply to its request by that identifier and the
 sequence number, computes the round-trip time, and reports the
 responding source IP and the reply's TTL. The engine has no dependency
 on `flutter_icmp_ping` or any other CocoaPods-only package
@@ -115,6 +116,9 @@ on `flutter_icmp_ping` or any other CocoaPods-only package
   marking a probe lost when no reply arrives within `timeout`.
 - The engine shall require no special iOS entitlements and no privileged
   (root) execution (see §spec:no-special-entitlements).
+- The engine shall accept only Echo Replies and Time Exceeded quotes that
+  carry its own run's identifier, and no two engines alive at the same
+  time shall share an identifier (§spec:concurrent-isolation).
 
 Observable behavior surfaces through the Dart stream
 (§spec:ios-ping-behavior); this section owns the native engine's
@@ -132,7 +136,20 @@ Store review are needed (§req:quality-attributes — security/permissions;
 §req:success-criteria). A `SOCK_RAW` implementation was rejected: it
 requires elevated privileges unavailable to a sandboxed iOS app.
 
-**Tradeoff:** the engine reimplements ICMP framing, sequence matching,
+**Why a per-run identifier rather than sequence-only matching:** Darwin
+delivers every incoming echo reply and ICMP error to every ICMP socket
+the process has open, not only to the socket that sent the probe. Runs
+that overlap in time all start at sequence 0, so matching on the
+sequence alone let one run claim another's reply: wrong RTT, wrong
+source IP, and a traceroute "reaching" its target through another host's
+echo. Darwin's `SOCK_DGRAM` ping socket sends the identifier unchanged
+and the reply echoes it (Linux's ping socket rewrites it; Darwin's does
+not), as Apple's `SimplePing` also relies on. Each engine therefore
+takes an identifier from a process-wide counter with a random start.
+The earlier assumption that the kernel may rewrite the identifier had no
+source and is withdrawn.
+
+**Tradeoff:** the engine reimplements ICMP framing, reply matching,
 and timing that `flutter_icmp_ping` previously provided. This is
 accepted as the cost of ownership and is the prerequisite for parity and
 SPM. Round-trip timing is expected to stay comparable to the prior
@@ -211,7 +228,7 @@ spec survives a change of transport mechanism; only the observable
 `PingData` contract is normative.
 
 ## iOS TTL control and time-to-live-exceeded §spec:ios-ttl
-*Status: implemented (Batch 2) — the Swift engine sets the outgoing IP hop limit via `setsockopt(IP_TTL)` to the caller's `ttl`, and the receive path parses ICMP Time Exceeded (type 11) to recover the original probe's sequence and the intermediate-hop IP, surfacing a `timeToLiveExceeded` event (response carrying hop `ip`+`seq`, plus the error) instead of dropping it. Dart-side mapping covered by unit tests. Pending on-device/simulator verification (not compilable on the Linux CI host); note the platform risk that Darwin may deliver Time Exceeded only via the socket error queue (`MSG_ERRQUEUE`) rather than the normal `recvmsg` path used here.*
+*Status: implemented (Batch 2) — the Swift engine sets the outgoing IP hop limit via `setsockopt(IP_TTL)` to the caller's `ttl`, and the receive path parses ICMP Time Exceeded (type 11) to recover the original probe's identifier and sequence and the intermediate-hop IP (a quote carrying another run's identifier is ignored, §spec:concurrent-isolation), surfacing a `timeToLiveExceeded` event (response carrying hop `ip`+`seq`, plus the error) instead of dropping it. Dart-side mapping covered by unit tests. Pending on-device/simulator verification (not compilable on the Linux CI host); note the platform risk that Darwin may deliver Time Exceeded only via the socket error queue (`MSG_ERRQUEUE`) rather than the normal `recvmsg` path used here.*
 
 The system honors the `ttl` parameter on iOS and reports hop-limit
 expiry the same way the other platforms do.
@@ -315,7 +332,7 @@ discovery APIs, not ICMP to a routable host; this is noted so a reviewer
 does not mistake its absence for a defect.
 
 ## iOS behavior tests §spec:ios-tests
-*Status: implemented (Batch 3; iOS-test home consolidated in Batch #28-4) — Dart-side mapping is now covered by `test/ios_event_mapper_test.dart` / `ios_bindings_test.dart` / `ios_ping_test.dart` over the native-result → sealed-event seam (full ErrorType set, the combined response+error contract, and summary error-list population); these run under the `core` matrix via plain `dart test -x live` (no separate Flutter job). Swift-side ICMP framing/sequence/parse logic is covered by network-free XCTest cases in the `example` `RunnerTests` target, which compiles `native/ICMPPacket.swift` directly (no plugin module import); hand-verified, not compiled on the Linux host — run on macOS via the `ios-swift` job's `xcodebuild test -workspace Runner.xcworkspace -scheme Runner`. Live ICMP round-trips remain a manual example-app acceptance path by design.*
+*Status: implemented (Batch 3; iOS-test home consolidated in Batch #28-4) — Dart-side mapping is now covered by `test/ios_event_mapper_test.dart` / `ios_bindings_test.dart` / `ios_ping_test.dart` over the native-result → sealed-event seam (full ErrorType set, the combined response+error contract, and summary error-list population); these run under the `core` matrix via plain `dart test -x live` (no separate Flutter job). Swift-side ICMP framing/sequence/parse logic is covered by network-free XCTest cases in the `example` `RunnerTests` target, which compiles `native/ICMPPacket.swift` directly (no plugin module import); hand-verified, not compiled on the Linux host — run on macOS via the `ios-swift` job's `xcodebuild test -workspace Runner.xcworkspace -scheme Runner`. Live ICMP round-trips remain a manual example-app acceptance path by design. Reply matching on the per-run echo identifier is covered offline by `PingEngine.matchedProbe` tests that feed canned v4/v6 Echo Reply and Time Exceeded packets and check own-identifier accepted, foreign rejected. Two loopback runs (127.0.0.1 and ::1) in the same target prove the identifier round-trips on both families. The live concurrent-run test against 1.1.1.1 runs only when `DART_PING_LIVE_TESTS` is set (`TEST_RUNNER_DART_PING_LIVE_TESTS=1` through `xcodebuild`), so the required `ios-swift` check never depends on it.*
 
 Automated tests cover the iOS ping behavior where feasible
 (§req:success-criteria, §req:quality-attributes — testability).
@@ -326,6 +343,14 @@ Automated tests cover the iOS ping behavior where feasible
   summary error-list population.
 - Swift-side ICMP framing/parsing logic shall be covered by unit tests
   where it can be exercised without a live network.
+- The engine's reply matching (accept only its own run's identifier)
+  shall be covered by unit tests that need no network
+  (§spec:concurrent-isolation).
+- Engine runs against the loopback addresses 127.0.0.1 and ::1 may run
+  in the required check: that traffic never leaves the machine. A test
+  that pings an outside host shall run only behind the explicit
+  `DART_PING_LIVE_TESTS` opt-in, and when opted in it shall fail, not
+  skip, on zero replies (§spec:ci).
 - The example app remains the manual end-to-end acceptance path on a
   simulator or device (§spec:spm-distribution).
 
@@ -335,6 +360,13 @@ reproduced deterministically in CI. The testable seam is the
 result-mapping logic on both sides of the channel; the live round trip
 stays a manual acceptance test via the example app. Nice-to-have
 priority (§req:priorities) — it does not gate the must-have SPM bar.
+
+**Why loopback runs belong in the gate:** every run drops replies that
+do not carry its identifier, so a kernel that rewrote the identifier
+would turn every iOS run into 100% loss. The offline matcher tests
+cannot see that; a loopback run can, on both families, without an
+outside host or a network that may block ICMP. The loopback runs do
+not test concurrency itself; the matcher tests cover that.
 
 ---
 
@@ -1323,7 +1355,7 @@ IPs — so callers that pick the "fastest" host or chart latency act on
 fabricated numbers (§req:concurrent-user-stories).
 
 ## Concurrent ping isolation §spec:concurrent-isolation
-*Status: complete (both halves) — confirm-then-decide gate ran on each engine and required no production change. Core/subprocess: the offline guard `test/concurrent_isolation_test.dart` overlaps concurrent `Ping` runs with canned interleaved per-host output and asserts no field bleeds; it passes against the current source, confirming the design-level isolation invariant (no shared mutable state in `BasePing`). iOS bridge: `dart_ping_ios/test/concurrent_isolation_test.dart` overlaps two `DartPingIOS` runs over the single shared broadcast `EventChannel`, recovers each run's id from its `start` call, pushes INTERLEAVED distinctly-id'd events (responses, an error, and a summary per run), and asserts each run's stream receives only its own id's events (own seq/ttl/time/ip; own summary transmitted/received/time + errors) and never a sibling's, and that each stream still closes on its own summary — confirming the id-demux is isolation-correct (each `_onListen` filters the shared stream by its own unique per-run `_id`). Both tests stand as permanent offline regression guards.*
+*Status: complete (both halves) — confirm-then-decide gate ran on each engine and required no production change at the Dart layer; the iOS native engine later needed one (see the end of this status). Core/subprocess: the offline guard `test/concurrent_isolation_test.dart` overlaps concurrent `Ping` runs with canned interleaved per-host output and asserts no field bleeds; it passes against the current source, confirming the design-level isolation invariant (no shared mutable state in `BasePing`). iOS bridge: `dart_ping_ios/test/concurrent_isolation_test.dart` overlaps two `DartPingIOS` runs over the single shared broadcast `EventChannel`, recovers each run's id from its `start` call, pushes INTERLEAVED distinctly-id'd events (responses, an error, and a summary per run), and asserts each run's stream receives only its own id's events (own seq/ttl/time/ip; own summary transmitted/received/time + errors) and never a sibling's, and that each stream still closes on its own summary — confirming the id-demux is isolation-correct (each `_onListen` filters the shared stream by its own unique per-run `_id`). Both tests stand as permanent offline regression guards. iOS native engine (#106): Darwin delivers every ICMP reply to every ICMP socket in the process, and the engine matched replies by sequence alone under one `getpid()` identifier, so concurrent runs claimed each other's replies. Each run now carries its own echo identifier and accepts only replies that echo it (§spec:swift-icmp-engine). RunnerTests guard the matcher offline, and loopback runs check that the identifier round-trips (§spec:ios-tests).*
 
 Concurrent `Ping` instances are fully independent: when several runs to
 distinct hosts overlap in time, every event a stream emits — response,
@@ -1369,12 +1401,23 @@ process — hence its own `stdout`/`stderr` pipes — its own
 factory, not a shared singleton), and its own `_errors`/`_summaryData`
 accumulators. There is no `static` or otherwise shared mutable state in
 that path, in either the current code or the pre-#76 code the report
-predates. On iOS the bridge shares a single broadcast `EventChannel`
-across instances but demultiplexes by a unique per-run id, delivering each
-controller only the events whose `id` matches its own run
-(§spec:ios-ping-behavior). Because no library state is shared between
-runs, results cannot bleed through it — the invariant above is a property
-of the design, and this section's job is to make it explicit and guarded.
+predates. On iOS each instance owns its own native run handle and
+callback (§spec:ios-ffi-binding; the earlier channel bridge demultiplexed
+a shared `EventChannel` by a unique per-run id, §spec:ios-ping-behavior).
+Because no library state is shared between runs, results cannot bleed
+through it — the invariant above is a property of the design, and this
+section's job is to make it explicit and guarded.
+
+**The one shared resource below the library: the iOS kernel.** Darwin
+delivers every incoming echo reply and ICMP error to every ICMP socket
+the process has open. Runs that overlap all start at sequence 0, so an
+engine matching by sequence alone claims a sibling's replies even though
+no library state is shared. Isolation on iOS therefore rests on one rule
+in the native engine: each run carries its own echo identifier and
+accepts only Echo Replies and Time Exceeded quotes that carry it
+(§spec:swift-icmp-engine). The original confirm-then-decide gate
+exercised only the Dart layer, so it could not see this; #106 found it
+with a socket test on macOS.
 
 **Why confirm-then-decide rather than "fix the bug" directly
 (§req:concurrent-priorities — first gate):** the root cause is not
@@ -1398,7 +1441,10 @@ output-assembly-and-parse path: driving two or more runs with canned,
 distinct per-host output and interleaving them exercises exactly the
 per-instance accumulation (`_errors`, `_summaryData`, the response stream)
 where cross-contamination would surface, and fails offline if any run's
-data appears in another's stream.
+data appears in another's stream. The iOS native engine follows the same
+rule: its reply matcher is a pure function that RunnerTests feed with
+canned packets carrying the run's own and a foreign identifier. A live
+concurrent-run test exists but is opt-in only (§spec:ios-tests).
 
 **Scope and tradeoffs:** this is a correctness fix, not a feature — the
 public API stays frozen and no built-in multi-host helper is introduced
@@ -1408,8 +1454,9 @@ high-impact, silent class of bug unguarded against future refactors that
 might introduce shared state. Gating on a live multi-host ping was
 rejected as non-deterministic and CI-hostile, for the reasons above. The
 isolation guarantee is the normative contract; the specific mechanism by
-which each run stays independent (separate processes today, the iOS id
-demux) is implementation detail that may change without invalidating this
+which each run stays independent (separate processes on the subprocess
+platforms; per-instance native handles and a per-run echo identifier on
+iOS) is implementation detail that may change without invalidating this
 section.
 
 ---
@@ -2532,9 +2579,11 @@ call. The observable `stream` contract is unchanged — the same sealed
   messenger (§req:consolidation-quality-attributes — concurrency;
   §spec:ios-background-isolate).
 - Each `Ping` instance shall own its own native run handle and its own
-  callback, so concurrently running instances do not share native state and
+  callback, so concurrently running instances do not share engine state and
   need no id-based demultiplexing of a shared event stream
-  (§spec:concurrent-isolation).
+  (§spec:concurrent-isolation). The kernel still delivers every ICMP reply
+  to every engine's socket, so each engine also matches replies on its own
+  echo identifier (§spec:swift-icmp-engine).
 - Round-trip times shall preserve microsecond resolution across the FFI seam,
   matching the precision guarantee the channel payload provides today
   (§spec:stats-precision, §spec:stats-ios).
