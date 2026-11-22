@@ -681,9 +681,12 @@ class RunnerTests: XCTestCase {
       case .error: break
       }
     }
-    silent.start()
-    responsive.start()
-    wait(for: [responsiveDone, silentDone], timeout: 10)
+    // start() captures the engine weakly, so keep both alive until done.
+    withExtendedLifetime((silent, responsive)) {
+      silent.start()
+      responsive.start()
+      wait(for: [responsiveDone, silentDone], timeout: 10)
+    }
 
     lock.lock(); defer { lock.unlock() }
     XCTAssertGreaterThan(responsiveReplies, 0,
