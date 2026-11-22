@@ -8,6 +8,9 @@ engine compiled by a build hook) — the app depends on **only** `dart_ping`,
 adds no second package, and calls no `register()`. Build it for iOS under
 Flutter's Swift Package Manager mode with **no CocoaPods Podfile**.
 
+The demo needs Flutter 3.47+ (Dart 3.13+) for its `material_ui` dependency;
+the `dart_ping` package itself supports older SDKs.
+
 ```sh
 flutter pub get
 flutter run            # on a simulator or device
